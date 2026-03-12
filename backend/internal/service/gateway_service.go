@@ -3770,6 +3770,96 @@ func injectClaudeCodePrompt(body []byte, system any) []byte {
 	return result
 }
 
+// minCacheTokensByModel 返回指定模型的最小可缓存 token 数。
+// 参考 https://platform.claude.com/docs/build-with-claude/prompt-caching#cache-limitations
+func minCacheTokensByModel(model string) int {
+	lower := strings.ToLower(model)
+	switch {
+	case strings.Contains(lower, "haiku"):
+		// Haiku 4.5: 4096, Haiku 3.5/3: 2048
+		// 保守使用较高阈值，避免不必要的写入
+		return 4096
+	case strings.Contains(lower, "opus-4-5"), strings.Contains(lower, "opus-4-6"),
+		strings.Contains(lower, "opus-4.5"), strings.Contains(lower, "opus-4.6"):
+		return 4096
+	default:
+		// Sonnet 系列 / Opus 4.1/4: 1024
+		return 1024
+	}
+}
+
+// injectAutoCacheControl 在客户端完全没有设置任何 cache_control 断点时，
+// 自动在 system 最后一个非 thinking 块上注入 cache_control: {"type": "ephemeral"}。
+// 条件：
+//  1. 请求中 0 个 cache_control 断点（不干扰客户端自定义策略）
+//  2. 仅注入到 system 最后一个块（最稳定的前缀锚点）
+//  3. 前缀 token 数（tools + system 文本）估算达到最小缓存阈值
+func injectAutoCacheControl(body []byte, model string) []byte {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body
+	}
+
+	// 条件 1：客户端已设置任何 cache_control 时不干预
+	if countCacheControlBlocks(data) > 0 {
+		return body
+	}
+
+	// 查找 system 最后一个非 thinking 块
+	system, ok := data["system"].([]any)
+	if !ok || len(system) == 0 {
+		return body
+	}
+
+	lastIdx := -1
+	for i := len(system) - 1; i >= 0; i-- {
+		if m, ok := system[i].(map[string]any); ok {
+			if blockType, _ := m["type"].(string); blockType != "thinking" {
+				lastIdx = i
+				break
+			}
+		}
+	}
+	if lastIdx < 0 {
+		return body
+	}
+
+	// 条件 3：估算前缀 token 数（tools JSON + system 文本）
+	totalChars := 0
+
+	// tools 的 JSON 表示
+	if tools, ok := data["tools"].([]any); ok && len(tools) > 0 {
+		if toolsJSON, err := json.Marshal(tools); err == nil {
+			totalChars += len(toolsJSON)
+		}
+	}
+
+	// system 文本
+	for _, item := range system {
+		if m, ok := item.(map[string]any); ok {
+			if text, ok := m["text"].(string); ok {
+				totalChars += len(text)
+			}
+		}
+	}
+
+	minTokens := minCacheTokensByModel(model)
+	if totalChars/3 < minTokens {
+		return body
+	}
+
+	// 注入 cache_control 到 system 最后一个非 thinking 块
+	if m, ok := system[lastIdx].(map[string]any); ok {
+		m["cache_control"] = map[string]string{"type": "ephemeral"}
+	}
+
+	result, err := json.Marshal(data)
+	if err != nil {
+		return body
+	}
+	return result
+}
+
 // enforceCacheControlLimit 强制执行 cache_control 块数量限制（最多 4 个）
 // 超限时按前缀缓存层级的反序移除：messages（尾→头）→ system（尾→头）→ tools（尾→头）
 // 保留层级靠前的断点（tools > system > messages 早期），因为它们保护更稳定的前缀
@@ -3780,11 +3870,17 @@ func enforceCacheControlLimit(body []byte) []byte {
 	}
 
 	// 清理 thinking 块中的非法 cache_control（thinking 块不支持该字段）
-	removeCacheControlFromThinkingBlocks(data)
+	thinkingCleaned := removeCacheControlFromThinkingBlocks(data)
 
 	// 计算当前 cache_control 块数量
 	count := countCacheControlBlocks(data)
 	if count <= maxCacheControlBlocks {
+		// 即使不需要裁剪，如果清理了 thinking 块的 cache_control 也要序列化返回
+		if thinkingCleaned {
+			if result, err := json.Marshal(data); err == nil {
+				return result
+			}
+		}
 		return body
 	}
 
@@ -3950,7 +4046,10 @@ func removeCacheControlFromTools(data map[string]any) bool {
 
 // removeCacheControlFromThinkingBlocks 强制清理所有 thinking 块中的非法 cache_control
 // thinking 块不支持 cache_control 字段，这个函数确保所有 thinking 块都不含该字段
-func removeCacheControlFromThinkingBlocks(data map[string]any) {
+// 返回 true 表示有内容被清理
+func removeCacheControlFromThinkingBlocks(data map[string]any) bool {
+	cleaned := false
+
 	// 清理 system 中的 thinking 块
 	if system, ok := data["system"].([]any); ok {
 		for _, item := range system {
@@ -3958,6 +4057,7 @@ func removeCacheControlFromThinkingBlocks(data map[string]any) {
 				if blockType, _ := m["type"].(string); blockType == "thinking" {
 					if _, has := m["cache_control"]; has {
 						delete(m, "cache_control")
+						cleaned = true
 						logger.LegacyPrintf("service.gateway", "[Warning] Removed illegal cache_control from thinking block in system")
 					}
 				}
@@ -3975,6 +4075,7 @@ func removeCacheControlFromThinkingBlocks(data map[string]any) {
 							if blockType, _ := m["type"].(string); blockType == "thinking" {
 								if _, has := m["cache_control"]; has {
 									delete(m, "cache_control")
+									cleaned = true
 									logger.LegacyPrintf("service.gateway", "[Warning] Removed illegal cache_control from thinking block in messages[%d].content[%d]", msgIdx, contentIdx)
 								}
 							}
@@ -3984,6 +4085,8 @@ func removeCacheControlFromThinkingBlocks(data map[string]any) {
 			}
 		}
 	}
+
+	return cleaned
 }
 
 // Forward 转发请求到Claude API
@@ -4058,6 +4161,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if account.IsOAuth() {
 		body = filterSystemBlocksByPrefix(body)
 	}
+
+	// 自动注入 cache_control：仅当客户端完全没有设置任何断点时，
+	// 在 system 最后一个块上添加 ephemeral 标记以利用上游前缀缓存
+	body = injectAutoCacheControl(body, reqModel)
 
 	// 强制执行 cache_control 块数量限制（最多 4 个）
 	body = enforceCacheControlLimit(body)

@@ -243,6 +243,44 @@ func TestEnforceCacheControlLimit_UnderLimitNoChange(t *testing.T) {
 	require.Equal(t, 2, countCacheControlBlocks(out), "under limit, no blocks should be removed")
 }
 
+func TestEnforceCacheControlLimit_CleansThinkingEvenUnderLimit(t *testing.T) {
+	// thinking 块有非法 cache_control，但总数 ≤ 4
+	// 之前的 bug：early return 时 thinking 块的 cache_control 没有被清理
+	data := map[string]any{
+		"system": []any{
+			map[string]any{"type": "thinking", "cache_control": map[string]any{"type": "ephemeral"}},
+			map[string]any{"type": "text", "text": "sys", "cache_control": map[string]any{"type": "ephemeral"}},
+		},
+		"messages": []any{
+			map[string]any{
+				"role": "assistant",
+				"content": []any{
+					map[string]any{"type": "thinking", "thinking": "hmm", "cache_control": map[string]any{"type": "ephemeral"}},
+					map[string]any{"type": "text", "text": "reply"},
+				},
+			},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := enforceCacheControlLimit(body)
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(result, &out))
+
+	// thinking 块的 cache_control 应该被清理
+	sysThinking := out["system"].([]any)[0].(map[string]any)
+	require.NotContains(t, sysThinking, "cache_control", "thinking block in system should have cache_control removed")
+
+	msgs := out["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	msgThinking := msgs[0].(map[string]any)
+	require.NotContains(t, msgThinking, "cache_control", "thinking block in messages should have cache_control removed")
+
+	// 非 thinking 块的 cache_control 应该保留
+	sysText := out["system"].([]any)[1].(map[string]any)
+	require.Contains(t, sysText, "cache_control", "text block cache_control should be preserved")
+}
+
 // ============ hasCacheControlEphemeral 测试 ============
 
 func TestHasCacheControlEphemeral_True(t *testing.T) {
@@ -332,4 +370,211 @@ func TestRemoveCacheControlFromMessages_SkipsThinking(t *testing.T) {
 
 	require.Contains(t, thinking, "cache_control", "thinking blocks should not be touched")
 	require.NotContains(t, text, "cache_control", "text block should have cache_control removed")
+}
+
+// ============ injectAutoCacheControl 测试 ============
+
+func TestInjectAutoCacheControl_NoExistingCacheControl(t *testing.T) {
+	// system 文本足够长（>1024 tokens ≈ >3072 chars for sonnet），无 cache_control
+	longText := string(make([]byte, 4000)) // 4000 bytes → ~1333 tokens > 1024
+	data := map[string]any{
+		"system": []any{
+			map[string]any{"type": "text", "text": longText},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-sonnet-4-6")
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(result, &out))
+
+	system := out["system"].([]any)
+	lastBlock := system[len(system)-1].(map[string]any)
+	require.Contains(t, lastBlock, "cache_control", "should inject cache_control on last system block")
+}
+
+func TestInjectAutoCacheControl_SkipsWhenClientHasCacheControl(t *testing.T) {
+	longText := string(make([]byte, 4000))
+	data := map[string]any{
+		"system": []any{
+			map[string]any{"type": "text", "text": longText, "cache_control": map[string]any{"type": "ephemeral"}},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-sonnet-4-6")
+
+	// 不应修改（原封不动返回）
+	require.Equal(t, body, result, "should not modify when client already has cache_control")
+}
+
+func TestInjectAutoCacheControl_SkipsWhenBelowTokenThreshold(t *testing.T) {
+	// system 文本很短，低于 1024 token 阈值
+	data := map[string]any{
+		"system": []any{
+			map[string]any{"type": "text", "text": "short prompt"},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-sonnet-4-6")
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(result, &out))
+
+	system := out["system"].([]any)
+	lastBlock := system[0].(map[string]any)
+	require.NotContains(t, lastBlock, "cache_control", "should not inject when below token threshold")
+}
+
+func TestInjectAutoCacheControl_HigherThresholdForOpus(t *testing.T) {
+	// 2000 chars → ~666 tokens，高于 sonnet 阈值(1024) 但需 >4096 for opus
+	// 实际：4000 chars → ~1333 tokens，仍低于 opus 4096
+	mediumText := string(make([]byte, 4000))
+	data := map[string]any{
+		"system": []any{
+			map[string]any{"type": "text", "text": mediumText},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-opus-4-6")
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(result, &out))
+
+	system := out["system"].([]any)
+	lastBlock := system[0].(map[string]any)
+	require.NotContains(t, lastBlock, "cache_control", "should not inject for opus when below 4096 token threshold")
+}
+
+func TestInjectAutoCacheControl_OpusAboveThreshold(t *testing.T) {
+	// 13000 chars → ~4333 tokens > 4096
+	longText := string(make([]byte, 13000))
+	data := map[string]any{
+		"system": []any{
+			map[string]any{"type": "text", "text": longText},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-opus-4-5")
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(result, &out))
+
+	system := out["system"].([]any)
+	lastBlock := system[0].(map[string]any)
+	require.Contains(t, lastBlock, "cache_control", "should inject for opus when above 4096 token threshold")
+}
+
+func TestInjectAutoCacheControl_NoSystem(t *testing.T) {
+	data := map[string]any{
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-sonnet-4-6")
+
+	require.Equal(t, body, result, "should not modify when no system present")
+}
+
+func TestInjectAutoCacheControl_SkipsThinkingAsLastBlock(t *testing.T) {
+	longText := string(make([]byte, 4000))
+	data := map[string]any{
+		"system": []any{
+			map[string]any{"type": "text", "text": longText},
+			map[string]any{"type": "thinking", "thinking": "internal thought"},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-sonnet-4-6")
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(result, &out))
+
+	system := out["system"].([]any)
+	// 应注入到第一个 text 块（最后一个非 thinking 块），而非 thinking 块
+	textBlock := system[0].(map[string]any)
+	thinkingBlock := system[1].(map[string]any)
+	require.Contains(t, textBlock, "cache_control", "should inject on last non-thinking block")
+	require.NotContains(t, thinkingBlock, "cache_control", "should not inject on thinking block")
+}
+
+func TestInjectAutoCacheControl_ToolsContributeToTokenCount(t *testing.T) {
+	// system 文本短，但 tools JSON 足够大，合计超过阈值
+	tools := make([]any, 0, 20)
+	for i := 0; i < 20; i++ {
+		tools = append(tools, map[string]any{
+			"name":        "tool_" + string(rune('a'+i)),
+			"description": string(make([]byte, 200)), // 每个工具 ~200 chars
+		})
+	}
+
+	data := map[string]any{
+		"tools": tools,
+		"system": []any{
+			map[string]any{"type": "text", "text": "You are a helpful assistant."},
+		},
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hi"},
+		},
+	}
+
+	body, _ := json.Marshal(data)
+	result := injectAutoCacheControl(body, "claude-sonnet-4-6")
+
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(result, &out))
+
+	system := out["system"].([]any)
+	lastBlock := system[0].(map[string]any)
+	require.Contains(t, lastBlock, "cache_control", "tools JSON should contribute to token count")
+}
+
+func TestMinCacheTokensByModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected int
+	}{
+		{"claude-sonnet-4-6", 1024},
+		{"claude-sonnet-4", 1024},
+		{"claude-opus-4-6", 4096},
+		{"claude-opus-4-5", 4096},
+		{"claude-opus-4.5", 4096},
+		{"claude-opus-4", 1024},
+		{"claude-opus-4-1", 1024},
+		{"claude-haiku-4-5", 4096},
+		{"claude-haiku-3-5", 4096},
+		{"claude-3-haiku-20240307", 4096},
+		{"unknown-model", 1024},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			require.Equal(t, tt.expected, minCacheTokensByModel(tt.model))
+		})
+	}
 }
