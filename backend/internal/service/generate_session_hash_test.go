@@ -56,8 +56,8 @@ func TestGenerateSessionHash_SystemPlusMessages(t *testing.T) {
 
 	h1 := svc.GenerateSessionHash(withSystem)
 	h2 := svc.GenerateSessionHash(withoutSystem)
-	require.NotEmpty(t, h1)
-	require.NotEmpty(t, h2)
+	require.NotEmpty(t, h1, "system prompt should produce a hash via fallback")
+	require.Empty(t, h2, "no system + no context → empty hash (messages alone not hashed)")
 	require.NotEqual(t, h1, h2, "system prompt should be part of digest, producing different hash")
 }
 
@@ -114,9 +114,11 @@ func TestGenerateSessionHash_SameSystemSameMessages(t *testing.T) {
 	require.Equal(t, h1, h2, "same system + same messages should produce identical hash")
 }
 
-func TestGenerateSessionHash_DifferentMessagesProduceDifferentHash(t *testing.T) {
+func TestGenerateSessionHash_DifferentMessagesSameSystemProduceSameHash(t *testing.T) {
 	svc := &GatewayService{}
 
+	// fallback path 只 hash context + system，不含 messages。
+	// 相同 system、不同 messages → 相同 hash（保证多轮粘性）。
 	parsed1 := &ParsedRequest{
 		System:    "You are a helpful assistant.",
 		HasSystem: true,
@@ -134,7 +136,7 @@ func TestGenerateSessionHash_DifferentMessagesProduceDifferentHash(t *testing.T)
 
 	h1 := svc.GenerateSessionHash(parsed1)
 	h2 := svc.GenerateSessionHash(parsed2)
-	require.NotEqual(t, h1, h2, "same system but different messages should produce different hashes")
+	require.Equal(t, h1, h2, "same system, different messages should produce same hash (prefix-based sticky)")
 }
 
 // ============ SessionContext 核心测试 ============
@@ -234,12 +236,12 @@ func TestGenerateSessionHash_NilSessionContextBackwardCompatible(t *testing.T) {
 
 // ============ 多轮连续会话测试 ============
 
-func TestGenerateSessionHash_ContinuousConversation_HashChangesWithMessages(t *testing.T) {
+func TestGenerateSessionHash_ContinuousConversation_HashStableAcrossRounds(t *testing.T) {
 	svc := &GatewayService{}
 
 	ctx := &SessionContext{ClientIP: "1.2.3.4", UserAgent: "test", APIKeyID: 1}
 
-	// 模拟连续会话：每增加一轮对话，hash 应该不同（内容累积变化）
+	// fallback path 只 hash context + system，多轮对话 hash 不变（前缀粘性）
 	round1 := &ParsedRequest{
 		System:    "You are a helpful assistant.",
 		HasSystem: true,
@@ -278,11 +280,8 @@ func TestGenerateSessionHash_ContinuousConversation_HashChangesWithMessages(t *t
 	h3 := svc.GenerateSessionHash(round3)
 
 	require.NotEmpty(t, h1)
-	require.NotEmpty(t, h2)
-	require.NotEmpty(t, h3)
-	require.NotEqual(t, h1, h2, "different conversation rounds should produce different hashes")
-	require.NotEqual(t, h2, h3, "each new round should produce a different hash")
-	require.NotEqual(t, h1, h3, "round 1 and round 3 should differ")
+	require.Equal(t, h1, h2, "same system+context across rounds should produce same hash")
+	require.Equal(t, h2, h3, "hash should remain stable as messages grow")
 }
 
 func TestGenerateSessionHash_ContinuousConversation_SameRoundSameHash(t *testing.T) {
@@ -316,7 +315,7 @@ func TestGenerateSessionHash_MessageRollback(t *testing.T) {
 
 	ctx := &SessionContext{ClientIP: "1.2.3.4", UserAgent: "test", APIKeyID: 1}
 
-	// 模拟消息回退：用户删掉最后一轮再重发
+	// 消息回退不影响 fallback hash（只看 context + system）
 	original := &ParsedRequest{
 		System:    "System prompt",
 		HasSystem: true,
@@ -346,7 +345,7 @@ func TestGenerateSessionHash_MessageRollback(t *testing.T) {
 
 	hOrig := svc.GenerateSessionHash(original)
 	hRollback := svc.GenerateSessionHash(rollback)
-	require.NotEqual(t, hOrig, hRollback, "rollback with different last message should produce different hash")
+	require.Equal(t, hOrig, hRollback, "rollback should produce same hash (prefix-based, messages not hashed)")
 }
 
 func TestGenerateSessionHash_MessageRollbackSameContent(t *testing.T) {
@@ -542,7 +541,7 @@ func TestGenerateSessionHash_SameUserGrowingConversation(t *testing.T) {
 
 	ctx := &SessionContext{ClientIP: "1.2.3.4", UserAgent: "browser", APIKeyID: 42}
 
-	// 模拟同一用户的连续会话，每轮 hash 不同但同用户重试保持一致
+	// 同一用户连续会话：fallback hash 只看 context+system，每轮相同
 	messages := []map[string]any{
 		{"role": "user", "content": "msg1"},
 		{"role": "assistant", "content": "reply1"},
@@ -553,9 +552,8 @@ func TestGenerateSessionHash_SameUserGrowingConversation(t *testing.T) {
 		{"role": "user", "content": "msg4"},
 	}
 
-	prevHash := ""
+	var firstHash string
 	for round := 1; round <= len(messages); round += 2 {
-		// 构建前 round 条消息
 		msgs := make([]any, round)
 		for j := 0; j < round; j++ {
 			msgs[j] = messages[j]
@@ -569,10 +567,11 @@ func TestGenerateSessionHash_SameUserGrowingConversation(t *testing.T) {
 		h := svc.GenerateSessionHash(parsed)
 		require.NotEmpty(t, h, "round %d hash should not be empty", round)
 
-		if prevHash != "" {
-			require.NotEqual(t, prevHash, h, "round %d hash should differ from previous round", round)
+		if firstHash == "" {
+			firstHash = h
+		} else {
+			require.Equal(t, firstHash, h, "round %d hash should be same as round 1 (prefix-based sticky)", round)
 		}
-		prevHash = h
 
 		// 同一轮重试应该相同
 		h2 := svc.GenerateSessionHash(parsed)
@@ -602,7 +601,7 @@ func TestGenerateSessionHash_MultipleUserMessages(t *testing.T) {
 	h := svc.GenerateSessionHash(parsed)
 	require.NotEmpty(t, h)
 
-	// 修改中间一条消息应该改变 hash
+	// 修改中间一条消息不影响 hash（fallback 只看 context，无 system）
 	parsed2 := &ParsedRequest{
 		Messages: []any{
 			map[string]any{"role": "user", "content": "first"},
@@ -615,10 +614,10 @@ func TestGenerateSessionHash_MultipleUserMessages(t *testing.T) {
 	}
 
 	h2 := svc.GenerateSessionHash(parsed2)
-	require.NotEqual(t, h, h2, "changing any message should change the hash")
+	require.Equal(t, h, h2, "changing messages should not change hash (prefix-based, only context+system)")
 }
 
-func TestGenerateSessionHash_MessageOrderMatters(t *testing.T) {
+func TestGenerateSessionHash_MessageOrderDoesNotAffectHash(t *testing.T) {
 	svc := &GatewayService{}
 
 	ctx := &SessionContext{ClientIP: "1.2.3.4", UserAgent: "test", APIKeyID: 1}
@@ -640,7 +639,7 @@ func TestGenerateSessionHash_MessageOrderMatters(t *testing.T) {
 
 	h1 := svc.GenerateSessionHash(parsed1)
 	h2 := svc.GenerateSessionHash(parsed2)
-	require.NotEqual(t, h1, h2, "message order should affect the hash")
+	require.Equal(t, h1, h2, "message order should not affect hash (prefix-based, messages not hashed)")
 }
 
 // ============ 复杂内容格式测试 ============
@@ -825,7 +824,7 @@ func TestGenerateSessionHash_LongConversation(t *testing.T) {
 	h := svc.GenerateSessionHash(parsed)
 	require.NotEmpty(t, h)
 
-	// 再加一轮应该不同
+	// 再加一轮 hash 仍相同（只看 context + system）
 	moreMessages := make([]any, len(messages)+2)
 	copy(moreMessages, messages)
 	moreMessages[len(messages)] = map[string]any{"role": "user", "content": "one more"}
@@ -839,7 +838,7 @@ func TestGenerateSessionHash_LongConversation(t *testing.T) {
 	}
 
 	h2 := svc.GenerateSessionHash(parsed2)
-	require.NotEqual(t, h, h2, "adding more messages to long conversation should change hash")
+	require.Equal(t, h, h2, "adding more messages should not change hash (prefix-based sticky)")
 }
 
 // ============ Gemini 原生格式 session hash 测试 ============
@@ -868,11 +867,12 @@ func TestGenerateSessionHash_GeminiContentsProducesHash(t *testing.T) {
 	require.NotEmpty(t, h, "Gemini contents with parts should produce a non-empty hash")
 }
 
-func TestGenerateSessionHash_GeminiDifferentContentsDifferentHash(t *testing.T) {
+func TestGenerateSessionHash_GeminiDifferentContentsSameContextSameHash(t *testing.T) {
 	svc := &GatewayService{}
 
 	ctx := &SessionContext{ClientIP: "1.2.3.4", UserAgent: "gemini-cli", APIKeyID: 1}
 
+	// 同一 context，无 system → fallback hash 只看 context，contents 不影响
 	parsed1 := &ParsedRequest{
 		Messages: []any{
 			map[string]any{
@@ -898,7 +898,7 @@ func TestGenerateSessionHash_GeminiDifferentContentsDifferentHash(t *testing.T) 
 
 	h1 := svc.GenerateSessionHash(parsed1)
 	h2 := svc.GenerateSessionHash(parsed2)
-	require.NotEqual(t, h1, h2, "different Gemini contents should produce different hashes")
+	require.Equal(t, h1, h2, "different Gemini contents with same context should produce same hash (prefix-based)")
 }
 
 func TestGenerateSessionHash_GeminiSameContentsSameHash(t *testing.T) {
@@ -931,11 +931,13 @@ func TestGenerateSessionHash_GeminiSameContentsSameHash(t *testing.T) {
 	require.Equal(t, h1, h2, "same Gemini contents should produce identical hash")
 }
 
-func TestGenerateSessionHash_GeminiMultiTurnHashChanges(t *testing.T) {
+func TestGenerateSessionHash_GeminiMultiTurnHashStable(t *testing.T) {
 	svc := &GatewayService{}
 
 	ctx := &SessionContext{ClientIP: "1.2.3.4", UserAgent: "gemini-cli", APIKeyID: 1}
 
+	// Gemini 多轮：同 context、无 system → hash 不变（前缀粘性）
+	// 跨轮粘性由 Digest Fallback（BuildGeminiDigestChain）负责
 	round1 := &ParsedRequest{
 		Messages: []any{
 			map[string]any{
@@ -968,7 +970,7 @@ func TestGenerateSessionHash_GeminiMultiTurnHashChanges(t *testing.T) {
 	h2 := svc.GenerateSessionHash(round2)
 	require.NotEmpty(t, h1)
 	require.NotEmpty(t, h2)
-	require.NotEqual(t, h1, h2, "Gemini multi-turn should produce different hashes per round")
+	require.Equal(t, h1, h2, "Gemini multi-turn should produce same hash (prefix-based, context only)")
 }
 
 func TestGenerateSessionHash_GeminiDifferentUsersSameContentDifferentHash(t *testing.T) {
@@ -1063,7 +1065,7 @@ func TestGenerateSessionHash_GeminiMultiPartMessage(t *testing.T) {
 	h := svc.GenerateSessionHash(parsed)
 	require.NotEmpty(t, h, "multi-part Gemini message should produce a hash")
 
-	// 不同内容的多 parts
+	// 修改 parts 内容不影响 hash（只看 context）
 	parsed2 := &ParsedRequest{
 		Messages: []any{
 			map[string]any{
@@ -1079,7 +1081,7 @@ func TestGenerateSessionHash_GeminiMultiPartMessage(t *testing.T) {
 	}
 
 	h2 := svc.GenerateSessionHash(parsed2)
-	require.NotEqual(t, h, h2, "changing a part should change the hash")
+	require.Equal(t, h, h2, "changing parts should not change hash (prefix-based, messages not hashed)")
 }
 
 func TestGenerateSessionHash_GeminiNonTextPartsIgnored(t *testing.T) {
@@ -1105,14 +1107,14 @@ func TestGenerateSessionHash_GeminiNonTextPartsIgnored(t *testing.T) {
 	require.NotEmpty(t, h, "Gemini message with mixed parts should still produce a hash from text parts")
 }
 
-func TestGenerateSessionHash_GeminiMultiTurnHashNotSticky(t *testing.T) {
+func TestGenerateSessionHash_GeminiMultiTurnHashSticky(t *testing.T) {
 	svc := &GatewayService{}
 
 	ctx := &SessionContext{ClientIP: "10.0.0.1", UserAgent: "gemini-cli", APIKeyID: 42}
 
-	// 模拟同一 Gemini 会话的三轮请求，每轮 contents 累积增长。
-	// 验证预期行为：每轮 hash 都不同，即 GenerateSessionHash 不具备跨轮粘性。
-	// 这是 by-design 的——Gemini 的跨轮粘性由 Digest Fallback（BuildGeminiDigestChain）负责。
+	// 同一 Gemini 会话的三轮请求，每轮 contents 累积增长。
+	// fallback hash 只看 context + system，所以每轮 hash 相同（前缀粘性）。
+	// Gemini 的跨轮粘性同时由 Digest Fallback（BuildGeminiDigestChain）辅助。
 	round1Body := []byte(`{
 		"systemInstruction": {"parts": [{"text": "You are a coding assistant."}]},
 		"contents": [
@@ -1147,10 +1149,9 @@ func TestGenerateSessionHash_GeminiMultiTurnHashNotSticky(t *testing.T) {
 		require.NotEmpty(t, hashes[i], "round %d hash should not be empty", i+1)
 	}
 
-	// 每轮 hash 都不同——这是预期行为
-	require.NotEqual(t, hashes[0], hashes[1], "round 1 vs 2 hash should differ (contents grow)")
-	require.NotEqual(t, hashes[1], hashes[2], "round 2 vs 3 hash should differ (contents grow)")
-	require.NotEqual(t, hashes[0], hashes[2], "round 1 vs 3 hash should differ")
+	// 每轮 hash 相同——前缀粘性（只看 context + system）
+	require.Equal(t, hashes[0], hashes[1], "round 1 vs 2 hash should be same (prefix-based)")
+	require.Equal(t, hashes[1], hashes[2], "round 2 vs 3 hash should be same (prefix-based)")
 
 	// 同一轮重试应产生相同 hash
 	parsed1Again, err := ParseGatewayRequest(round2Body, "gemini")

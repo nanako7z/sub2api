@@ -8,8 +8,10 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 )
 
-// digestSessionTTL 摘要会话默认 TTL
-const digestSessionTTL = 5 * time.Minute
+// digestSessionTTL 直接引用 stickySessionTTL，确保两者始终一致。
+// 过短的 TTL 会导致粘性会话 Redis 绑定还在但摘要链 fallback 已过期，
+// 在 session hash 变化时无法通过摘要链回退到正确的账号。
+const digestSessionTTL = stickySessionTTL
 
 // sessionEntry flat cache 条目
 type sessionEntry struct {

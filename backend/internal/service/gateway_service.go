@@ -84,6 +84,13 @@ var (
 	modelsListCacheHitTotal   atomic.Int64
 	modelsListCacheMissTotal  atomic.Int64
 	modelsListCacheStoreTotal atomic.Int64
+
+	// 提示缓存（prompt cache）命中率统计
+	promptCacheRequestTotal    atomic.Int64 // 有 token 消费的请求总数
+	promptCacheHitTotal        atomic.Int64 // cache_read_tokens > 0 的请求数
+	promptCacheMissTotal       atomic.Int64 // cache_read_tokens == 0 且 input_tokens > 0
+	promptCacheInputTokenTotal atomic.Int64 // 累计 input_tokens（未命中缓存的部分）
+	promptCacheReadTokenTotal  atomic.Int64 // 累计 cache_read_tokens
 )
 
 func GatewayWindowCostPrefetchStats() (cacheHit, cacheMiss, batchSQL, fallback, errCount int64) {
@@ -104,6 +111,18 @@ func GatewayUserGroupRateCacheStats() (cacheHit, cacheMiss, load, singleflightSh
 
 func GatewayModelsListCacheStats() (cacheHit, cacheMiss, store int64) {
 	return modelsListCacheHitTotal.Load(), modelsListCacheMissTotal.Load(), modelsListCacheStoreTotal.Load()
+}
+
+// GatewayPromptCacheStats 返回提示缓存命中率统计。
+// requestTotal: 有 token 消费的请求总数；hit/miss: cache_read_tokens > 0 / == 0；
+// inputTokenTotal: 累计未缓存输入 token；readTokenTotal: 累计缓存读取 token。
+// 缓存命中率 = readTokenTotal / (inputTokenTotal + readTokenTotal)。
+func GatewayPromptCacheStats() (requestTotal, hit, miss, inputTokenTotal, readTokenTotal int64) {
+	return promptCacheRequestTotal.Load(),
+		promptCacheHitTotal.Load(),
+		promptCacheMissTotal.Load(),
+		promptCacheInputTokenTotal.Load(),
+		promptCacheReadTokenTotal.Load()
 }
 
 func cloneStringSlice(src []string) []string {
@@ -617,9 +636,12 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 		return s.hashContent(cacheableContent)
 	}
 
-	// 3. 最后 fallback: 使用 session上下文 + system + 所有消息的完整摘要串
+	// 3. 最后 fallback: 基于稳定前缀（session 上下文 + system）计算 hash。
+	// 不再 hash 全部 messages——多轮对话中 messages 每轮都变，会导致 hash 每轮不同，
+	// 粘性会话失效，前缀缓存无法命中。只 hash 不变的 system 前缀可确保
+	// 同一 system prompt 的多轮对话始终路由到同一账号。
 	var combined strings.Builder
-	// 混入请求上下文区分因子，避免不同用户相同消息产生相同 hash
+	// 混入请求上下文区分因子，避免不同用户相同 system 产生相同 hash
 	if parsed.SessionContext != nil {
 		_, _ = combined.WriteString(parsed.SessionContext.ClientIP)
 		_, _ = combined.WriteString(":")
@@ -632,25 +654,6 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 		systemText := s.extractTextFromSystem(parsed.System)
 		if systemText != "" {
 			_, _ = combined.WriteString(systemText)
-		}
-	}
-	for _, msg := range parsed.Messages {
-		if m, ok := msg.(map[string]any); ok {
-			if content, exists := m["content"]; exists {
-				// Anthropic: messages[].content
-				if msgText := s.extractTextFromContent(content); msgText != "" {
-					_, _ = combined.WriteString(msgText)
-				}
-			} else if parts, ok := m["parts"].([]any); ok {
-				// Gemini: contents[].parts[].text
-				for _, part := range parts {
-					if partMap, ok := part.(map[string]any); ok {
-						if text, ok := partMap["text"].(string); ok {
-							_, _ = combined.WriteString(text)
-						}
-					}
-				}
-			}
 		}
 	}
 	if combined.Len() > 0 {
@@ -723,31 +726,30 @@ func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {
 
 	var builder strings.Builder
 
-	// 检查 system 中的 cacheable 内容
+	// 检查 system 中的 cacheable 内容（只提取有 ephemeral 标记的 block 文本）
 	if system, ok := parsed.System.([]any); ok {
 		for _, part := range system {
 			if partMap, ok := part.(map[string]any); ok {
-				if cc, ok := partMap["cache_control"].(map[string]any); ok {
-					if cc["type"] == "ephemeral" {
-						if text, ok := partMap["text"].(string); ok {
-							_, _ = builder.WriteString(text)
-						}
+				if hasCacheControlEphemeral(partMap) {
+					if text, ok := partMap["text"].(string); ok {
+						_, _ = builder.WriteString(text)
 					}
 				}
 			}
 		}
 	}
-	systemText := builder.String()
 
 	// 检查 messages 中的 cacheable 内容
+	// 统一只提取有 ephemeral 标记的 block 文本，不再返回整个 message 的内容，
+	// 避免非缓存内容混入 hash 导致粘性会话路由不稳定
 	for _, msg := range parsed.Messages {
 		if msgMap, ok := msg.(map[string]any); ok {
 			if msgContent, ok := msgMap["content"].([]any); ok {
 				for _, part := range msgContent {
 					if partMap, ok := part.(map[string]any); ok {
-						if cc, ok := partMap["cache_control"].(map[string]any); ok {
-							if cc["type"] == "ephemeral" {
-								return s.extractTextFromContent(msgMap["content"])
+						if hasCacheControlEphemeral(partMap) {
+							if text, ok := partMap["text"].(string); ok {
+								_, _ = builder.WriteString(text)
 							}
 						}
 					}
@@ -756,7 +758,13 @@ func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {
 		}
 	}
 
-	return systemText
+	return builder.String()
+}
+
+// hasCacheControlEphemeral 检查 block 是否有 cache_control: {type: "ephemeral"} 标记
+func hasCacheControlEphemeral(block map[string]any) bool {
+	cc, ok := block["cache_control"].(map[string]any)
+	return ok && cc["type"] == "ephemeral"
 }
 
 func (s *GatewayService) extractTextFromSystem(system any) string {
@@ -1117,6 +1125,10 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					localExcluded[account.ID] = struct{}{} // 排除此账号
 					continue                               // 重新选择
 				}
+				// 粘性会话命中时刷新 TTL，防止长对话超时后前缀缓存失效
+				if stickyAccountID > 0 && account.ID == stickyAccountID && sessionHash != "" && s.cache != nil {
+					_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
+				}
 				return &AccountSelectionResult{
 					Account:     account,
 					Acquired:    true,
@@ -1291,6 +1303,10 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 									result.ReleaseFunc() // 释放槽位
 									// 继续到负载感知选择
 								} else {
+									// 粘性会话命中，刷新 TTL
+									if s.cache != nil {
+										_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
+									}
 									if s.debugModelRoutingEnabled() {
 										logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed sticky hit: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), stickyAccountID)
 									}
@@ -1448,6 +1464,10 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
 							result.ReleaseFunc() // 释放槽位，继续到 Layer 2
 						} else {
+							// 粘性会话命中，刷新 TTL
+							if s.cache != nil {
+								_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
+							}
 							return &AccountSelectionResult{
 								Account:     account,
 								Acquired:    true,
@@ -3751,7 +3771,8 @@ func injectClaudeCodePrompt(body []byte, system any) []byte {
 }
 
 // enforceCacheControlLimit 强制执行 cache_control 块数量限制（最多 4 个）
-// 超限时优先从 messages 中移除 cache_control，保护 system 中的缓存控制
+// 超限时按前缀缓存层级的反序移除：messages（尾→头）→ system（尾→头）→ tools（尾→头）
+// 保留层级靠前的断点（tools > system > messages 早期），因为它们保护更稳定的前缀
 func enforceCacheControlLimit(body []byte) []byte {
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -3767,13 +3788,18 @@ func enforceCacheControlLimit(body []byte) []byte {
 		return body
 	}
 
-	// 超限：优先从 messages 中移除，再从 system 中移除
+	// 超限：按前缀层级反序移除，保护稳定前缀
+	// messages（最后变化最频繁）→ system → tools（最前端最稳定，最后移除）
 	for count > maxCacheControlBlocks {
 		if removeCacheControlFromMessages(data) {
 			count--
 			continue
 		}
 		if removeCacheControlFromSystem(data) {
+			count--
+			continue
+		}
+		if removeCacheControlFromTools(data) {
 			count--
 			continue
 		}
@@ -3787,10 +3813,21 @@ func enforceCacheControlLimit(body []byte) []byte {
 	return result
 }
 
-// countCacheControlBlocks 统计 system 和 messages 中的 cache_control 块数量
+// countCacheControlBlocks 统计 tools、system 和 messages 中的 cache_control 块数量
 // 注意：thinking 块不支持 cache_control，统计时跳过
 func countCacheControlBlocks(data map[string]any) int {
 	count := 0
+
+	// 统计 tools 中的块（缓存前缀最前端：tools → system → messages）
+	if tools, ok := data["tools"].([]any); ok {
+		for _, tool := range tools {
+			if m, ok := tool.(map[string]any); ok {
+				if _, has := m["cache_control"]; has {
+					count++
+				}
+			}
+		}
+	}
 
 	// 统计 system 中的块
 	if system, ok := data["system"].([]any); ok {
@@ -3831,7 +3868,8 @@ func countCacheControlBlocks(data map[string]any) int {
 	return count
 }
 
-// removeCacheControlFromMessages 从 messages 中移除一个 cache_control（从头开始）
+// removeCacheControlFromMessages 从 messages 中移除一个 cache_control（从尾部开始）
+// 从尾部移除可保留早期稳定消息的缓存断点，符合前缀缓存的最佳实践。
 // 返回 true 表示成功移除，false 表示没有可移除的
 // 注意：跳过 thinking 块（它不支持 cache_control）
 func removeCacheControlFromMessages(data map[string]any) bool {
@@ -3840,8 +3878,8 @@ func removeCacheControlFromMessages(data map[string]any) bool {
 		return false
 	}
 
-	for _, msg := range messages {
-		msgMap, ok := msg.(map[string]any)
+	for i := len(messages) - 1; i >= 0; i-- {
+		msgMap, ok := messages[i].(map[string]any)
 		if !ok {
 			continue
 		}
@@ -3849,8 +3887,8 @@ func removeCacheControlFromMessages(data map[string]any) bool {
 		if !ok {
 			continue
 		}
-		for _, item := range content {
-			if m, ok := item.(map[string]any); ok {
+		for j := len(content) - 1; j >= 0; j-- {
+			if m, ok := content[j].(map[string]any); ok {
 				// thinking 块不支持 cache_control，跳过
 				if blockType, _ := m["type"].(string); blockType == "thinking" {
 					continue
@@ -3881,6 +3919,26 @@ func removeCacheControlFromSystem(data map[string]any) bool {
 			if blockType, _ := m["type"].(string); blockType == "thinking" {
 				continue
 			}
+			if _, has := m["cache_control"]; has {
+				delete(m, "cache_control")
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// removeCacheControlFromTools 从 tools 中移除一个 cache_control（从尾部开始）
+// tools 在缓存前缀最前端，移除会导致整个缓存层级失效，因此作为最后手段
+// 返回 true 表示成功移除，false 表示没有可移除的
+func removeCacheControlFromTools(data map[string]any) bool {
+	tools, ok := data["tools"].([]any)
+	if !ok {
+		return false
+	}
+
+	for i := len(tools) - 1; i >= 0; i-- {
+		if m, ok := tools[i].(map[string]any); ok {
 			if _, has := m["cache_control"]; has {
 				delete(m, "cache_control")
 				return true
@@ -3971,14 +4029,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
 
 	if shouldMimicClaudeCode {
-		// 智能注入 Claude Code 系统提示词（仅 OAuth/SetupToken 账号需要）
-		// 条件：1) OAuth/SetupToken 账号  2) 不是 Claude Code 客户端  3) 不是 Haiku 模型  4) system 中还没有 Claude Code 提示词
-		if !strings.Contains(strings.ToLower(reqModel), "haiku") &&
-			!systemIncludesClaudeCodePrompt(parsed.System) {
-			body = injectClaudeCodePrompt(body, parsed.System)
-		}
-
-		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
+		// 先 normalize（sanitize text、model 等），不 strip system 的 cache_control。
+		// 再 inject Claude Code prompt（带 cache_control: ephemeral）。
+		// 这样注入的 cache_control 不会被 strip 删除，确保稳定前缀可被上游缓存。
+		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
 		if s.identityService != nil {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
 			if err == nil && fp != nil {
@@ -3990,6 +4044,13 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 
 		body, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
+
+		// 智能注入 Claude Code 系统提示词（仅 OAuth/SetupToken 账号需要）
+		// 条件：1) OAuth/SetupToken 账号  2) 不是 Claude Code 客户端  3) 不是 Haiku 模型  4) system 中还没有 Claude Code 提示词
+		if !strings.Contains(strings.ToLower(reqModel), "haiku") &&
+			!systemIncludesClaudeCodePrompt(parsed.System) {
+			body = injectClaudeCodePrompt(body, parsed.System)
+		}
 	}
 
 	// OAuth/SetupToken 账号：移除黑名单前缀匹配的 system 元素（如客户端注入的计费元数据）
@@ -6714,6 +6775,18 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
 	}
 
+	// 提示缓存命中率统计（在 force cache billing / TTL override 之后，基于最终 token 分类）
+	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
+		promptCacheRequestTotal.Add(1)
+		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
+		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
+		if result.Usage.CacheReadInputTokens > 0 {
+			promptCacheHitTotal.Add(1)
+		} else {
+			promptCacheMissTotal.Add(1)
+		}
+	}
+
 	// 获取费率倍数（优先级：用户专属 > 分组默认 > 系统默认）
 	multiplier := 1.0
 	if s.cfg != nil {
@@ -6910,6 +6983,18 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
 	}
 
+	// 提示缓存命中率统计（在 force cache billing / TTL override 之后，基于最终 token 分类）
+	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
+		promptCacheRequestTotal.Add(1)
+		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
+		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
+		if result.Usage.CacheReadInputTokens > 0 {
+			promptCacheHitTotal.Add(1)
+		} else {
+			promptCacheMissTotal.Add(1)
+		}
+	}
+
 	// 获取费率倍数（优先级：用户专属 > 分组默认 > 系统默认）
 	multiplier := 1.0
 	if s.cfg != nil {
@@ -7071,7 +7156,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
 
 	if shouldMimicClaudeCode {
-		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
+		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
 		body, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
 	}
 
