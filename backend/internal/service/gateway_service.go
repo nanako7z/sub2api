@@ -719,6 +719,14 @@ func (s *GatewayService) SaveAnthropicSession(_ context.Context, groupID int64, 
 	return nil
 }
 
+// messagePrefixMaxMessages 是用于 hash 的 messages 前缀条数上限。
+// 取前 2 条足以区分不同对话，同时保证多轮追加消息不影响 hash 稳定性。
+const messagePrefixMaxMessages = 2
+
+// messagePrefixMaxChars 是 messages 前缀摘要的最大字符数。
+// 截断过长的首条消息，避免大文档导致 hash 输入膨胀。
+const messagePrefixMaxChars = 512
+
 func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {
 	if parsed == nil {
 		return ""
@@ -726,7 +734,7 @@ func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {
 
 	var builder strings.Builder
 
-	// 检查 system 中的 cacheable 内容（只提取有 ephemeral 标记的 block 文本）
+	// 第一层：system 中带 cache_control: ephemeral 的 block 文本（跨轮不变）
 	if system, ok := parsed.System.([]any); ok {
 		for _, part := range system {
 			if partMap, ok := part.(map[string]any); ok {
@@ -739,26 +747,44 @@ func (s *GatewayService) extractCacheableContent(parsed *ParsedRequest) string {
 		}
 	}
 
-	// 检查 messages 中的 cacheable 内容
-	// 统一只提取有 ephemeral 标记的 block 文本，不再返回整个 message 的内容，
-	// 避免非缓存内容混入 hash 导致粘性会话路由不稳定
-	for _, msg := range parsed.Messages {
-		if msgMap, ok := msg.(map[string]any); ok {
-			if msgContent, ok := msgMap["content"].([]any); ok {
-				for _, part := range msgContent {
-					if partMap, ok := part.(map[string]any); ok {
-						if hasCacheControlEphemeral(partMap) {
-							if text, ok := partMap["text"].(string); ok {
-								_, _ = builder.WriteString(text)
-							}
-						}
-					}
-				}
-			}
+	// 只有存在 system ephemeral 内容时，才混入 messages 前缀作为细粒度区分。
+	// 如果 system 没有 ephemeral 标记，说明客户端未声明缓存意图，
+	// 应 fallback 到 Priority 3（SessionContext + system 全文本）走用户隔离路由。
+	if builder.Len() == 0 {
+		return ""
+	}
+
+	// 第二层：messages 前 N 条的文本摘要（跨轮不变，新消息追加在末尾）
+	// 与 system ephemeral 共同构成稳定前缀 hash，使相同对话开头的请求
+	// 路由到同一账号，最大化上游前缀缓存命中。
+	prefixChars := 0
+	for i, msg := range parsed.Messages {
+		if i >= messagePrefixMaxMessages || prefixChars >= messagePrefixMaxChars {
+			break
 		}
+		text := s.extractTextFromMessageContent(msg)
+		if text == "" {
+			continue
+		}
+		remaining := messagePrefixMaxChars - prefixChars
+		if len(text) > remaining {
+			text = text[:remaining]
+		}
+		_, _ = builder.WriteString(text)
+		prefixChars += len(text)
 	}
 
 	return builder.String()
+}
+
+// extractTextFromMessageContent 从单条 message 中提取文本内容。
+// 支持 content 为 string 或 []any（block 数组）两种格式。
+func (s *GatewayService) extractTextFromMessageContent(msg any) string {
+	msgMap, ok := msg.(map[string]any)
+	if !ok {
+		return ""
+	}
+	return s.extractTextFromContent(msgMap["content"])
 }
 
 // hasCacheControlEphemeral 检查 block 是否有 cache_control: {type: "ephemeral"} 标记

@@ -1212,3 +1212,240 @@ func TestGenerateSessionHash_GeminiEndToEnd(t *testing.T) {
 	h3 := svc.GenerateSessionHash(parsed3)
 	require.NotEqual(t, h, h3, "different user with same Gemini request should get different hash")
 }
+
+// ============ 分层 Hash: system ephemeral + messages 前缀 ============
+
+func TestGenerateSessionHash_LayeredHash_SystemEphemeralPlusMessagePrefix(t *testing.T) {
+	svc := &GatewayService{}
+
+	// 有 system ephemeral 时，messages 前缀参与 hash
+	// 不同首条消息 → 不同 hash（更细粒度的缓存亲和）
+	parsed1 := &ParsedRequest{
+		System: []any{
+			map[string]any{
+				"type":          "text",
+				"text":          "You are a helpful assistant.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+		HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "Write Go code"},
+		},
+	}
+	parsed2 := &ParsedRequest{
+		System: []any{
+			map[string]any{
+				"type":          "text",
+				"text":          "You are a helpful assistant.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+		HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "Write Python code"},
+		},
+	}
+
+	h1 := svc.GenerateSessionHash(parsed1)
+	h2 := svc.GenerateSessionHash(parsed2)
+	require.NotEmpty(t, h1)
+	require.NotEmpty(t, h2)
+	require.NotEqual(t, h1, h2, "same system ephemeral but different first message should produce different hash")
+}
+
+func TestGenerateSessionHash_LayeredHash_StableAcrossTurns(t *testing.T) {
+	svc := &GatewayService{}
+
+	system := []any{
+		map[string]any{
+			"type":          "text",
+			"text":          "You are a helpful assistant.",
+			"cache_control": map[string]any{"type": "ephemeral"},
+		},
+	}
+
+	// 多轮对话：前 2 条 messages 不变，后续追加 → hash 稳定
+	round1 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+			map[string]any{"role": "assistant", "content": "hi there"},
+		},
+	}
+	round2 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+			map[string]any{"role": "assistant", "content": "hi there"},
+			map[string]any{"role": "user", "content": "how are you?"},
+			map[string]any{"role": "assistant", "content": "I'm good!"},
+		},
+	}
+	round3 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+			map[string]any{"role": "assistant", "content": "hi there"},
+			map[string]any{"role": "user", "content": "how are you?"},
+			map[string]any{"role": "assistant", "content": "I'm good!"},
+			map[string]any{"role": "user", "content": "tell me a joke"},
+		},
+	}
+
+	h1 := svc.GenerateSessionHash(round1)
+	h2 := svc.GenerateSessionHash(round2)
+	h3 := svc.GenerateSessionHash(round3)
+	require.Equal(t, h1, h2, "hash should be stable across turns (message prefix unchanged)")
+	require.Equal(t, h2, h3, "hash should remain stable with more messages appended")
+}
+
+func TestGenerateSessionHash_LayeredHash_CrossUserSharing(t *testing.T) {
+	svc := &GatewayService{}
+
+	system := []any{
+		map[string]any{
+			"type":          "text",
+			"text":          "You are a coding assistant.",
+			"cache_control": map[string]any{"type": "ephemeral"},
+		},
+	}
+
+	// 不同用户 (不同 SessionContext)，相同 system ephemeral + 相同首条消息
+	// → P2 命中，相同 hash（跨用户缓存共享）
+	parsed1 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "help me debug"},
+		},
+		SessionContext: &SessionContext{ClientIP: "1.1.1.1", UserAgent: "client-A", APIKeyID: 1},
+	}
+	parsed2 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "help me debug"},
+		},
+		SessionContext: &SessionContext{ClientIP: "2.2.2.2", UserAgent: "client-B", APIKeyID: 2},
+	}
+
+	h1 := svc.GenerateSessionHash(parsed1)
+	h2 := svc.GenerateSessionHash(parsed2)
+	require.Equal(t, h1, h2, "P2 should produce same hash for different users with same system+message prefix (cross-user cache sharing)")
+}
+
+func TestGenerateSessionHash_LayeredHash_NoEphemeralFallsToP3(t *testing.T) {
+	svc := &GatewayService{}
+
+	// system 没有 ephemeral 标记 → P2 返回空 → 落到 P3（用户隔离）
+	parsed1 := &ParsedRequest{
+		System: "You are a helpful assistant.", HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+		SessionContext: &SessionContext{ClientIP: "1.1.1.1", UserAgent: "client-A", APIKeyID: 1},
+	}
+	parsed2 := &ParsedRequest{
+		System: "You are a helpful assistant.", HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+		SessionContext: &SessionContext{ClientIP: "2.2.2.2", UserAgent: "client-B", APIKeyID: 2},
+	}
+
+	h1 := svc.GenerateSessionHash(parsed1)
+	h2 := svc.GenerateSessionHash(parsed2)
+	require.NotEqual(t, h1, h2, "without ephemeral, different users should get different hash (P3 user isolation)")
+}
+
+func TestGenerateSessionHash_LayeredHash_MessagePrefixTruncation(t *testing.T) {
+	svc := &GatewayService{}
+
+	system := []any{
+		map[string]any{
+			"type":          "text",
+			"text":          "System prompt.",
+			"cache_control": map[string]any{"type": "ephemeral"},
+		},
+	}
+
+	// 超长首条消息截断后 hash 一致
+	longMsg := make([]byte, 2000)
+	for i := range longMsg {
+		longMsg[i] = 'A'
+	}
+	// 两个请求：同一超长前缀，仅在 512 字符之后不同
+	msg1 := make([]byte, 2000)
+	copy(msg1, longMsg)
+	msg1[600] = 'X' // 超过截断阈值，不影响 hash
+
+	parsed1 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": string(longMsg)},
+		},
+	}
+	parsed2 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": string(msg1)},
+		},
+	}
+
+	h1 := svc.GenerateSessionHash(parsed1)
+	h2 := svc.GenerateSessionHash(parsed2)
+	require.Equal(t, h1, h2, "messages beyond truncation limit should not affect hash")
+}
+
+func TestGenerateSessionHash_LayeredHash_OnlyFirstNMessages(t *testing.T) {
+	svc := &GatewayService{}
+
+	system := []any{
+		map[string]any{
+			"type":          "text",
+			"text":          "System.",
+			"cache_control": map[string]any{"type": "ephemeral"},
+		},
+	}
+
+	// 前 2 条相同，第 3 条不同 → hash 相同（只看前 N 条）
+	parsed1 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "first"},
+			map[string]any{"role": "assistant", "content": "reply"},
+			map[string]any{"role": "user", "content": "AAA"},
+		},
+	}
+	parsed2 := &ParsedRequest{
+		System: system, HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "first"},
+			map[string]any{"role": "assistant", "content": "reply"},
+			map[string]any{"role": "user", "content": "BBB"},
+		},
+	}
+
+	h1 := svc.GenerateSessionHash(parsed1)
+	h2 := svc.GenerateSessionHash(parsed2)
+	require.Equal(t, h1, h2, "only first N messages should be hashed, third message difference should not matter")
+}
+
+func TestGenerateSessionHash_LayeredHash_EmptyMessagesWithEphemeral(t *testing.T) {
+	svc := &GatewayService{}
+
+	// system ephemeral 存在但 messages 为空 → 仅 system hash（仍走 P2）
+	parsed := &ParsedRequest{
+		System: []any{
+			map[string]any{
+				"type":          "text",
+				"text":          "System prompt.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+		HasSystem: true,
+		Messages:  []any{},
+	}
+
+	h := svc.GenerateSessionHash(parsed)
+	require.NotEmpty(t, h, "system ephemeral with empty messages should still produce P2 hash")
+}
