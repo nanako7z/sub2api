@@ -388,6 +388,12 @@ func (s *stubUsageLogRepo) GetModelStatsAggregated(ctx context.Context, modelNam
 func (s *stubUsageLogRepo) GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error) {
 	return nil, nil
 }
+func (s *stubUsageLogRepo) GetUserCacheHitRateByTokenUsage(ctx context.Context, startTime, endTime time.Time, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+	return nil, nil
+}
+func (s *stubUsageLogRepo) GetUserCacheHitRateLowest(ctx context.Context, startTime, endTime time.Time, minRequests int, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+	return nil, nil
+}
 
 func TestSoraGatewayHandler_ChatCompletions(t *testing.T) {
 	gin.SetMode(gin.TestMode)

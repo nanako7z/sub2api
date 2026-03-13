@@ -551,3 +551,59 @@ func (h *DashboardHandler) GetBatchAPIKeysUsage(c *gin.Context) {
 	c.Header("X-Snapshot-Cache", "miss")
 	response.Success(c, payload)
 }
+
+var dashboardUsersCacheStatsCache = newSnapshotCache(30 * time.Second)
+
+// GetUserCacheStats handles getting per-user cache hit rate statistics
+// GET /api/v1/admin/dashboard/users-cache-stats
+func (h *DashboardHandler) GetUserCacheStats(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	limitStr := c.DefaultQuery("limit", "12")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 12
+	}
+	minRequestsStr := c.DefaultQuery("min_requests", "10")
+	minRequests, err := strconv.Atoi(minRequestsStr)
+	if err != nil || minRequests <= 0 {
+		minRequests = 10
+	}
+
+	keyRaw, _ := json.Marshal(struct {
+		Start       string `json:"s"`
+		End         string `json:"e"`
+		Limit       int    `json:"l"`
+		MinRequests int    `json:"m"`
+	}{
+		Start:       startTime.UTC().Format(time.RFC3339),
+		End:         endTime.UTC().Format(time.RFC3339),
+		Limit:       limit,
+		MinRequests: minRequests,
+	})
+	cacheKey := string(keyRaw)
+	if cached, ok := dashboardUsersCacheStatsCache.Get(cacheKey); ok {
+		c.Header("X-Snapshot-Cache", "hit")
+		response.Success(c, cached.Payload)
+		return
+	}
+
+	ctx := c.Request.Context()
+	topUsers, err := h.dashboardService.GetUserCacheHitRateByTokenUsage(ctx, startTime, endTime, limit)
+	if err != nil {
+		response.Error(c, 500, "Failed to get user cache stats")
+		return
+	}
+	lowestUsers, err := h.dashboardService.GetUserCacheHitRateLowest(ctx, startTime, endTime, minRequests, limit)
+	if err != nil {
+		response.Error(c, 500, "Failed to get user cache stats")
+		return
+	}
+
+	payload := gin.H{
+		"top_users":    topUsers,
+		"lowest_users": lowestUsers,
+	}
+	dashboardUsersCacheStatsCache.Set(cacheKey, payload)
+	c.Header("X-Snapshot-Cache", "miss")
+	response.Success(c, payload)
+}

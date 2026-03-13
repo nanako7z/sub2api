@@ -963,7 +963,11 @@ export default {
       standard: 'Standard',
       noDataAvailable: 'No data available',
       recentUsage: 'Recent Usage',
-      failedToLoad: 'Failed to load dashboard statistics'
+      failedToLoad: 'Failed to load dashboard statistics',
+      topUsersByUsage: 'Cache Hit Rate - Top Users by Usage',
+      lowestCacheHitRate: 'Cache Hit Rate - Lowest Users',
+      tokenHitRate: 'Token Hit Rate',
+      requestHitRate: 'Request Hit Rate'
     },
 
     dataManagement: {

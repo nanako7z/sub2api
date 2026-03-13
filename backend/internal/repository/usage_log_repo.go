@@ -1154,6 +1154,117 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 	return results, nil
 }
 
+// GetUserCacheHitRateByTokenUsage 返回 token 用量 TOP N 用户的缓存命中率
+func (r *usageLogRepository) GetUserCacheHitRateByTokenUsage(ctx context.Context, startTime, endTime time.Time, limit int) (results []usagestats.UserCacheHitRateStat, err error) {
+	query := `
+		WITH top_users AS (
+			SELECT user_id
+			FROM usage_logs
+			WHERE created_at >= $1 AND created_at < $2
+			GROUP BY user_id
+			ORDER BY SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) DESC
+			LIMIT $3
+		)
+		SELECT
+			u.user_id,
+			COALESCE(us.email, '') as email,
+			COUNT(*) FILTER (WHERE u.input_tokens > 0 OR u.cache_read_tokens > 0) as total_requests,
+			COUNT(*) FILTER (WHERE u.cache_read_tokens > 0) as cache_hit_requests,
+			COALESCE(SUM(u.input_tokens), 0) as input_tokens,
+			COALESCE(SUM(u.cache_read_tokens), 0) as cache_read_tokens,
+			COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) as total_tokens
+		FROM usage_logs u
+		LEFT JOIN users us ON u.user_id = us.id
+		WHERE u.user_id IN (SELECT user_id FROM top_users)
+		  AND u.created_at >= $4 AND u.created_at < $5
+		GROUP BY u.user_id, us.email
+		ORDER BY total_tokens DESC
+	`
+	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.UserCacheHitRateStat, 0, limit)
+	for rows.Next() {
+		var row usagestats.UserCacheHitRateStat
+		if err = rows.Scan(&row.UserID, &row.Email, &row.TotalRequests, &row.CacheHitRequests,
+			&row.InputTokens, &row.CacheReadTokens, &row.TotalTokens); err != nil {
+			return nil, err
+		}
+		if denom := row.InputTokens + row.CacheReadTokens; denom > 0 {
+			row.TokenCacheHitRate = float64(row.CacheReadTokens) / float64(denom)
+		}
+		if row.TotalRequests > 0 {
+			row.RequestCacheHitRate = float64(row.CacheHitRequests) / float64(row.TotalRequests)
+		}
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// GetUserCacheHitRateLowest 返回 token 缓存命中率最低的 N 个用户
+func (r *usageLogRepository) GetUserCacheHitRateLowest(ctx context.Context, startTime, endTime time.Time, minRequests int, limit int) (results []usagestats.UserCacheHitRateStat, err error) {
+	query := `
+		SELECT
+			u.user_id,
+			COALESCE(us.email, '') as email,
+			COUNT(*) FILTER (WHERE u.input_tokens > 0 OR u.cache_read_tokens > 0) as total_requests,
+			COUNT(*) FILTER (WHERE u.cache_read_tokens > 0) as cache_hit_requests,
+			COALESCE(SUM(u.input_tokens), 0) as input_tokens,
+			COALESCE(SUM(u.cache_read_tokens), 0) as cache_read_tokens,
+			COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) as total_tokens
+		FROM usage_logs u
+		LEFT JOIN users us ON u.user_id = us.id
+		WHERE u.created_at >= $1 AND u.created_at < $2
+		GROUP BY u.user_id, us.email
+		HAVING COUNT(*) FILTER (WHERE u.input_tokens > 0 OR u.cache_read_tokens > 0) >= $3
+		ORDER BY CASE WHEN SUM(u.input_tokens) + SUM(u.cache_read_tokens) = 0 THEN 1
+		              ELSE SUM(u.cache_read_tokens)::float / (SUM(u.input_tokens) + SUM(u.cache_read_tokens))
+		         END ASC
+		LIMIT $4
+	`
+	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, minRequests, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.UserCacheHitRateStat, 0, limit)
+	for rows.Next() {
+		var row usagestats.UserCacheHitRateStat
+		if err = rows.Scan(&row.UserID, &row.Email, &row.TotalRequests, &row.CacheHitRequests,
+			&row.InputTokens, &row.CacheReadTokens, &row.TotalTokens); err != nil {
+			return nil, err
+		}
+		if denom := row.InputTokens + row.CacheReadTokens; denom > 0 {
+			row.TokenCacheHitRate = float64(row.CacheReadTokens) / float64(denom)
+		}
+		if row.TotalRequests > 0 {
+			row.RequestCacheHitRate = float64(row.CacheHitRequests) / float64(row.TotalRequests)
+		}
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // UserDashboardStats 用户仪表盘统计
 type UserDashboardStats = usagestats.UserDashboardStats
 

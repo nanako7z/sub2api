@@ -11,6 +11,7 @@ import type {
   GroupStat,
   ApiKeyUsageTrendPoint,
   UserUsageTrendPoint,
+  UserCacheHitRateStat,
   UsageRequestType
 } from '@/types'
 
@@ -262,6 +263,29 @@ export async function getBatchApiKeysUsage(
   return data
 }
 
+export interface UserCacheStatsParams {
+  start_date?: string
+  end_date?: string
+  limit?: number
+  min_requests?: number
+  timezone?: string
+}
+
+export interface UserCacheStatsResponse {
+  top_users: UserCacheHitRateStat[]
+  lowest_users: UserCacheHitRateStat[]
+}
+
+export async function getUserCacheStats(
+  params?: UserCacheStatsParams
+): Promise<UserCacheStatsResponse> {
+  const { data } = await apiClient.get<UserCacheStatsResponse>(
+    '/admin/dashboard/users-cache-stats',
+    { params }
+  )
+  return data
+}
+
 export const dashboardAPI = {
   getStats,
   getRealtimeMetrics,
@@ -272,7 +296,8 @@ export const dashboardAPI = {
   getApiKeyUsageTrend,
   getUserUsageTrend,
   getBatchUsersUsage,
-  getBatchApiKeysUsage
+  getBatchApiKeysUsage,
+  getUserCacheStats
 }
 
 export default dashboardAPI

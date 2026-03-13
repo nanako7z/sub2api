@@ -985,7 +985,11 @@ export default {
       configureAiAccounts: '配置 AI 平台账号',
       systemSettings: '系统设置',
       configureSystem: '配置系统设置',
-      failedToLoad: '加载仪表盘数据失败'
+      failedToLoad: '加载仪表盘数据失败',
+      topUsersByUsage: '缓存命中率 - 用量最高用户',
+      lowestCacheHitRate: '缓存命中率 - 最低用户',
+      tokenHitRate: 'Token 命中率',
+      requestHitRate: '请求命中率'
     },
 
     dataManagement: {

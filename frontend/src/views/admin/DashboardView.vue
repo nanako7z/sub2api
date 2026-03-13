@@ -258,6 +258,13 @@
               </div>
             </div>
           </div>
+
+          <!-- User Cache Hit Rate Stats -->
+          <UserCacheHitRateChart
+            :top-users="cacheStatsTopUsers"
+            :lowest-users="cacheStatsLowestUsers"
+            :loading="cacheStatsLoading"
+          />
         </div>
       </template>
     </div>
@@ -271,7 +278,13 @@ import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
-import type { DashboardStats, TrendDataPoint, ModelStat, UserUsageTrendPoint } from '@/types'
+import type {
+  DashboardStats,
+  TrendDataPoint,
+  ModelStat,
+  UserUsageTrendPoint,
+  UserCacheHitRateStat
+} from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -279,6 +292,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import UserCacheHitRateChart from '@/components/charts/UserCacheHitRateChart.vue'
 
 import {
   Chart as ChartJS,
@@ -310,13 +324,17 @@ const stats = ref<DashboardStats | null>(null)
 const loading = ref(false)
 const chartsLoading = ref(false)
 const userTrendLoading = ref(false)
+const cacheStatsLoading = ref(false)
 
 // Chart data
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
 const userTrend = ref<UserUsageTrendPoint[]>([])
+const cacheStatsTopUsers = ref<UserCacheHitRateStat[]>([])
+const cacheStatsLowestUsers = ref<UserCacheHitRateStat[]>([])
 let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
+let cacheStatsLoadSeq = 0
 
 // Helper function to format date in local timezone
 const formatLocalDate = (date: Date): string => {
@@ -582,14 +600,41 @@ const loadUsersTrend = async () => {
   }
 }
 
+const loadUserCacheStats = async () => {
+  const currentSeq = ++cacheStatsLoadSeq
+  cacheStatsLoading.value = true
+  try {
+    const response = await adminAPI.dashboard.getUserCacheStats({
+      start_date: startDate.value,
+      end_date: endDate.value,
+      limit: 12,
+      min_requests: 10
+    })
+    if (currentSeq !== cacheStatsLoadSeq) return
+    cacheStatsTopUsers.value = response.top_users || []
+    cacheStatsLowestUsers.value = response.lowest_users || []
+  } catch (error) {
+    if (currentSeq !== cacheStatsLoadSeq) return
+    console.error('Error loading user cache stats:', error)
+    cacheStatsTopUsers.value = []
+    cacheStatsLowestUsers.value = []
+  } finally {
+    if (currentSeq === cacheStatsLoadSeq) {
+      cacheStatsLoading.value = false
+    }
+  }
+}
+
 const loadDashboardStats = async () => {
   await loadDashboardSnapshot(true)
   void loadUsersTrend()
+  void loadUserCacheStats()
 }
 
 const loadChartData = async () => {
   await loadDashboardSnapshot(false)
   void loadUsersTrend()
+  void loadUserCacheStats()
 }
 
 onMounted(() => {

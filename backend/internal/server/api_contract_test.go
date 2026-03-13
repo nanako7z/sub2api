@@ -1768,6 +1768,12 @@ func (r *stubUsageLogRepo) GetAccountUsageStats(ctx context.Context, accountID i
 func (r *stubUsageLogRepo) GetStatsWithFilters(ctx context.Context, filters usagestats.UsageLogFilters) (*usagestats.UsageStats, error) {
 	return nil, errors.New("not implemented")
 }
+func (r *stubUsageLogRepo) GetUserCacheHitRateByTokenUsage(ctx context.Context, startTime, endTime time.Time, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+	return nil, nil
+}
+func (r *stubUsageLogRepo) GetUserCacheHitRateLowest(ctx context.Context, startTime, endTime time.Time, minRequests int, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+	return nil, nil
+}
 
 type stubSettingRepo struct {
 	all map[string]string
