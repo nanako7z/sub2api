@@ -113,7 +113,7 @@ func GatewayModelsListCacheStats() (cacheHit, cacheMiss, store int64) {
 	return modelsListCacheHitTotal.Load(), modelsListCacheMissTotal.Load(), modelsListCacheStoreTotal.Load()
 }
 
-// GatewayPromptCacheStats 返回提示缓存命中率统计。
+// GatewayPromptCacheStats 返回提示缓存命中率统计（基于上游原始 token，不受 force cache billing 影响）。
 // requestTotal: 有 token 消费的请求总数；hit/miss: cache_read_tokens > 0 / == 0；
 // inputTokenTotal: 累计未缓存输入 token；readTokenTotal: 累计缓存读取 token。
 // 缓存命中率 = readTokenTotal / (inputTokenTotal + readTokenTotal)。
@@ -6948,8 +6948,20 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 	account := input.Account
 	subscription := input.Subscription
 
+	// 提示缓存命中率统计（在 force cache billing 之前，基于上游原始 token 分类，反映真实缓存命中率）
+	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
+		promptCacheRequestTotal.Add(1)
+		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
+		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
+		if result.Usage.CacheReadInputTokens > 0 {
+			promptCacheHitTotal.Add(1)
+		} else {
+			promptCacheMissTotal.Add(1)
+		}
+	}
+
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
-	// 用于粘性会话切换时的特殊计费处理
+	// 用于粘性会话切换时的特殊计费处理（仅影响用户计费，不影响缓存命中率统计）
 	if input.ForceCacheBilling && result.Usage.InputTokens > 0 {
 		logger.LegacyPrintf("service.gateway", "force_cache_billing: %d input_tokens → cache_read_input_tokens (account=%d)",
 			result.Usage.InputTokens, account.ID)
@@ -6962,18 +6974,6 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 	if account.IsCacheTTLOverrideEnabled() {
 		applyCacheTTLOverride(&result.Usage, account.GetCacheTTLOverrideTarget())
 		cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
-	}
-
-	// 提示缓存命中率统计（在 force cache billing / TTL override 之后，基于最终 token 分类）
-	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
-		promptCacheRequestTotal.Add(1)
-		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
-		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
-		if result.Usage.CacheReadInputTokens > 0 {
-			promptCacheHitTotal.Add(1)
-		} else {
-			promptCacheMissTotal.Add(1)
-		}
 	}
 
 	// 获取费率倍数（优先级：用户专属 > 分组默认 > 系统默认）
@@ -7156,8 +7156,20 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 	account := input.Account
 	subscription := input.Subscription
 
+	// 提示缓存命中率统计（在 force cache billing 之前，基于上游原始 token 分类，反映真实缓存命中率）
+	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
+		promptCacheRequestTotal.Add(1)
+		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
+		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
+		if result.Usage.CacheReadInputTokens > 0 {
+			promptCacheHitTotal.Add(1)
+		} else {
+			promptCacheMissTotal.Add(1)
+		}
+	}
+
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
-	// 用于粘性会话切换时的特殊计费处理
+	// 用于粘性会话切换时的特殊计费处理（仅影响用户计费，不影响缓存命中率统计）
 	if input.ForceCacheBilling && result.Usage.InputTokens > 0 {
 		logger.LegacyPrintf("service.gateway", "force_cache_billing: %d input_tokens → cache_read_input_tokens (account=%d)",
 			result.Usage.InputTokens, account.ID)
@@ -7170,18 +7182,6 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 	if account.IsCacheTTLOverrideEnabled() {
 		applyCacheTTLOverride(&result.Usage, account.GetCacheTTLOverrideTarget())
 		cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
-	}
-
-	// 提示缓存命中率统计（在 force cache billing / TTL override 之后，基于最终 token 分类）
-	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
-		promptCacheRequestTotal.Add(1)
-		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
-		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
-		if result.Usage.CacheReadInputTokens > 0 {
-			promptCacheHitTotal.Add(1)
-		} else {
-			promptCacheMissTotal.Add(1)
-		}
 	}
 
 	// 获取费率倍数（优先级：用户专属 > 分组默认 > 系统默认）
