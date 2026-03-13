@@ -113,7 +113,14 @@ const lowestChartData = computed(() => {
         data: props.lowestUsers.map((u) => +(u.token_cache_hit_rate * 100).toFixed(1)),
         backgroundColor: '#ef4444',
         borderRadius: 4,
-        barPercentage: 0.6
+        barPercentage: 0.5
+      },
+      {
+        label: t('admin.dashboard.requestHitRate'),
+        data: props.lowestUsers.map((u) => +(u.request_cache_hit_rate * 100).toFixed(1)),
+        backgroundColor: '#f59e0b',
+        borderRadius: 4,
+        barPercentage: 0.5
       }
     ]
   }
