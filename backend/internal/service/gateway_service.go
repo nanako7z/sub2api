@@ -89,8 +89,9 @@ var (
 	promptCacheRequestTotal    atomic.Int64 // 有 token 消费的请求总数
 	promptCacheHitTotal        atomic.Int64 // cache_read_tokens > 0 的请求数
 	promptCacheMissTotal       atomic.Int64 // cache_read_tokens == 0 且 input_tokens > 0
-	promptCacheInputTokenTotal atomic.Int64 // 累计 input_tokens（未命中缓存的部分）
-	promptCacheReadTokenTotal  atomic.Int64 // 累计 cache_read_tokens
+	promptCacheInputTokenTotal         atomic.Int64 // 累计 input_tokens（未命中缓存的部分）
+	promptCacheCreationTokenTotal      atomic.Int64 // 累计 cache_creation_tokens
+	promptCacheReadTokenTotal          atomic.Int64 // 累计 cache_read_tokens
 )
 
 func GatewayWindowCostPrefetchStats() (cacheHit, cacheMiss, batchSQL, fallback, errCount int64) {
@@ -115,13 +116,14 @@ func GatewayModelsListCacheStats() (cacheHit, cacheMiss, store int64) {
 
 // GatewayPromptCacheStats 返回提示缓存命中率统计（基于上游原始 token，不受 force cache billing 影响）。
 // requestTotal: 有 token 消费的请求总数；hit/miss: cache_read_tokens > 0 / == 0；
-// inputTokenTotal: 累计未缓存输入 token；readTokenTotal: 累计缓存读取 token。
-// 缓存命中率 = readTokenTotal / (inputTokenTotal + readTokenTotal)。
-func GatewayPromptCacheStats() (requestTotal, hit, miss, inputTokenTotal, readTokenTotal int64) {
+// inputTokenTotal: 累计未缓存输入 token；creationTokenTotal: 累计缓存创建 token；readTokenTotal: 累计缓存读取 token。
+// 缓存命中率 = readTokenTotal / (inputTokenTotal + creationTokenTotal + readTokenTotal)。
+func GatewayPromptCacheStats() (requestTotal, hit, miss, inputTokenTotal, creationTokenTotal, readTokenTotal int64) {
 	return promptCacheRequestTotal.Load(),
 		promptCacheHitTotal.Load(),
 		promptCacheMissTotal.Load(),
 		promptCacheInputTokenTotal.Load(),
+		promptCacheCreationTokenTotal.Load(),
 		promptCacheReadTokenTotal.Load()
 }
 
@@ -6949,9 +6951,10 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 	subscription := input.Subscription
 
 	// 提示缓存命中率统计（在 force cache billing 之前，基于上游原始 token 分类，反映真实缓存命中率）
-	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
+	if result.Usage.InputTokens > 0 || result.Usage.CacheCreationInputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
 		promptCacheRequestTotal.Add(1)
 		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
+		promptCacheCreationTokenTotal.Add(int64(result.Usage.CacheCreationInputTokens))
 		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
 		if result.Usage.CacheReadInputTokens > 0 {
 			promptCacheHitTotal.Add(1)
@@ -7157,9 +7160,10 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 	subscription := input.Subscription
 
 	// 提示缓存命中率统计（在 force cache billing 之前，基于上游原始 token 分类，反映真实缓存命中率）
-	if result.Usage.InputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
+	if result.Usage.InputTokens > 0 || result.Usage.CacheCreationInputTokens > 0 || result.Usage.CacheReadInputTokens > 0 {
 		promptCacheRequestTotal.Add(1)
 		promptCacheInputTokenTotal.Add(int64(result.Usage.InputTokens))
+		promptCacheCreationTokenTotal.Add(int64(result.Usage.CacheCreationInputTokens))
 		promptCacheReadTokenTotal.Add(int64(result.Usage.CacheReadInputTokens))
 		if result.Usage.CacheReadInputTokens > 0 {
 			promptCacheHitTotal.Add(1)
