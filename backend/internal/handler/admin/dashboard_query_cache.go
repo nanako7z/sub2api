@@ -13,8 +13,10 @@ var (
 	dashboardTrendCache        = newSnapshotCache(30 * time.Second)
 	dashboardModelStatsCache   = newSnapshotCache(30 * time.Second)
 	dashboardGroupStatsCache   = newSnapshotCache(30 * time.Second)
-	dashboardUsersTrendCache   = newSnapshotCache(30 * time.Second)
-	dashboardAPIKeysTrendCache = newSnapshotCache(30 * time.Second)
+	dashboardUsersTrendCache          = newSnapshotCache(30 * time.Second)
+	dashboardAPIKeysTrendCache        = newSnapshotCache(30 * time.Second)
+	dashboardCacheHitRateTopCache     = newSnapshotCache(30 * time.Second)
+	dashboardCacheHitRateLowestCache  = newSnapshotCache(30 * time.Second)
 )
 
 type dashboardTrendCacheKey struct {
@@ -48,6 +50,14 @@ type dashboardEntityTrendCacheKey struct {
 	EndTime     string `json:"end_time"`
 	Granularity string `json:"granularity"`
 	Limit       int    `json:"limit"`
+}
+
+type dashboardCacheHitRateTrendCacheKey struct {
+	StartTime   string `json:"start_time"`
+	EndTime     string `json:"end_time"`
+	Granularity string `json:"granularity"`
+	Limit       int    `json:"limit"`
+	MinRequests int    `json:"min_requests,omitempty"`
 }
 
 func cacheStatusValue(hit bool) string {
@@ -196,5 +206,40 @@ func (h *DashboardHandler) getUserUsageTrendCached(ctx context.Context, startTim
 		return nil, hit, err
 	}
 	trend, err := snapshotPayloadAs[[]usagestats.UserUsageTrendPoint](entry.Payload)
+	return trend, hit, err
+}
+
+func (h *DashboardHandler) getUserCacheHitRateTrendByUsageCached(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserCacheHitRateTrendPoint, bool, error) {
+	key := mustMarshalDashboardCacheKey(dashboardCacheHitRateTrendCacheKey{
+		StartTime:   startTime.UTC().Format(time.RFC3339),
+		EndTime:     endTime.UTC().Format(time.RFC3339),
+		Granularity: granularity,
+		Limit:       limit,
+	})
+	entry, hit, err := dashboardCacheHitRateTopCache.GetOrLoad(key, func() (any, error) {
+		return h.dashboardService.GetUserCacheHitRateTrendByUsage(ctx, startTime, endTime, granularity, limit)
+	})
+	if err != nil {
+		return nil, hit, err
+	}
+	trend, err := snapshotPayloadAs[[]usagestats.UserCacheHitRateTrendPoint](entry.Payload)
+	return trend, hit, err
+}
+
+func (h *DashboardHandler) getUserCacheHitRateTrendLowestCached(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) ([]usagestats.UserCacheHitRateTrendPoint, bool, error) {
+	key := mustMarshalDashboardCacheKey(dashboardCacheHitRateTrendCacheKey{
+		StartTime:   startTime.UTC().Format(time.RFC3339),
+		EndTime:     endTime.UTC().Format(time.RFC3339),
+		Granularity: granularity,
+		Limit:       limit,
+		MinRequests: minRequests,
+	})
+	entry, hit, err := dashboardCacheHitRateLowestCache.GetOrLoad(key, func() (any, error) {
+		return h.dashboardService.GetUserCacheHitRateTrendLowest(ctx, startTime, endTime, granularity, minRequests, limit)
+	})
+	if err != nil {
+		return nil, hit, err
+	}
+	trend, err := snapshotPayloadAs[[]usagestats.UserCacheHitRateTrendPoint](entry.Payload)
 	return trend, hit, err
 }

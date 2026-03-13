@@ -1768,10 +1768,10 @@ func (r *stubUsageLogRepo) GetAccountUsageStats(ctx context.Context, accountID i
 func (r *stubUsageLogRepo) GetStatsWithFilters(ctx context.Context, filters usagestats.UsageLogFilters) (*usagestats.UsageStats, error) {
 	return nil, errors.New("not implemented")
 }
-func (r *stubUsageLogRepo) GetUserCacheHitRateByTokenUsage(ctx context.Context, startTime, endTime time.Time, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+func (r *stubUsageLogRepo) GetUserCacheHitRateTrendByUsage(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
 	return nil, nil
 }
-func (r *stubUsageLogRepo) GetUserCacheHitRateLowest(ctx context.Context, startTime, endTime time.Time, minRequests int, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+func (r *stubUsageLogRepo) GetUserCacheHitRateTrendLowest(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
 	return nil, nil
 }
 

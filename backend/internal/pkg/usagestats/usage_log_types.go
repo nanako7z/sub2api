@@ -111,15 +111,16 @@ type APIKeyUsageTrendPoint struct {
 	Tokens   int64  `json:"tokens"`
 }
 
-// UserCacheHitRateStat 用户级缓存命中率统计
-type UserCacheHitRateStat struct {
+// UserCacheHitRateTrendPoint 用户级缓存命中率趋势点（按日期分组）
+type UserCacheHitRateTrendPoint struct {
+	Date                string  `json:"date"`
 	UserID              int64   `json:"user_id"`
 	Email               string  `json:"email"`
+	InputTokens         int64   `json:"input_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
 	TotalRequests       int64   `json:"total_requests"`
 	CacheHitRequests    int64   `json:"cache_hit_requests"`
-	InputTokens         int64   `json:"input_tokens"`
-	CacheReadTokens     int64   `json:"cache_read_tokens"`
-	TotalTokens         int64   `json:"total_tokens"`
 	TokenCacheHitRate   float64 `json:"token_cache_hit_rate"`
 	RequestCacheHitRate float64 `json:"request_cache_hit_rate"`
 }

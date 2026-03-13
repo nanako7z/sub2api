@@ -1161,14 +1161,15 @@ export interface UserUsageTrendPoint {
   actual_cost: number // 实际扣除
 }
 
-export interface UserCacheHitRateStat {
+export interface UserCacheHitRateTrendPoint {
+  date: string
   user_id: number
   email: string
+  input_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   total_requests: number
   cache_hit_requests: number
-  input_tokens: number
-  cache_read_tokens: number
-  total_tokens: number
   token_cache_hit_rate: number
   request_cache_hit_rate: number
 }

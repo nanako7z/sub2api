@@ -388,10 +388,10 @@ func (s *stubUsageLogRepo) GetModelStatsAggregated(ctx context.Context, modelNam
 func (s *stubUsageLogRepo) GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error) {
 	return nil, nil
 }
-func (s *stubUsageLogRepo) GetUserCacheHitRateByTokenUsage(ctx context.Context, startTime, endTime time.Time, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+func (s *stubUsageLogRepo) GetUserCacheHitRateTrendByUsage(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
 	return nil, nil
 }
-func (s *stubUsageLogRepo) GetUserCacheHitRateLowest(ctx context.Context, startTime, endTime time.Time, minRequests int, limit int) ([]usagestats.UserCacheHitRateStat, error) {
+func (s *stubUsageLogRepo) GetUserCacheHitRateTrendLowest(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
 	return nil, nil
 }
 

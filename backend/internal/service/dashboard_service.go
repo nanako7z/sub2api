@@ -343,18 +343,18 @@ func (s *DashboardService) GetBatchAPIKeyUsageStats(ctx context.Context, apiKeyI
 	return stats, nil
 }
 
-func (s *DashboardService) GetUserCacheHitRateByTokenUsage(ctx context.Context, startTime, endTime time.Time, limit int) ([]usagestats.UserCacheHitRateStat, error) {
-	stats, err := s.usageRepo.GetUserCacheHitRateByTokenUsage(ctx, startTime, endTime, limit)
+func (s *DashboardService) GetUserCacheHitRateTrendByUsage(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
+	trend, err := s.usageRepo.GetUserCacheHitRateTrendByUsage(ctx, startTime, endTime, granularity, limit)
 	if err != nil {
-		return nil, fmt.Errorf("get user cache hit rate by token usage: %w", err)
+		return nil, fmt.Errorf("get user cache hit rate trend by usage: %w", err)
 	}
-	return stats, nil
+	return trend, nil
 }
 
-func (s *DashboardService) GetUserCacheHitRateLowest(ctx context.Context, startTime, endTime time.Time, minRequests int, limit int) ([]usagestats.UserCacheHitRateStat, error) {
-	stats, err := s.usageRepo.GetUserCacheHitRateLowest(ctx, startTime, endTime, minRequests, limit)
+func (s *DashboardService) GetUserCacheHitRateTrendLowest(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
+	trend, err := s.usageRepo.GetUserCacheHitRateTrendLowest(ctx, startTime, endTime, granularity, minRequests, limit)
 	if err != nil {
-		return nil, fmt.Errorf("get user cache hit rate lowest: %w", err)
+		return nil, fmt.Errorf("get user cache hit rate trend lowest: %w", err)
 	}
-	return stats, nil
+	return trend, nil
 }

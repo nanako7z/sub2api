@@ -259,10 +259,10 @@
             </div>
           </div>
 
-          <!-- User Cache Hit Rate Stats -->
+          <!-- User Cache Hit Rate Trend -->
           <UserCacheHitRateChart
-            :top-users="cacheStatsTopUsers"
-            :lowest-users="cacheStatsLowestUsers"
+            :top-users-trend="cacheStatsTopTrend"
+            :lowest-users-trend="cacheStatsLowestTrend"
             :loading="cacheStatsLoading"
           />
         </div>
@@ -283,7 +283,7 @@ import type {
   TrendDataPoint,
   ModelStat,
   UserUsageTrendPoint,
-  UserCacheHitRateStat
+  UserCacheHitRateTrendPoint
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -330,8 +330,8 @@ const cacheStatsLoading = ref(false)
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
 const userTrend = ref<UserUsageTrendPoint[]>([])
-const cacheStatsTopUsers = ref<UserCacheHitRateStat[]>([])
-const cacheStatsLowestUsers = ref<UserCacheHitRateStat[]>([])
+const cacheStatsTopTrend = ref<UserCacheHitRateTrendPoint[]>([])
+const cacheStatsLowestTrend = ref<UserCacheHitRateTrendPoint[]>([])
 let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
 let cacheStatsLoadSeq = 0
@@ -607,17 +607,18 @@ const loadUserCacheStats = async () => {
     const response = await adminAPI.dashboard.getUserCacheStats({
       start_date: startDate.value,
       end_date: endDate.value,
+      granularity: granularity.value,
       limit: 12,
       min_requests: 10
     })
     if (currentSeq !== cacheStatsLoadSeq) return
-    cacheStatsTopUsers.value = response.top_users || []
-    cacheStatsLowestUsers.value = response.lowest_users || []
+    cacheStatsTopTrend.value = response.top_users_trend || []
+    cacheStatsLowestTrend.value = response.lowest_users_trend || []
   } catch (error) {
     if (currentSeq !== cacheStatsLoadSeq) return
     console.error('Error loading user cache stats:', error)
-    cacheStatsTopUsers.value = []
-    cacheStatsLowestUsers.value = []
+    cacheStatsTopTrend.value = []
+    cacheStatsLowestTrend.value = []
   } finally {
     if (currentSeq === cacheStatsLoadSeq) {
       cacheStatsLoading.value = false

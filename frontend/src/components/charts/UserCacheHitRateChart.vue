@@ -1,6 +1,6 @@
 <template>
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-    <!-- TOP 12 users by token usage -->
+    <!-- TOP users by token usage - cache hit rate trend -->
     <div class="card p-4">
       <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
         {{ t('admin.dashboard.topUsersByUsage') }}
@@ -9,7 +9,7 @@
         <LoadingSpinner size="md" />
       </div>
       <div v-else-if="topChartData" class="h-64">
-        <Bar :data="topChartData" :options="horizontalBarOptions" />
+        <Line :data="topChartData" :options="lineOptions" />
       </div>
       <div
         v-else
@@ -19,7 +19,7 @@
       </div>
     </div>
 
-    <!-- Lowest 12 users by cache hit rate -->
+    <!-- Lowest users by cache hit rate - trend -->
     <div class="card p-4">
       <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
         {{ t('admin.dashboard.lowestCacheHitRate') }}
@@ -28,7 +28,7 @@
         <LoadingSpinner size="md" />
       </div>
       <div v-else-if="lowestChartData" class="h-64">
-        <Bar :data="lowestChartData" :options="horizontalBarOptions" />
+        <Line :data="lowestChartData" :options="lineOptions" />
       </div>
       <div
         v-else
@@ -45,22 +45,24 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Chart as ChartJS,
-  BarElement,
   CategoryScale,
   LinearScale,
+  PointElement,
+  LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 } from 'chart.js'
-import { Bar } from 'vue-chartjs'
+import { Line } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import type { UserCacheHitRateStat } from '@/types'
+import type { UserCacheHitRateTrendPoint } from '@/types'
 
-ChartJS.register(BarElement, CategoryScale, LinearScale, Title, Tooltip, Legend)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 interface Props {
-  topUsers: UserCacheHitRateStat[]
-  lowestUsers: UserCacheHitRateStat[]
+  topUsersTrend: UserCacheHitRateTrendPoint[]
+  lowestUsersTrend: UserCacheHitRateTrendPoint[]
   loading: boolean
 }
 
@@ -69,9 +71,15 @@ const { t } = useI18n()
 
 const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
 const colors = computed(() => ({
-  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  grid: isDarkMode.value ? '#374151' : '#e5e7eb',
+  text: isDarkMode.value ? '#e5e7eb' : '#374151'
 }))
+
+// 12 distinct colors for up to 12 users
+const userColors = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
+  '#ec4899', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#e11d48'
+]
 
 const getDisplayName = (email: string, userId: number): string => {
   if (email && email.includes('@')) {
@@ -80,85 +88,88 @@ const getDisplayName = (email: string, userId: number): string => {
   return `User#${userId}`
 }
 
-const topChartData = computed(() => {
-  if (!props.topUsers?.length) return null
-  return {
-    labels: props.topUsers.map((u) => getDisplayName(u.email, u.user_id)),
-    datasets: [
-      {
-        label: t('admin.dashboard.tokenHitRate'),
-        data: props.topUsers.map((u) => +(u.token_cache_hit_rate * 100).toFixed(1)),
-        backgroundColor: '#3b82f6',
-        borderRadius: 4,
-        barPercentage: 0.5
-      },
-      {
-        label: t('admin.dashboard.requestHitRate'),
-        data: props.topUsers.map((u) => +(u.request_cache_hit_rate * 100).toFixed(1)),
-        backgroundColor: '#10b981',
-        borderRadius: 4,
-        barPercentage: 0.5
-      }
-    ]
-  }
-})
+const buildChartData = (trendPoints: UserCacheHitRateTrendPoint[]) => {
+  if (!trendPoints?.length) return null
 
-const lowestChartData = computed(() => {
-  if (!props.lowestUsers?.length) return null
-  return {
-    labels: props.lowestUsers.map((u) => getDisplayName(u.email, u.user_id)),
-    datasets: [
-      {
-        label: t('admin.dashboard.tokenHitRate'),
-        data: props.lowestUsers.map((u) => +(u.token_cache_hit_rate * 100).toFixed(1)),
-        backgroundColor: '#ef4444',
-        borderRadius: 4,
-        barPercentage: 0.5
-      },
-      {
-        label: t('admin.dashboard.requestHitRate'),
-        data: props.lowestUsers.map((u) => +(u.request_cache_hit_rate * 100).toFixed(1)),
-        backgroundColor: '#f59e0b',
-        borderRadius: 4,
-        barPercentage: 0.5
-      }
-    ]
-  }
-})
+  // Extract unique dates (sorted) and unique users
+  const dates = [...new Set(trendPoints.map((p) => p.date))].sort()
+  const userMap = new Map<number, { email: string; data: Map<string, UserCacheHitRateTrendPoint> }>()
 
-const horizontalBarOptions = computed(() => {
+  for (const p of trendPoints) {
+    if (!userMap.has(p.user_id)) {
+      userMap.set(p.user_id, { email: p.email, data: new Map() })
+    }
+    userMap.get(p.user_id)!.data.set(p.date, p)
+  }
+
+  const datasets = Array.from(userMap.entries()).map(([userId, info], idx) => {
+    const color = userColors[idx % userColors.length]
+    return {
+      label: getDisplayName(info.email, userId),
+      data: dates.map((d) => {
+        const point = info.data.get(d)
+        return point ? +(point.token_cache_hit_rate * 100).toFixed(1) : null
+      }),
+      borderColor: color,
+      backgroundColor: `${color}20`,
+      fill: false,
+      tension: 0.3,
+      pointRadius: 2,
+      borderWidth: 2
+    }
+  })
+
+  return { labels: dates, datasets }
+}
+
+const topChartData = computed(() => buildChartData(props.topUsersTrend))
+const lowestChartData = computed(() => buildChartData(props.lowestUsersTrend))
+
+const lineOptions = computed(() => {
   const c = colors.value
   return {
-    indexAxis: 'y' as const,
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: 'index' as const
+    },
     plugins: {
       legend: {
-        display: true,
         position: 'top' as const,
-        labels: { color: c.text, font: { size: 11 }, boxWidth: 12 }
+        labels: {
+          color: c.text,
+          usePointStyle: true,
+          pointStyle: 'circle',
+          padding: 10,
+          font: { size: 10 },
+          boxWidth: 8
+        }
       },
       tooltip: {
         callbacks: {
-          label: (ctx: { dataset: { label?: string }; parsed: { x: number | null } }) =>
-            `${ctx.dataset.label}: ${(ctx.parsed.x ?? 0).toFixed(1)}%`
+          label: (ctx: any) => {
+            const tokenRate = ctx.parsed.y
+            if (tokenRate === null) return ''
+            return `${ctx.dataset.label}: ${tokenRate.toFixed(1)}%`
+          }
         }
       }
     },
     scales: {
       x: {
+        grid: { color: c.grid },
+        ticks: { color: c.text, font: { size: 10 } }
+      },
+      y: {
         beginAtZero: true,
         max: 100,
-        grid: { color: c.grid, borderDash: [4, 4] },
+        grid: { color: c.grid },
         ticks: {
           color: c.text,
           font: { size: 10 },
           callback: (value: string | number) => `${value}%`
         }
-      },
-      y: {
-        grid: { display: false },
-        ticks: { color: c.text, font: { size: 10 } }
       }
     }
   }
