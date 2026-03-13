@@ -1449,3 +1449,122 @@ func TestGenerateSessionHash_LayeredHash_EmptyMessagesWithEphemeral(t *testing.T
 	h := svc.GenerateSessionHash(parsed)
 	require.NotEmpty(t, h, "system ephemeral with empty messages should still produce P2 hash")
 }
+
+// ============ GenerateAffinityHash 测试 ============
+
+func TestGenerateAffinityHash_NilRequest(t *testing.T) {
+	svc := &GatewayService{}
+	require.Empty(t, svc.GenerateAffinityHash(nil))
+}
+
+func TestGenerateAffinityHash_NoCacheableContent(t *testing.T) {
+	svc := &GatewayService{}
+	// Request with plain system (no cache_control ephemeral) → no P2 content → empty
+	parsed := &ParsedRequest{
+		System:    "You are a helpful assistant.",
+		HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+	}
+	require.Empty(t, svc.GenerateAffinityHash(parsed), "no cacheable content should return empty")
+}
+
+func TestGenerateAffinityHash_WithEphemeralContent(t *testing.T) {
+	svc := &GatewayService{}
+	// Request with cache_control ephemeral → produces affinity hash
+	parsed := &ParsedRequest{
+		System: []any{
+			map[string]any{
+				"type":          "text",
+				"text":          "You are a helpful assistant.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+		HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+	}
+	hash := svc.GenerateAffinityHash(parsed)
+	require.NotEmpty(t, hash, "ephemeral content should produce affinity hash")
+}
+
+func TestGenerateAffinityHash_MatchesP2Hash(t *testing.T) {
+	svc := &GatewayService{}
+	// Affinity hash should match the P2 component of GenerateSessionHash
+	// when the session hash is driven by cacheable content (P2 path).
+	parsed := &ParsedRequest{
+		System: []any{
+			map[string]any{
+				"type":          "text",
+				"text":          "You are a helpful assistant.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+		HasSystem: true,
+		Messages: []any{
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{
+						"type":          "text",
+						"text":          "First user message with cache.",
+						"cache_control": map[string]any{"type": "ephemeral"},
+					},
+				},
+			},
+		},
+	}
+	sessionHash := svc.GenerateSessionHash(parsed)
+	affinityHash := svc.GenerateAffinityHash(parsed)
+	require.NotEmpty(t, sessionHash)
+	require.NotEmpty(t, affinityHash)
+	// When session hash is P2-derived (cacheable content), they should be equal
+	require.Equal(t, sessionHash, affinityHash, "affinity hash should equal session hash when both use P2 path")
+}
+
+func TestGenerateAffinityHash_ForkSessionDiscovery(t *testing.T) {
+	svc := &GatewayService{}
+	// Simulate parent and fork: same ephemeral content, different session UUIDs.
+	// P1 (session hash) differs because MetadataUserID differs, but P2 (affinity hash) is the same.
+	parentParsed := &ParsedRequest{
+		MetadataUserID: "session_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+		System: []any{
+			map[string]any{
+				"type":          "text",
+				"text":          "You are a helpful assistant.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+		HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+	}
+	forkParsed := &ParsedRequest{
+		MetadataUserID: "session_11111111-2222-3333-4444-555555555555",
+		System: []any{
+			map[string]any{
+				"type":          "text",
+				"text":          "You are a helpful assistant.",
+				"cache_control": map[string]any{"type": "ephemeral"},
+			},
+		},
+		HasSystem: true,
+		Messages: []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+	}
+
+	// Session hashes differ (different UUIDs via P1)
+	parentSession := svc.GenerateSessionHash(parentParsed)
+	forkSession := svc.GenerateSessionHash(forkParsed)
+	require.NotEqual(t, parentSession, forkSession, "different session UUIDs should produce different session hashes")
+
+	// Affinity hashes match (same cacheable content via P2)
+	parentAffinity := svc.GenerateAffinityHash(parentParsed)
+	forkAffinity := svc.GenerateAffinityHash(forkParsed)
+	require.NotEmpty(t, parentAffinity)
+	require.Equal(t, parentAffinity, forkAffinity, "same cacheable content should produce same affinity hash for fork discovery")
+}

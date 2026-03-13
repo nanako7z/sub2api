@@ -18,6 +18,7 @@ type RequestMetadata struct {
 	PrefetchedStickyGroupID    *int64
 	SingleAccountRetry         *bool
 	AccountSwitchCount         *int
+	AffinityHash               *string
 }
 
 var (
@@ -213,4 +214,17 @@ func AccountSwitchCountFromContext(ctx context.Context) (int, bool) {
 		return int(t), true
 	}
 	return 0, false
+}
+
+func WithAffinityHash(ctx context.Context, hash string) context.Context {
+	return updateRequestMetadata(ctx, false, func(md *RequestMetadata) {
+		md.AffinityHash = &hash
+	}, nil)
+}
+
+func AffinityHashFromContext(ctx context.Context) string {
+	if md := metadataFromContext(ctx); md != nil && md.AffinityHash != nil {
+		return *md.AffinityHash
+	}
+	return ""
 }

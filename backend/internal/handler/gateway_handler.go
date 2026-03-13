@@ -252,6 +252,12 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 
+	// Compute P2 affinity hash for Claude Code clients (fork session discovery)
+	affinityHash := ""
+	if isClaudeCodeClient {
+		affinityHash = h.gatewayService.GenerateAffinityHash(parsedReq)
+	}
+
 	// 获取平台：优先使用强制平台（/antigravity 路由，中间件已设置 request.Context），否则使用分组平台
 	platform := ""
 	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
@@ -277,6 +283,27 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			c.Request = c.Request.WithContext(ctx)
 		}
 	}
+
+	// Affinity prefetch: when no sticky binding exists, use P2 content hash to find an existing binding.
+	// This allows forked Claude Code sessions (new session UUID) to reuse the parent's account.
+	if sessionBoundAccountID == 0 && affinityHash != "" && affinityHash != sessionKey {
+		if aid, _ := h.gatewayService.GetCachedSessionAccountID(c.Request.Context(), apiKey.GroupID, affinityHash); aid > 0 {
+			sessionBoundAccountID = aid
+			prefetchedGroupID := int64(0)
+			if apiKey.GroupID != nil {
+				prefetchedGroupID = *apiKey.GroupID
+			}
+			ctx := service.WithPrefetchedStickySession(c.Request.Context(), aid, prefetchedGroupID, h.metadataBridgeEnabled())
+			c.Request = c.Request.WithContext(ctx)
+		}
+	}
+
+	// Set affinity hash in context so service layer can write affinity bindings on new account selection
+	if affinityHash != "" {
+		ctx := service.WithAffinityHash(c.Request.Context(), affinityHash)
+		c.Request = c.Request.WithContext(ctx)
+	}
+
 	// 判断是否真的绑定了粘性会话：有 sessionKey 且已经绑定到某个账号
 	hasBoundSession := sessionKey != "" && sessionBoundAccountID > 0
 
