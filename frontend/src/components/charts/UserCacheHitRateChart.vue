@@ -1,5 +1,24 @@
 <template>
   <div class="space-y-6">
+    <!-- Overall cache hit rate bar chart -->
+    <div class="card p-4">
+      <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+        {{ t('admin.dashboard.overallCacheHitRate') }}
+      </h3>
+      <div v-if="loading" class="flex h-24 items-center justify-center">
+        <LoadingSpinner size="md" />
+      </div>
+      <div v-else-if="overallBarData" class="h-24">
+        <Bar :data="overallBarData" :options="barOptions" />
+      </div>
+      <div
+        v-else
+        class="flex h-24 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+      >
+        {{ t('admin.dashboard.noDataAvailable') }}
+      </div>
+    </div>
+
     <!-- TOP users by token usage - cache miss rate trend -->
     <div class="card p-4">
       <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
@@ -49,20 +68,22 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
   Filler
 } from 'chart.js'
-import { Line } from 'vue-chartjs'
+import { Line, Bar } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import type { UserCacheHitRateTrendPoint } from '@/types'
+import type { TrendDataPoint, UserCacheHitRateTrendPoint } from '@/types'
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -70,6 +91,7 @@ ChartJS.register(
 )
 
 interface Props {
+  trendData: TrendDataPoint[]
   topUsersTrend: UserCacheHitRateTrendPoint[]
   lowestUsersTrend: UserCacheHitRateTrendPoint[]
   loading: boolean
@@ -97,6 +119,84 @@ const getDisplayName = (email: string, userId: number): string => {
   return `User#${userId}`
 }
 
+// Overall cache hit rate from trendData (token) and user cache stats (request)
+const overallBarData = computed(() => {
+  if (!props.trendData?.length) return null
+
+  // Token hit rate from system-wide trendData
+  let totalInput = 0
+  let totalCreation = 0
+  let totalRead = 0
+  for (const d of props.trendData) {
+    totalInput += d.input_tokens
+    totalCreation += d.cache_creation_tokens
+    totalRead += d.cache_read_tokens
+  }
+  const tokenDenom = totalInput + totalCreation + totalRead
+  const tokenHitRate = tokenDenom > 0 ? +((totalRead / tokenDenom) * 100).toFixed(1) : 0
+
+  // Request hit rate from user cache stats (deduplicated by user_id + date)
+  const allPoints = [...(props.topUsersTrend || []), ...(props.lowestUsersTrend || [])]
+  const seen = new Set<string>()
+  let totalRequests = 0
+  let cacheHitRequests = 0
+  for (const p of allPoints) {
+    const key = `${p.user_id}:${p.date}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    totalRequests += p.total_requests
+    cacheHitRequests += p.cache_hit_requests
+  }
+  const requestHitRate =
+    totalRequests > 0 ? +((cacheHitRequests / totalRequests) * 100).toFixed(1) : 0
+
+  return {
+    labels: [t('admin.dashboard.tokenHitRate'), t('admin.dashboard.requestHitRate')],
+    datasets: [
+      {
+        data: [tokenHitRate, requestHitRate],
+        backgroundColor: ['#3b82f6aa', '#10b981aa'],
+        borderColor: ['#3b82f6', '#10b981'],
+        borderWidth: 1
+      }
+    ]
+  }
+})
+
+const barOptions = computed(() => {
+  const c = colors.value
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y' as const,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx: any) => `${ctx.parsed.x.toFixed(1)}%`
+        }
+      }
+    },
+    scales: {
+      x: {
+        beginAtZero: true,
+        max: 100,
+        grid: { color: c.grid },
+        ticks: {
+          color: c.text,
+          font: { size: 10 },
+          callback: (value: string | number) => `${value}%`
+        }
+      },
+      y: {
+        grid: { display: false },
+        ticks: { color: c.text, font: { size: 11 } }
+      }
+    }
+  }
+})
+
+// Per-user miss rate line charts
 const buildChartData = (trendPoints: UserCacheHitRateTrendPoint[]) => {
   if (!trendPoints?.length) return null
 

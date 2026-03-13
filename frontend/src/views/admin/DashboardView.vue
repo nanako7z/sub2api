@@ -261,6 +261,7 @@
 
           <!-- User Cache Hit Rate Trend -->
           <UserCacheHitRateChart
+            :trend-data="trendData"
             :top-users-trend="cacheStatsTopTrend"
             :lowest-users-trend="cacheStatsLowestTrend"
             :loading="cacheStatsLoading"
