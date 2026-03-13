@@ -1155,6 +1155,7 @@ export interface UserUsageTrendPoint {
   date: string
   user_id: number
   email: string
+  username: string
   requests: number
   tokens: number
   cost: number // 标准计费
@@ -1172,6 +1173,21 @@ export interface UserCacheHitRateTrendPoint {
   cache_hit_requests: number
   token_cache_hit_rate: number
   request_cache_hit_rate: number
+}
+
+export interface UserSpendingRankingItem {
+  user_id: number
+  email: string
+  actual_cost: number
+  requests: number
+  tokens: number
+}
+
+export interface UserSpendingRankingResponse {
+  ranking: UserSpendingRankingItem[]
+  total_actual_cost: number
+  start_date: string
+  end_date: string
 }
 
 export interface ApiKeyUsageTrendPoint {
