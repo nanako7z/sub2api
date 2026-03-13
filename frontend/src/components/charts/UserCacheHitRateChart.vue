@@ -102,10 +102,13 @@ const buildChartData = (trendPoints: UserCacheHitRateTrendPoint[]) => {
     userMap.get(p.user_id)!.data.set(p.date, p)
   }
 
-  const datasets = Array.from(userMap.entries()).map(([userId, info], idx) => {
+  const datasets: any[] = []
+  Array.from(userMap.entries()).forEach(([userId, info], idx) => {
     const color = userColors[idx % userColors.length]
-    return {
-      label: getDisplayName(info.email, userId),
+    const name = getDisplayName(info.email, userId)
+    // Token hit rate - solid line
+    datasets.push({
+      label: `${name} (${t('admin.dashboard.tokenHitRate')})`,
       data: dates.map((d) => {
         const point = info.data.get(d)
         return point ? +(point.token_cache_hit_rate * 100).toFixed(1) : null
@@ -115,8 +118,24 @@ const buildChartData = (trendPoints: UserCacheHitRateTrendPoint[]) => {
       fill: false,
       tension: 0.3,
       pointRadius: 2,
-      borderWidth: 2
-    }
+      borderWidth: 2,
+      borderDash: []
+    })
+    // Request hit rate - dashed line
+    datasets.push({
+      label: `${name} (${t('admin.dashboard.requestHitRate')})`,
+      data: dates.map((d) => {
+        const point = info.data.get(d)
+        return point ? +(point.request_cache_hit_rate * 100).toFixed(1) : null
+      }),
+      borderColor: color,
+      backgroundColor: `${color}20`,
+      fill: false,
+      tension: 0.3,
+      pointRadius: 1,
+      borderWidth: 1.5,
+      borderDash: [4, 3]
+    })
   })
 
   return { labels: dates, datasets }
