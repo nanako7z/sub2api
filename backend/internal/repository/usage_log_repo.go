@@ -1181,7 +1181,7 @@ func (r *usageLogRepository) GetUserCacheHitRateTrendByUsage(ctx context.Context
 		WHERE u.user_id IN (SELECT user_id FROM top_users)
 		  AND u.created_at >= $4 AND u.created_at < $5
 		GROUP BY date, u.user_id, us.email
-		ORDER BY date ASC, input_tokens + cache_creation_tokens + cache_read_tokens DESC
+		ORDER BY date ASC, SUM(u.input_tokens) + SUM(u.cache_creation_tokens) + SUM(u.cache_read_tokens) DESC
 	`, dateFormat)
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime, limit, startTime, endTime)
