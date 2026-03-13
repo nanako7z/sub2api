@@ -26,7 +26,7 @@ func newUsageRecordTestPool(t *testing.T) *service.UsageRecordWorkerPool {
 
 func TestGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
 	pool := newUsageRecordTestPool(t)
-	h := &GatewayHandler{usageRecordWorkerPool: pool}
+	h := &GatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{usageRecordWorkerPool: pool}}
 
 	done := make(chan struct{})
 	h.submitUsageRecordTask(func(ctx context.Context) {
@@ -41,7 +41,7 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
 }
 
 func TestGatewayHandlerSubmitUsageRecordTask_WithoutPoolSyncFallback(t *testing.T) {
-	h := &GatewayHandler{}
+	h := &GatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	var called atomic.Bool
 
 	h.submitUsageRecordTask(func(ctx context.Context) {
@@ -55,14 +55,14 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithoutPoolSyncFallback(t *testing.
 }
 
 func TestGatewayHandlerSubmitUsageRecordTask_NilTask(t *testing.T) {
-	h := &GatewayHandler{}
+	h := &GatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	require.NotPanics(t, func() {
 		h.submitUsageRecordTask(nil)
 	})
 }
 
 func TestGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovered(t *testing.T) {
-	h := &GatewayHandler{}
+	h := &GatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	var called atomic.Bool
 
 	require.NotPanics(t, func() {
@@ -79,7 +79,7 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovered(t *t
 
 func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
 	pool := newUsageRecordTestPool(t)
-	h := &OpenAIGatewayHandler{usageRecordWorkerPool: pool}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{usageRecordWorkerPool: pool}}
 
 	done := make(chan struct{})
 	h.submitUsageRecordTask(func(ctx context.Context) {
@@ -94,7 +94,7 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
 }
 
 func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPoolSyncFallback(t *testing.T) {
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	var called atomic.Bool
 
 	h.submitUsageRecordTask(func(ctx context.Context) {
@@ -108,14 +108,14 @@ func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPoolSyncFallback(t *te
 }
 
 func TestOpenAIGatewayHandlerSubmitUsageRecordTask_NilTask(t *testing.T) {
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	require.NotPanics(t, func() {
 		h.submitUsageRecordTask(nil)
 	})
 }
 
 func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovered(t *testing.T) {
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	var called atomic.Bool
 
 	require.NotPanics(t, func() {

@@ -168,6 +168,7 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 	concurrencyHelper := NewConcurrencyHelper(concurrencySvc, SSEPingFormatClaude, 0)
 
 	h := &GatewayHandler{
+		GatewayErrorHelper:  &GatewayErrorHelper{sseFormat: SSEFormatClaude},
 		gatewayService:      gwSvc,
 		billingCacheService: billingCacheSvc,
 		concurrencyHelper:   concurrencyHelper,

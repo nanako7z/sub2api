@@ -165,10 +165,12 @@ func sleepWithContext(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		return true
 	}
+	t := time.NewTimer(d)
+	defer t.Stop()
 	select {
 	case <-ctx.Done():
 		return false
-	case <-time.After(d):
+	case <-t.C:
 		return true
 	}
 }

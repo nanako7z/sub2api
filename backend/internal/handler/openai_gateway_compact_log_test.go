@@ -122,7 +122,7 @@ func TestLogOpenAIRemoteCompactOutcome_Succeeded(t *testing.T) {
 	c.Header("x-request-id", "rid-compact-ok")
 	c.Status(http.StatusOK)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.logOpenAIRemoteCompactOutcome(c, time.Now().Add(-8*time.Millisecond))
 
 	require.True(t, logSink.ContainsMessageAtLevel("codex.remote_compact.succeeded", "info"))
@@ -145,7 +145,7 @@ func TestLogOpenAIRemoteCompactOutcome_Failed(t *testing.T) {
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.104.0")
 	c.Status(http.StatusBadGateway)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.logOpenAIRemoteCompactOutcome(c, time.Now())
 
 	require.True(t, logSink.ContainsMessageAtLevel("codex.remote_compact.failed", "warn"))
@@ -164,7 +164,7 @@ func TestLogOpenAIRemoteCompactOutcome_NonCompactSkips(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	c.Status(http.StatusOK)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.logOpenAIRemoteCompactOutcome(c, time.Now())
 
 	require.False(t, logSink.ContainsMessageAtLevel("codex.remote_compact.succeeded", "info"))
@@ -182,7 +182,7 @@ func TestOpenAIResponses_CompactUnauthorizedLogsFailed(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.104.0")
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.Responses(c)
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)

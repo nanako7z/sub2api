@@ -80,12 +80,27 @@ type LiteLLMRawEntry struct {
 	OutputCostPerImage                  *float64 `json:"output_cost_per_image"`
 }
 
+// claudeFamilyPatterns Claude模型系列匹配规则（提取为包级变量以便索引构建和查找复用）
+var claudeFamilyPatterns = map[string][]string{
+	"opus-4.6":   {"claude-opus-4.6", "claude-opus-4-6"},
+	"opus-4.5":   {"claude-opus-4.5", "claude-opus-4-5"},
+	"opus-4":     {"claude-opus-4", "claude-3-opus"},
+	"sonnet-4.5": {"claude-sonnet-4.5", "claude-sonnet-4-5"},
+	"sonnet-4":   {"claude-sonnet-4", "claude-3-5-sonnet"},
+	"sonnet-3.5": {"claude-3-5-sonnet", "claude-3.5-sonnet"},
+	"sonnet-3":   {"claude-3-sonnet"},
+	"haiku-3.5":  {"claude-3-5-haiku", "claude-3.5-haiku"},
+	"haiku-3":    {"claude-3-haiku"},
+}
+
 // PricingService 动态价格服务
 type PricingService struct {
 	cfg          *config.Config
 	remoteClient PricingRemoteClient
 	mu           sync.RWMutex
 	pricingData  map[string]*LiteLLMModelPricing
+	baseNameIndex map[string]*LiteLLMModelPricing // extractBaseName(key) → pricing
+	familyIndex   map[string]*LiteLLMModelPricing // family key → pricing
 	lastUpdated  time.Time
 	localHash    string
 
@@ -288,9 +303,14 @@ func (s *PricingService) downloadPricingData() error {
 		logger.LegacyPrintf("service.pricing", "[Pricing] Failed to save hash: %v", err)
 	}
 
-	// 更新内存数据
+	// 锁外构建索引
+	baseNameIdx, familyIdx := s.buildLookupIndex(data)
+
+	// 更新内存数据（锁内原子替换三个字段）
 	s.mu.Lock()
 	s.pricingData = data
+	s.baseNameIndex = baseNameIdx
+	s.familyIndex = familyIdx
 	s.lastUpdated = time.Now()
 	s.localHash = hashStr
 	s.mu.Unlock()
@@ -394,8 +414,13 @@ func (s *PricingService) loadPricingData(filePath string) error {
 	hash := sha256.Sum256(data)
 	hashStr := hex.EncodeToString(hash[:])
 
+	// 锁外构建索引
+	baseNameIdx, familyIdx := s.buildLookupIndex(pricingData)
+
 	s.mu.Lock()
 	s.pricingData = pricingData
+	s.baseNameIndex = baseNameIdx
+	s.familyIndex = familyIdx
 	s.localHash = hashStr
 
 	info, _ := os.Stat(filePath)
@@ -480,51 +505,127 @@ func (s *PricingService) computeFileHash(filePath string) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-// GetModelPricing 获取模型价格（带模糊匹配）
-func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// buildLookupIndex 遍历 pricingData 一次，构建 baseNameIndex 和 familyIndex。
+// 在写锁外调用，返回的两个 map 随后在锁内与 pricingData 一起原子替换。
+func (s *PricingService) buildLookupIndex(data map[string]*LiteLLMModelPricing) (
+	baseNameIdx map[string]*LiteLLMModelPricing,
+	familyIdx map[string]*LiteLLMModelPricing,
+) {
+	baseNameIdx = make(map[string]*LiteLLMModelPricing, len(data))
+	familyIdx = make(map[string]*LiteLLMModelPricing)
 
+	for key, pricing := range data {
+		keyLower := strings.ToLower(key)
+
+		// baseName 索引（先到先得）
+		bn := s.extractBaseName(keyLower)
+		if _, exists := baseNameIdx[bn]; !exists {
+			baseNameIdx[bn] = pricing
+		}
+
+		// family 索引（先到先得）
+		for family, patterns := range claudeFamilyPatterns {
+			if _, exists := familyIdx[family]; exists {
+				continue
+			}
+			for _, pattern := range patterns {
+				if strings.Contains(keyLower, pattern) {
+					familyIdx[family] = pricing
+					break
+				}
+			}
+		}
+	}
+	return baseNameIdx, familyIdx
+}
+
+// resolveModelFamily 根据模型名称返回其所属的 Claude 模型系列 key，不访问 pricingData。
+func resolveModelFamily(model string) string {
+	// 先用 familyPatterns 精确匹配
+	for family, patterns := range claudeFamilyPatterns {
+		for _, pattern := range patterns {
+			if strings.Contains(model, pattern) || strings.Contains(model, strings.ReplaceAll(pattern, "-", "")) {
+				return family
+			}
+		}
+	}
+
+	// 简单的关键词回退匹配
+	if strings.Contains(model, "opus") {
+		if strings.Contains(model, "4.5") || strings.Contains(model, "4-5") {
+			return "opus-4.5"
+		}
+		return "opus-4"
+	}
+	if strings.Contains(model, "sonnet") {
+		if strings.Contains(model, "4.5") || strings.Contains(model, "4-5") {
+			return "sonnet-4.5"
+		}
+		if strings.Contains(model, "3-5") || strings.Contains(model, "3.5") {
+			return "sonnet-3.5"
+		}
+		return "sonnet-4"
+	}
+	if strings.Contains(model, "haiku") {
+		if strings.Contains(model, "3-5") || strings.Contains(model, "3.5") {
+			return "haiku-3.5"
+		}
+		return "haiku-3"
+	}
+	return ""
+}
+
+// GetModelPricing 获取模型价格（带模糊匹配）
+// 锁内只做 map lookup，无循环和字符串操作。
+func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing {
 	if modelName == "" {
 		return nil
 	}
 
-	// 标准化模型名称（同时兼容 "models/xxx"、VertexAI 资源名等前缀）
+	// 锁外：准备 candidates 和查找 key
 	modelLower := strings.ToLower(strings.TrimSpace(modelName))
 	lookupCandidates := s.buildModelLookupCandidates(modelLower)
 
+	// 预计算变体 key（锁外完成字符串操作）
+	var variantCandidates []string
+	for _, candidate := range lookupCandidates {
+		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
+		if normalized != candidate {
+			variantCandidates = append(variantCandidates, normalized)
+		}
+	}
+
+	baseName := s.extractBaseName(lookupCandidates[0])
+	familyKey := resolveModelFamily(lookupCandidates[0])
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	// 1. 精确匹配
 	for _, candidate := range lookupCandidates {
-		if candidate == "" {
-			continue
-		}
 		if pricing, ok := s.pricingData[candidate]; ok {
 			return pricing
 		}
 	}
 
-	// 2. 处理常见的模型名称变体
-	// claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
-	for _, candidate := range lookupCandidates {
-		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
-		if pricing, ok := s.pricingData[normalized]; ok {
+	// 2. 变体匹配 (e.g. -4-5- → -4.5-)
+	for _, variant := range variantCandidates {
+		if pricing, ok := s.pricingData[variant]; ok {
 			return pricing
 		}
 	}
 
-	// 3. 尝试模糊匹配（去掉版本号后缀）
-	// claude-opus-4-5-20251101 -> claude-opus-4.5
-	baseName := s.extractBaseName(lookupCandidates[0])
-	for key, pricing := range s.pricingData {
-		keyBase := s.extractBaseName(strings.ToLower(key))
-		if keyBase == baseName {
-			return pricing
-		}
-	}
-
-	// 4. 基于模型系列匹配（Claude）
-	if pricing := s.matchByModelFamily(lookupCandidates[0]); pricing != nil {
+	// 3. baseName 索引 lookup（替代原 O(n) 遍历）
+	if pricing, ok := s.baseNameIndex[baseName]; ok {
 		return pricing
+	}
+
+	// 4. family 索引 lookup（替代原 O(n) matchByModelFamily）
+	if familyKey != "" {
+		if pricing, ok := s.familyIndex[familyKey]; ok {
+			logger.LegacyPrintf("service.pricing", "[Pricing] Fuzzy matched %s -> family %s", modelLower, familyKey)
+			return pricing
+		}
 	}
 
 	// 5. OpenAI 模型回退策略
@@ -611,79 +712,6 @@ func (s *PricingService) extractBaseName(model string) string {
 		result = append(result, part)
 	}
 	return strings.Join(result, "-")
-}
-
-// matchByModelFamily 基于模型系列匹配
-func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
-	// Claude模型系列匹配规则
-	familyPatterns := map[string][]string{
-		"opus-4.6":   {"claude-opus-4.6", "claude-opus-4-6"},
-		"opus-4.5":   {"claude-opus-4.5", "claude-opus-4-5"},
-		"opus-4":     {"claude-opus-4", "claude-3-opus"},
-		"sonnet-4.5": {"claude-sonnet-4.5", "claude-sonnet-4-5"},
-		"sonnet-4":   {"claude-sonnet-4", "claude-3-5-sonnet"},
-		"sonnet-3.5": {"claude-3-5-sonnet", "claude-3.5-sonnet"},
-		"sonnet-3":   {"claude-3-sonnet"},
-		"haiku-3.5":  {"claude-3-5-haiku", "claude-3.5-haiku"},
-		"haiku-3":    {"claude-3-haiku"},
-	}
-
-	// 确定模型属于哪个系列
-	var matchedFamily string
-	for family, patterns := range familyPatterns {
-		for _, pattern := range patterns {
-			if strings.Contains(model, pattern) || strings.Contains(model, strings.ReplaceAll(pattern, "-", "")) {
-				matchedFamily = family
-				break
-			}
-		}
-		if matchedFamily != "" {
-			break
-		}
-	}
-
-	if matchedFamily == "" {
-		// 简单的系列匹配
-		if strings.Contains(model, "opus") {
-			if strings.Contains(model, "4.5") || strings.Contains(model, "4-5") {
-				matchedFamily = "opus-4.5"
-			} else {
-				matchedFamily = "opus-4"
-			}
-		} else if strings.Contains(model, "sonnet") {
-			if strings.Contains(model, "4.5") || strings.Contains(model, "4-5") {
-				matchedFamily = "sonnet-4.5"
-			} else if strings.Contains(model, "3-5") || strings.Contains(model, "3.5") {
-				matchedFamily = "sonnet-3.5"
-			} else {
-				matchedFamily = "sonnet-4"
-			}
-		} else if strings.Contains(model, "haiku") {
-			if strings.Contains(model, "3-5") || strings.Contains(model, "3.5") {
-				matchedFamily = "haiku-3.5"
-			} else {
-				matchedFamily = "haiku-3"
-			}
-		}
-	}
-
-	if matchedFamily == "" {
-		return nil
-	}
-
-	// 在价格数据中查找该系列的模型
-	patterns := familyPatterns[matchedFamily]
-	for _, pattern := range patterns {
-		for key, pricing := range s.pricingData {
-			keyLower := strings.ToLower(key)
-			if strings.Contains(keyLower, pattern) {
-				logger.LegacyPrintf("service.pricing", "[Pricing] Fuzzy matched %s -> %s", model, key)
-				return pricing
-			}
-		}
-	}
-
-	return nil
 }
 
 // matchOpenAIModel OpenAI 模型回退匹配策略

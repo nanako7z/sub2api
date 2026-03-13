@@ -61,7 +61,7 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 			c, _ := gin.CreateTestContext(w)
 			c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
-			h := &OpenAIGatewayHandler{}
+			h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 			h.handleStreamingAwareError(c, http.StatusBadGateway, tt.errType, tt.message, true)
 
 			body := w.Body.String()
@@ -97,7 +97,7 @@ func TestOpenAIHandleStreamingAwareError_NonStreaming(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "test error", false)
 
 	// 非流式应返回 JSON 响应
@@ -139,7 +139,7 @@ func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testin
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	wrote := h.ensureForwardErrorResponse(c, false)
 
 	require.True(t, wrote)
@@ -161,7 +161,7 @@ func TestOpenAIEnsureForwardErrorResponse_DoesNotOverrideWrittenResponse(t *test
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	c.String(http.StatusTeapot, "already written")
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	wrote := h.ensureForwardErrorResponse(c, false)
 
 	require.False(t, wrote)
@@ -206,7 +206,7 @@ func TestOpenAIRecoverResponsesPanic_WritesFallbackResponse(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	streamStarted := false
 	require.NotPanics(t, func() {
 		func() {
@@ -234,7 +234,7 @@ func TestOpenAIRecoverResponsesPanic_NoPanicNoWrite(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	streamStarted := false
 	require.NotPanics(t, func() {
 		func() {
@@ -254,7 +254,7 @@ func TestOpenAIRecoverResponsesPanic_DoesNotOverrideWrittenResponse(t *testing.T
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	c.String(http.StatusTeapot, "already written")
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	streamStarted := false
 	require.NotPanics(t, func() {
 		func() {
@@ -274,7 +274,7 @@ func TestOpenAIMissingResponsesDependencies(t *testing.T) {
 	})
 
 	t.Run("all_dependencies_missing", func(t *testing.T) {
-		h := &OpenAIGatewayHandler{}
+		h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 		require.Equal(t,
 			[]string{"gatewayService", "billingCacheService", "apiKeyService", "concurrencyHelper"},
 			h.missingResponsesDependencies(),
@@ -283,6 +283,7 @@ func TestOpenAIMissingResponsesDependencies(t *testing.T) {
 
 	t.Run("all_dependencies_present", func(t *testing.T) {
 		h := &OpenAIGatewayHandler{
+			GatewayErrorHelper:  &GatewayErrorHelper{sseFormat: SSEFormatOpenAI},
 			gatewayService:      &service.OpenAIGatewayService{},
 			billingCacheService: &service.BillingCacheService{},
 			apiKeyService:       &service.APIKeyService{},
@@ -301,7 +302,7 @@ func TestOpenAIEnsureResponsesDependencies(t *testing.T) {
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
-		h := &OpenAIGatewayHandler{}
+		h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 		ok := h.ensureResponsesDependencies(c, nil)
 
 		require.False(t, ok)
@@ -322,7 +323,7 @@ func TestOpenAIEnsureResponsesDependencies(t *testing.T) {
 		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 		c.String(http.StatusTeapot, "already written")
 
-		h := &OpenAIGatewayHandler{}
+		h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 		ok := h.ensureResponsesDependencies(c, nil)
 
 		require.False(t, ok)
@@ -337,6 +338,7 @@ func TestOpenAIEnsureResponsesDependencies(t *testing.T) {
 		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
 		h := &OpenAIGatewayHandler{
+			GatewayErrorHelper:  &GatewayErrorHelper{sseFormat: SSEFormatOpenAI},
 			gatewayService:      &service.OpenAIGatewayService{},
 			billingCacheService: &service.BillingCacheService{},
 			apiKeyService:       &service.APIKeyService{},
@@ -371,7 +373,7 @@ func TestOpenAIResponses_MissingDependencies_ReturnsServiceUnavailable(t *testin
 	})
 
 	// 故意使用未初始化依赖，验证快速失败而不是崩溃。
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	require.NotPanics(t, func() {
 		h.Responses(c)
 	})
@@ -396,7 +398,7 @@ func TestOpenAIResponses_SetsClientTransportHTTP(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(`{"model":"gpt-5"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.Responses(c)
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
@@ -440,7 +442,7 @@ func TestOpenAIResponsesWebSocket_SetsClientTransportWSWhenUpgradeValid(t *testi
 	c.Request.Header.Set("Upgrade", "websocket")
 	c.Request.Header.Set("Connection", "Upgrade")
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.ResponsesWebSocket(c)
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
@@ -454,7 +456,7 @@ func TestOpenAIResponsesWebSocket_InvalidUpgradeDoesNotSetTransport(t *testing.T
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/openai/v1/responses", nil)
 
-	h := &OpenAIGatewayHandler{}
+	h := &OpenAIGatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{sseFormat: SSEFormatOpenAI}}
 	h.ResponsesWebSocket(c)
 
 	require.Equal(t, http.StatusUpgradeRequired, w.Code)
@@ -651,6 +653,7 @@ func newOpenAIHandlerForPreviousResponseIDValidation(t *testing.T, cache *concur
 		}
 	}
 	return &OpenAIGatewayHandler{
+		GatewayErrorHelper:  &GatewayErrorHelper{sseFormat: SSEFormatOpenAI},
 		gatewayService:      &service.OpenAIGatewayService{},
 		billingCacheService: &service.BillingCacheService{},
 		apiKeyService:       &service.APIKeyService{},

@@ -4040,3 +4040,49 @@ func (s *OpenAIGatewayService) clearOpenAIWSFallbackCooling(accountID int64) {
 	}
 	s.openaiWSFallbackUntil.Delete(accountID)
 }
+
+// cleanExpiredWSFallbackEntries 清除 openaiWSFallbackUntil 中已过期的条目。
+func (s *OpenAIGatewayService) cleanExpiredWSFallbackEntries() {
+	now := time.Now()
+	s.openaiWSFallbackUntil.Range(func(key, value any) bool {
+		until, ok := value.(time.Time)
+		if !ok || !now.Before(until) {
+			s.openaiWSFallbackUntil.Delete(key)
+		}
+		return true
+	})
+}
+
+// startWSFallbackCleaner 启动后台 goroutine 定期清理过期的 WS fallback 条目。
+func (s *OpenAIGatewayService) startWSFallbackCleaner() {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.cleanExpiredWSFallbackEntries()
+			case <-s.stopCh:
+				return
+			}
+		}
+	}()
+}
+
+// Start 是保留的空操作方法，兼容服务统一 Start/Stop 接口。
+// 后台任务（WSFallbackCleaner 等）已在 NewOpenAIGatewayService 构造时自动启动，
+// 无需外部再次调用；重复调用会启动额外 goroutine，因此此处不再执行任何操作。
+func (s *OpenAIGatewayService) Start() {}
+
+// Stop 停止 OpenAIGatewayService 的后台任务并等待完成。
+func (s *OpenAIGatewayService) Stop() {
+	if s == nil {
+		return
+	}
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
+	s.wg.Wait()
+}

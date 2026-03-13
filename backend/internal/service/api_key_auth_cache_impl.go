@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/dgraph-io/ristretto"
+	"go.uber.org/zap"
 )
 
 type apiKeyAuthCacheConfig struct {
@@ -155,9 +157,19 @@ func (s *APIKeyService) deleteAuthCache(ctx context.Context, cacheKey string) {
 	if s.cache == nil {
 		return
 	}
-	_ = s.cache.DeleteAuthCache(ctx, cacheKey)
+	if err := s.cache.DeleteAuthCache(ctx, cacheKey); err != nil {
+		logger.L().Warn("service.auth_cache_invalidate: DeleteAuthCache failed",
+			zap.String("cache_key", cacheKey),
+			zap.Error(err),
+		)
+	}
 	// Publish invalidation message to other instances
-	_ = s.cache.PublishAuthCacheInvalidation(ctx, cacheKey)
+	if err := s.cache.PublishAuthCacheInvalidation(ctx, cacheKey); err != nil {
+		logger.L().Warn("service.auth_cache_invalidate: PublishAuthCacheInvalidation failed",
+			zap.String("cache_key", cacheKey),
+			zap.Error(err),
+		)
+	}
 }
 
 func (s *APIKeyService) loadAuthCacheEntry(ctx context.Context, key, cacheKey string) (*APIKeyAuthCacheEntry, error) {

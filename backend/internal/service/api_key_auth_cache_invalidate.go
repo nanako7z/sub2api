@@ -1,6 +1,11 @@
 package service
 
-import "context"
+import (
+	"context"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"go.uber.org/zap"
+)
 
 // InvalidateAuthCacheByKey 清除指定 API Key 的认证缓存
 func (s *APIKeyService) InvalidateAuthCacheByKey(ctx context.Context, key string) {
@@ -18,6 +23,10 @@ func (s *APIKeyService) InvalidateAuthCacheByUserID(ctx context.Context, userID 
 	}
 	keys, err := s.apiKeyRepo.ListKeysByUserID(ctx, userID)
 	if err != nil {
+		logger.L().Warn("service.auth_cache_invalidate: ListKeysByUserID failed",
+			zap.Int64("user_id", userID),
+			zap.Error(err),
+		)
 		return
 	}
 	s.deleteAuthCacheByKeys(ctx, keys)
@@ -30,6 +39,10 @@ func (s *APIKeyService) InvalidateAuthCacheByGroupID(ctx context.Context, groupI
 	}
 	keys, err := s.apiKeyRepo.ListKeysByGroupID(ctx, groupID)
 	if err != nil {
+		logger.L().Warn("service.auth_cache_invalidate: ListKeysByGroupID failed",
+			zap.Int64("group_id", groupID),
+			zap.Error(err),
+		)
 		return
 	}
 	s.deleteAuthCacheByKeys(ctx, keys)
