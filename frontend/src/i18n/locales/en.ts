@@ -964,10 +964,10 @@ export default {
       noDataAvailable: 'No data available',
       recentUsage: 'Recent Usage',
       failedToLoad: 'Failed to load dashboard statistics',
-      topUsersByUsage: 'Cache Hit Rate - Top Token Usage Users',
-      lowestCacheHitRate: 'Cache Hit Rate - Lowest Token Hit Rate Users',
-      tokenHitRate: 'Token Hit Rate',
-      requestHitRate: 'Request Hit Rate'
+      topUsersByUsage: 'Cache Miss Rate - Top Token Usage Users',
+      lowestCacheHitRate: 'Cache Miss Rate - Lowest Token Hit Rate Users',
+      tokenMissRate: 'Token Miss Rate',
+      requestMissRate: 'Request Miss Rate'
     },
 
     dataManagement: {
