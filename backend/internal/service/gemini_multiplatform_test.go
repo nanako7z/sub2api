@@ -288,6 +288,16 @@ func (m *mockGatewayCacheForGemini) DeleteSessionAccountID(ctx context.Context, 
 	return nil
 }
 
+func (m *mockGatewayCacheForGemini) AddStickySessionReverse(_ context.Context, _ int64, _ int64, _ string, _ time.Duration) error {
+	return nil
+}
+func (m *mockGatewayCacheForGemini) RemoveStickySessionReverse(_ context.Context, _ int64, _ int64, _ string) error {
+	return nil
+}
+func (m *mockGatewayCacheForGemini) GetStickySessionCounts(_ context.Context, _ []int64) (map[int64]int, error) {
+	return nil, nil
+}
+
 // TestGeminiMessagesCompatService_SelectAccountForModelWithExclusions_GeminiPlatform 测试 Gemini 单平台选择
 func TestGeminiMessagesCompatService_SelectAccountForModelWithExclusions_GeminiPlatform(t *testing.T) {
 	ctx := context.Background()

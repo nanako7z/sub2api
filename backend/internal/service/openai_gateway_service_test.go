@@ -282,6 +282,16 @@ func (c *stubGatewayCache) DeleteSessionAccountID(ctx context.Context, groupID i
 	return nil
 }
 
+func (c *stubGatewayCache) AddStickySessionReverse(_ context.Context, _ int64, _ int64, _ string, _ time.Duration) error {
+	return nil
+}
+func (c *stubGatewayCache) RemoveStickySessionReverse(_ context.Context, _ int64, _ int64, _ string) error {
+	return nil
+}
+func (c *stubGatewayCache) GetStickySessionCounts(_ context.Context, _ []int64) (map[int64]int, error) {
+	return nil, nil
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulable(t *testing.T) {
 	now := time.Now()
 	resetAt := now.Add(10 * time.Minute)

@@ -193,6 +193,16 @@ func (c *openAIWSStateStoreTimeoutProbeCache) DeleteSessionAccountID(ctx context
 	return nil
 }
 
+func (c *openAIWSStateStoreTimeoutProbeCache) AddStickySessionReverse(_ context.Context, _ int64, _ int64, _ string, _ time.Duration) error {
+	return nil
+}
+func (c *openAIWSStateStoreTimeoutProbeCache) RemoveStickySessionReverse(_ context.Context, _ int64, _ int64, _ string) error {
+	return nil
+}
+func (c *openAIWSStateStoreTimeoutProbeCache) GetStickySessionCounts(_ context.Context, _ []int64) (map[int64]int, error) {
+	return nil, nil
+}
+
 func TestOpenAIWSStateStore_RedisOpsUseShortTimeout(t *testing.T) {
 	probe := &openAIWSStateStoreTimeoutProbeCache{}
 	store := NewOpenAIWSStateStore(probe)

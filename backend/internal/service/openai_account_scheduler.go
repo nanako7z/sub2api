@@ -316,24 +316,24 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 
 	account, err := s.service.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash, accountID)
 		return nil, nil
 	}
 	if shouldClearStickySession(account, req.RequestedModel) || !account.IsOpenAI() || !account.IsSchedulable() {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash, accountID)
 		return nil, nil
 	}
 	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
 		return nil, nil
 	}
 	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash, accountID)
 		return nil, nil
 	}
 
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 	if acquireErr == nil && result.Acquired {
-		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
+		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, accountID, s.service.openAIWSSessionStickyTTL())
 		return &AccountSelectionResult{
 			Account:     account,
 			Acquired:    true,
@@ -605,8 +605,21 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 	}
 
+	// 查询每个候选账号的粘性会话绑定数
+	stickyCountMap := map[int64]int{}
+	if s.service.cache != nil {
+		accountIDs := make([]int64, len(filtered))
+		for i, acc := range filtered {
+			accountIDs[i] = acc.ID
+		}
+		if counts, err := s.service.cache.GetStickySessionCounts(ctx, accountIDs); err == nil {
+			stickyCountMap = counts
+		}
+	}
+
 	minPriority, maxPriority := filtered[0].Priority, filtered[0].Priority
 	maxWaiting := 1
+	maxStickyCount := 1
 	loadRateSum := 0.0
 	loadRateSumSquares := 0.0
 	minTTFT, maxTTFT := 0.0, 0.0
@@ -617,6 +630,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if loadInfo == nil {
 			loadInfo = &AccountLoadInfo{AccountID: account.ID}
 		}
+		loadInfo.StickySessionCount = stickyCountMap[account.ID]
 		if account.Priority < minPriority {
 			minPriority = account.Priority
 		}
@@ -625,6 +639,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 		if loadInfo.WaitingCount > maxWaiting {
 			maxWaiting = loadInfo.WaitingCount
+		}
+		if loadInfo.StickySessionCount > maxStickyCount {
+			maxStickyCount = loadInfo.StickySessionCount
 		}
 		errorRate, ttft, hasTTFT := s.stats.snapshot(account.ID)
 		if hasTTFT && ttft > 0 {
@@ -667,12 +684,14 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if item.hasTTFT && hasTTFTSample && maxTTFT > minTTFT {
 			ttftFactor = 1 - clamp01((item.ttft-minTTFT)/(maxTTFT-minTTFT))
 		}
+		sessionFactor := 1 - clamp01(float64(item.loadInfo.StickySessionCount)/float64(maxStickyCount))
 
 		item.score = weights.Priority*priorityFactor +
 			weights.Load*loadFactor +
 			weights.Queue*queueFactor +
 			weights.ErrorRate*errorFactor +
-			weights.TTFT*ttftFactor
+			weights.TTFT*ttftFactor +
+			weights.SessionAffinity*sessionFactor
 	}
 
 	topK := s.service.openAIWSLBTopK()
@@ -874,28 +893,31 @@ func (s *OpenAIGatewayService) openAIWSLBTopK() int {
 func (s *OpenAIGatewayService) openAIWSSchedulerWeights() GatewayOpenAIWSSchedulerScoreWeightsView {
 	if s != nil && s.cfg != nil {
 		return GatewayOpenAIWSSchedulerScoreWeightsView{
-			Priority:  s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority,
-			Load:      s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load,
-			Queue:     s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue,
-			ErrorRate: s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate,
-			TTFT:      s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT,
+			Priority:        s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority,
+			Load:            s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load,
+			Queue:           s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue,
+			ErrorRate:       s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate,
+			TTFT:            s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT,
+			SessionAffinity: s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.SessionAffinity,
 		}
 	}
 	return GatewayOpenAIWSSchedulerScoreWeightsView{
-		Priority:  1.0,
-		Load:      1.0,
-		Queue:     0.7,
-		ErrorRate: 0.8,
-		TTFT:      0.5,
+		Priority:        1.0,
+		Load:            1.0,
+		Queue:           0.7,
+		ErrorRate:       0.8,
+		TTFT:            0.5,
+		SessionAffinity: 0.6,
 	}
 }
 
 type GatewayOpenAIWSSchedulerScoreWeightsView struct {
-	Priority  float64
-	Load      float64
-	Queue     float64
-	ErrorRate float64
-	TTFT      float64
+	Priority        float64
+	Load            float64
+	Queue           float64
+	ErrorRate       float64
+	TTFT            float64
+	SessionAffinity float64
 }
 
 func clamp01(value float64) float64 {

@@ -410,6 +410,13 @@ type GatewayCache interface {
 	// DeleteSessionAccountID 删除粘性会话绑定，用于账号不可用时主动清理
 	// Delete sticky session binding, used to proactively clean up when account becomes unavailable
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
+
+	// AddStickySessionReverse 在反向索引中记录账号绑定的会话
+	AddStickySessionReverse(ctx context.Context, accountID int64, groupID int64, sessionHash string, ttl time.Duration) error
+	// RemoveStickySessionReverse 从反向索引中删除会话绑定
+	RemoveStickySessionReverse(ctx context.Context, accountID int64, groupID int64, sessionHash string) error
+	// GetStickySessionCounts 批量查询每个账号的活跃粘性会话数
+	GetStickySessionCounts(ctx context.Context, accountIDs []int64) (map[int64]int, error)
 }
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil

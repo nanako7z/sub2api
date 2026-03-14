@@ -235,6 +235,16 @@ func (m *mockGatewayCacheForPlatform) DeleteSessionAccountID(ctx context.Context
 	return nil
 }
 
+func (m *mockGatewayCacheForPlatform) AddStickySessionReverse(_ context.Context, _ int64, _ int64, _ string, _ time.Duration) error {
+	return nil
+}
+func (m *mockGatewayCacheForPlatform) RemoveStickySessionReverse(_ context.Context, _ int64, _ int64, _ string) error {
+	return nil
+}
+func (m *mockGatewayCacheForPlatform) GetStickySessionCounts(_ context.Context, _ []int64) (map[int64]int, error) {
+	return nil, nil
+}
+
 type mockGroupRepoForGateway struct {
 	groups           map[int64]*Group
 	getByIDCalls     int

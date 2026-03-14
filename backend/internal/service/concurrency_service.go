@@ -110,10 +110,11 @@ type UserWithConcurrency struct {
 }
 
 type AccountLoadInfo struct {
-	AccountID          int64
-	CurrentConcurrency int
-	WaitingCount       int
-	LoadRate           int // 0-100+ (percent)
+	AccountID           int64
+	CurrentConcurrency  int
+	WaitingCount        int
+	LoadRate            int // 0-100+ (percent)
+	StickySessionCount  int // 绑定的活跃粘性会话数
 }
 
 type UserLoadInfo struct {

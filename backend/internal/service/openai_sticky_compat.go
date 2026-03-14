@@ -160,9 +160,12 @@ func (s *OpenAIGatewayService) setStickySessionAccountID(ctx context.Context, gr
 		return nil
 	}
 
-	if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), primaryKey, accountID, ttl); err != nil {
+	gid := derefGroupID(groupID)
+	if err := s.cache.SetSessionAccountID(ctx, gid, primaryKey, accountID, ttl); err != nil {
 		return err
 	}
+	// 维护反向索引：accountID → sessions
+	_ = s.cache.AddStickySessionReverse(ctx, accountID, gid, primaryKey, ttl)
 
 	if !s.openAISessionHashDualWriteOldEnabled() {
 		return nil
@@ -171,14 +174,14 @@ func (s *OpenAIGatewayService) setStickySessionAccountID(ctx context.Context, gr
 	if legacyKey == "" {
 		return nil
 	}
-	if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), legacyKey, accountID, s.openAIStickyLegacyTTL(ttl)); err != nil {
+	if err := s.cache.SetSessionAccountID(ctx, gid, legacyKey, accountID, s.openAIStickyLegacyTTL(ttl)); err != nil {
 		return err
 	}
 	openAIStickyLegacyDualWriteTotal.Add(1)
 	return nil
 }
 
-func (s *OpenAIGatewayService) refreshStickySessionTTL(ctx context.Context, groupID *int64, sessionHash string, ttl time.Duration) error {
+func (s *OpenAIGatewayService) refreshStickySessionTTL(ctx context.Context, groupID *int64, sessionHash string, accountID int64, ttl time.Duration) error {
 	if s == nil || s.cache == nil {
 		return nil
 	}
@@ -187,19 +190,25 @@ func (s *OpenAIGatewayService) refreshStickySessionTTL(ctx context.Context, grou
 		return nil
 	}
 
-	err := s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), primaryKey, ttl)
+	gid := derefGroupID(groupID)
+	err := s.cache.RefreshSessionTTL(ctx, gid, primaryKey, ttl)
+	// 同步更新反向索引的过期时间
+	if accountID > 0 {
+		_ = s.cache.AddStickySessionReverse(ctx, accountID, gid, primaryKey, ttl)
+	}
+
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {
 		return err
 	}
 
 	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
 	if legacyKey != "" {
-		_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), legacyKey, s.openAIStickyLegacyTTL(ttl))
+		_ = s.cache.RefreshSessionTTL(ctx, gid, legacyKey, s.openAIStickyLegacyTTL(ttl))
 	}
 	return err
 }
 
-func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string) error {
+func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
 	if s == nil || s.cache == nil {
 		return nil
 	}
@@ -208,14 +217,20 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context,
 		return nil
 	}
 
-	err := s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), primaryKey)
+	gid := derefGroupID(groupID)
+	err := s.cache.DeleteSessionAccountID(ctx, gid, primaryKey)
+	// 从反向索引中移除
+	if accountID > 0 {
+		_ = s.cache.RemoveStickySessionReverse(ctx, accountID, gid, primaryKey)
+	}
+
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {
 		return err
 	}
 
 	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
 	if legacyKey != "" {
-		_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), legacyKey)
+		_ = s.cache.DeleteSessionAccountID(ctx, gid, legacyKey)
 	}
 	return err
 }

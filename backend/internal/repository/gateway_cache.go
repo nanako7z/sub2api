@@ -3,13 +3,17 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 
-const stickySessionPrefix = "sticky_session:"
+const (
+	stickySessionPrefix        = "sticky_session:"
+	stickyReversePrefix        = "sticky_reverse:"
+)
 
 type gatewayCache struct {
 	rdb *redis.Client
@@ -50,4 +54,63 @@ func (c *gatewayCache) RefreshSessionTTL(ctx context.Context, groupID int64, ses
 func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error {
 	key := buildSessionKey(groupID, sessionHash)
 	return c.rdb.Del(ctx, key).Err()
+}
+
+func buildStickyReverseKey(accountID int64) string {
+	return stickyReversePrefix + strconv.FormatInt(accountID, 10)
+}
+
+func buildStickyReverseMember(groupID int64, sessionHash string) string {
+	return fmt.Sprintf("%d:%s", groupID, sessionHash)
+}
+
+// AddStickySessionReverse 在反向索引中记录账号绑定的会话。
+// 使用 Sorted Set，score 为过期时间戳，支持自清理。
+func (c *gatewayCache) AddStickySessionReverse(ctx context.Context, accountID int64, groupID int64, sessionHash string, ttl time.Duration) error {
+	key := buildStickyReverseKey(accountID)
+	member := buildStickyReverseMember(groupID, sessionHash)
+	expireAt := float64(time.Now().Add(ttl).Unix())
+	return c.rdb.ZAdd(ctx, key, redis.Z{Score: expireAt, Member: member}).Err()
+}
+
+// RemoveStickySessionReverse 从反向索引中删除会话绑定。
+func (c *gatewayCache) RemoveStickySessionReverse(ctx context.Context, accountID int64, groupID int64, sessionHash string) error {
+	key := buildStickyReverseKey(accountID)
+	member := buildStickyReverseMember(groupID, sessionHash)
+	return c.rdb.ZRem(ctx, key, member).Err()
+}
+
+// GetStickySessionCounts 批量查询每个账号的活跃粘性会话数。
+// 先清理过期条目（score < now），再 ZCARD 计数。
+func (c *gatewayCache) GetStickySessionCounts(ctx context.Context, accountIDs []int64) (map[int64]int, error) {
+	if len(accountIDs) == 0 {
+		return map[int64]int{}, nil
+	}
+
+	nowStr := strconv.FormatInt(time.Now().Unix(), 10)
+	pipe := c.rdb.Pipeline()
+
+	type acCmd struct {
+		id       int64
+		zcardCmd *redis.IntCmd
+	}
+	cmds := make([]acCmd, 0, len(accountIDs))
+	for _, id := range accountIDs {
+		key := buildStickyReverseKey(id)
+		pipe.ZRemRangeByScore(ctx, key, "-inf", nowStr)
+		cmds = append(cmds, acCmd{
+			id:       id,
+			zcardCmd: pipe.ZCard(ctx, key),
+		})
+	}
+
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		return nil, fmt.Errorf("sticky reverse pipeline: %w", err)
+	}
+
+	result := make(map[int64]int, len(accountIDs))
+	for _, ac := range cmds {
+		result[ac.id] = int(ac.zcardCmd.Val())
+	}
+	return result, nil
 }

@@ -51,6 +51,16 @@ func (m *mockCache) DeleteSessionAccountID(_ context.Context, _ int64, _ string)
 	return nil
 }
 
+func (m *mockCache) AddStickySessionReverse(_ context.Context, _ int64, _ int64, _ string, _ time.Duration) error {
+	return nil
+}
+func (m *mockCache) RemoveStickySessionReverse(_ context.Context, _ int64, _ int64, _ string) error {
+	return nil
+}
+func (m *mockCache) GetStickySessionCounts(_ context.Context, _ []int64) (map[int64]int, error) {
+	return nil, nil
+}
+
 // buildSvcWithCache 构建一个带 mockCache 的最小 GatewayService。
 func buildSvcWithCache(cache *mockCache) *GatewayService {
 	return &GatewayService{cache: cache}

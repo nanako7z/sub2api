@@ -599,11 +599,12 @@ type GatewayOpenAIWSConfig struct {
 
 // GatewayOpenAIWSSchedulerScoreWeights 账号调度打分权重。
 type GatewayOpenAIWSSchedulerScoreWeights struct {
-	Priority  float64 `mapstructure:"priority"`
-	Load      float64 `mapstructure:"load"`
-	Queue     float64 `mapstructure:"queue"`
-	ErrorRate float64 `mapstructure:"error_rate"`
-	TTFT      float64 `mapstructure:"ttft"`
+	Priority        float64 `mapstructure:"priority"`
+	Load            float64 `mapstructure:"load"`
+	Queue           float64 `mapstructure:"queue"`
+	ErrorRate       float64 `mapstructure:"error_rate"`
+	TTFT            float64 `mapstructure:"ttft"`
+	SessionAffinity float64 `mapstructure:"session_affinity"`
 }
 
 // GatewayUsageRecordConfig 使用量记录异步队列配置
