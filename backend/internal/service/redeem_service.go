@@ -383,9 +383,6 @@ func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64
 		if s.authCacheInvalidator != nil {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 		}
-		if s.billingCacheService == nil {
-			return
-		}
 	case RedeemTypeSubscription:
 		if s.authCacheInvalidator != nil {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)

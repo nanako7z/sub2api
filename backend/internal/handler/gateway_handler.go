@@ -718,6 +718,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 							return
 						}
 						fallbackAPIKey := cloneAPIKeyWithGroup(apiKey, fallbackGroup)
+						if fallbackAPIKey == nil {
+							reqLog.Warn("gateway.fallback_apikey_nil", zap.Int64("fallback_group_id", fallbackGroup.ID))
+							_ = h.antigravityGatewayService.WriteMappedClaudeError(c, account, promptTooLongErr.StatusCode, promptTooLongErr.RequestID, promptTooLongErr.Body)
+							return
+						}
 						if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), fallbackAPIKey.User, fallbackAPIKey, fallbackGroup, nil); err != nil {
 							status, code, message := billingErrorDetails(err)
 							h.handleStreamingAwareError(c, status, code, message, streamStarted)

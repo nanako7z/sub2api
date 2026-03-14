@@ -214,18 +214,17 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 		if err != nil {
 			return nil, false, fmt.Errorf("begin transaction: %w", err)
 		}
+		defer func() { _ = tx.Rollback() }() // Ensure cleanup on any exit path (no-op after Commit)
 		txCtx := dbent.NewTxContext(ctx, tx)
 
 		// 更新过期时间
 		if err := s.userSubRepo.ExtendExpiry(txCtx, existingSub.ID, newExpiresAt); err != nil {
-			_ = tx.Rollback()
 			return nil, false, fmt.Errorf("extend subscription: %w", err)
 		}
 
 		// 如果订阅已过期或被暂停，恢复为active状态
 		if existingSub.Status != SubscriptionStatusActive {
 			if err := s.userSubRepo.UpdateStatus(txCtx, existingSub.ID, SubscriptionStatusActive); err != nil {
-				_ = tx.Rollback()
 				return nil, false, fmt.Errorf("update subscription status: %w", err)
 			}
 		}
@@ -238,7 +237,6 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 			}
 			newNotes += input.Notes
 			if err := s.userSubRepo.UpdateNotes(txCtx, existingSub.ID, newNotes); err != nil {
-				_ = tx.Rollback()
 				return nil, false, fmt.Errorf("update subscription notes: %w", err)
 			}
 		}

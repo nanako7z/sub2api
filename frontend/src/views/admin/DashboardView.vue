@@ -96,7 +96,7 @@
         </div>
 
         <!-- Row 2: Token Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <!-- Today Tokens -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
@@ -198,6 +198,26 @@
                 </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   {{ stats.active_users }} {{ t('admin.dashboard.activeUsers') }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cache Miss Rate -->
+          <div class="card p-4">
+            <div class="flex items-center gap-3">
+              <div class="rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
+                <Icon name="chartBar" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
+              </div>
+              <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.cacheMissRate') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  {{ cacheMissRate.today.toFixed(1) }}%
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('common.total') }}: {{ cacheMissRate.total.toFixed(1) }}%
                 </p>
               </div>
             </div>
@@ -502,6 +522,19 @@ const userTrendChartData = computed(() => {
   return {
     labels: sortedDates,
     datasets
+  }
+})
+
+// Format helpers
+// Cache miss rate (platform-level)
+const cacheMissRate = computed(() => {
+  if (!stats.value) return { today: 0, total: 0 }
+  const s = stats.value
+  const todayTotal = s.today_input_tokens + s.today_cache_creation_tokens + s.today_cache_read_tokens
+  const totalAll = s.total_input_tokens + s.total_cache_creation_tokens + s.total_cache_read_tokens
+  return {
+    today: todayTotal > 0 ? ((s.today_input_tokens + s.today_cache_creation_tokens) / todayTotal) * 100 : 0,
+    total: totalAll > 0 ? ((s.total_input_tokens + s.total_cache_creation_tokens) / totalAll) * 100 : 0
   }
 })
 

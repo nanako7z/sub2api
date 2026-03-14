@@ -25,6 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
   const runMode = ref<'standard' | 'simple'>('standard')
   let refreshIntervalId: ReturnType<typeof setInterval> | null = null
   let tokenRefreshTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let isLoggingOut = false
 
   // ==================== Computed ====================
 
@@ -146,12 +147,17 @@ export const useAuthStore = defineStore('auth', () => {
    * Perform the actual token refresh
    */
   async function performTokenRefresh(): Promise<void> {
-    if (!refreshTokenValue.value) {
+    if (!refreshTokenValue.value || isLoggingOut) {
       return
     }
 
     try {
       const response = await authAPI.refreshToken()
+
+      // Guard against logout that happened during the async refresh request
+      if (isLoggingOut) {
+        return
+      }
 
       // Update state
       token.value = response.access_token
@@ -324,11 +330,15 @@ export const useAuthStore = defineStore('auth', () => {
    * Clears all authentication state and persisted data
    */
   async function logout(): Promise<void> {
-    // Call API logout (revokes refresh token on server)
-    await authAPI.logout()
-
-    // Clear state
-    clearAuth()
+    isLoggingOut = true
+    try {
+      // Call API logout (revokes refresh token on server)
+      await authAPI.logout()
+    } finally {
+      // Clear state
+      clearAuth()
+      isLoggingOut = false
+    }
   }
 
   /**

@@ -997,6 +997,8 @@ export default {
       systemSettings: '系统设置',
       configureSystem: '配置系统设置',
       failedToLoad: '加载仪表盘数据失败',
+      cacheMissRate: '缓存未命中率',
+      today: '今日',
       overallCacheHitRate: '缓存命中率总览',
       tokenHitRate: 'Token 命中率',
       requestHitRate: '请求命中率',

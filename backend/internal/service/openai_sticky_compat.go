@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -165,7 +166,9 @@ func (s *OpenAIGatewayService) setStickySessionAccountID(ctx context.Context, gr
 		return err
 	}
 	// 维护反向索引：accountID → sessions
-	_ = s.cache.AddStickySessionReverse(ctx, accountID, gid, primaryKey, ttl)
+	if err := s.cache.AddStickySessionReverse(ctx, accountID, gid, primaryKey, ttl); err != nil {
+		slog.Warn("sticky reverse index: add failed", "account_id", accountID, "err", err)
+	}
 
 	if !s.openAISessionHashDualWriteOldEnabled() {
 		return nil
@@ -194,7 +197,9 @@ func (s *OpenAIGatewayService) refreshStickySessionTTL(ctx context.Context, grou
 	err := s.cache.RefreshSessionTTL(ctx, gid, primaryKey, ttl)
 	// 同步更新反向索引的过期时间
 	if accountID > 0 {
-		_ = s.cache.AddStickySessionReverse(ctx, accountID, gid, primaryKey, ttl)
+		if rErr := s.cache.AddStickySessionReverse(ctx, accountID, gid, primaryKey, ttl); rErr != nil {
+			slog.Warn("sticky reverse index: refresh failed", "account_id", accountID, "err", rErr)
+		}
 	}
 
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {
@@ -221,7 +226,9 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context,
 	err := s.cache.DeleteSessionAccountID(ctx, gid, primaryKey)
 	// 从反向索引中移除
 	if accountID > 0 {
-		_ = s.cache.RemoveStickySessionReverse(ctx, accountID, gid, primaryKey)
+		if rErr := s.cache.RemoveStickySessionReverse(ctx, accountID, gid, primaryKey); rErr != nil {
+			slog.Warn("sticky reverse index: remove failed", "account_id", accountID, "err", rErr)
+		}
 	}
 
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {

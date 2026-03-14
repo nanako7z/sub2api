@@ -70,7 +70,12 @@ func (c *gatewayCache) AddStickySessionReverse(ctx context.Context, accountID in
 	key := buildStickyReverseKey(accountID)
 	member := buildStickyReverseMember(groupID, sessionHash)
 	expireAt := float64(time.Now().Add(ttl).Unix())
-	return c.rdb.ZAdd(ctx, key, redis.Z{Score: expireAt, Member: member}).Err()
+	if err := c.rdb.ZAdd(ctx, key, redis.Z{Score: expireAt, Member: member}).Err(); err != nil {
+		return err
+	}
+	// 设置 key 级别的 EXPIRE 作为兜底，防止账号被删除后 key 永久留存
+	c.rdb.Expire(ctx, key, ttl*2)
+	return nil
 }
 
 // RemoveStickySessionReverse 从反向索引中删除会话绑定。

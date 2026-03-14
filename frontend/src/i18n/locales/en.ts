@@ -975,6 +975,8 @@ export default {
       requestsShort: 'Req',
       tokensShort: 'Tok',
       failedToLoad: 'Failed to load dashboard statistics',
+      cacheMissRate: 'Cache Miss Rate',
+      today: 'Today',
       overallCacheHitRate: 'Cache Hit Rate Overview',
       tokenHitRate: 'Token Hit Rate',
       requestHitRate: 'Request Hit Rate',
