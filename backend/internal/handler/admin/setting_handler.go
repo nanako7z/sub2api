@@ -107,6 +107,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		HideCcsImportButton:                  settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:          settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:              settings.PurchaseSubscriptionURL,
+		PurchaseSubscriptionNewTab:           settings.PurchaseSubscriptionNewTab,
 		SoraClientEnabled:                    settings.SoraClientEnabled,
 		CustomMenuItems:                      dto.ParseCustomMenuItems(settings.CustomMenuItems),
 		DefaultConcurrency:                   settings.DefaultConcurrency,
@@ -171,6 +172,7 @@ type UpdateSettingsRequest struct {
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
+	PurchaseSubscriptionNewTab  *bool                 `json:"purchase_subscription_new_tab"`
 	SoraClientEnabled           bool                  `json:"sora_client_enabled"`
 	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
 
@@ -306,6 +308,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	purchaseURL := previousSettings.PurchaseSubscriptionURL
 	if req.PurchaseSubscriptionURL != nil {
 		purchaseURL = strings.TrimSpace(*req.PurchaseSubscriptionURL)
+	}
+	purchaseNewTab := previousSettings.PurchaseSubscriptionNewTab
+	if req.PurchaseSubscriptionNewTab != nil {
+		purchaseNewTab = *req.PurchaseSubscriptionNewTab
 	}
 
 	// - 启用时要求 URL 合法且非空
@@ -463,6 +469,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:              req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      purchaseEnabled,
 		PurchaseSubscriptionURL:          purchaseURL,
+		PurchaseSubscriptionNewTab:       purchaseNewTab,
 		SoraClientEnabled:                req.SoraClientEnabled,
 		CustomMenuItems:                  customMenuJSON,
 		DefaultConcurrency:               req.DefaultConcurrency,
@@ -558,6 +565,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                  updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:          updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:              updatedSettings.PurchaseSubscriptionURL,
+		PurchaseSubscriptionNewTab:           updatedSettings.PurchaseSubscriptionNewTab,
 		SoraClientEnabled:                    updatedSettings.SoraClientEnabled,
 		CustomMenuItems:                      dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),
 		DefaultConcurrency:                   updatedSettings.DefaultConcurrency,
@@ -739,6 +747,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.PurchaseSubscriptionURL != after.PurchaseSubscriptionURL {
 		changed = append(changed, "purchase_subscription_url")
+	}
+	if before.PurchaseSubscriptionNewTab != after.PurchaseSubscriptionNewTab {
+		changed = append(changed, "purchase_subscription_new_tab")
 	}
 	if before.CustomMenuItems != after.CustomMenuItems {
 		changed = append(changed, "custom_menu_items")

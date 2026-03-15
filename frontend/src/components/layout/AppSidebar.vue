@@ -62,12 +62,13 @@
           </div>
           <div v-else class="mx-3 my-3 h-px bg-gray-200 dark:bg-dark-700"></div>
 
-          <router-link
+          <component
             v-for="item in personalNavItems"
             :key="item.path"
-            :to="item.path"
+            :is="item.externalUrl ? 'a' : RouterLink"
+            v-bind="item.externalUrl ? { href: item.externalUrl, target: '_blank', rel: 'noopener noreferrer' } : { to: item.path }"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path) }"
+            :class="{ 'sidebar-link-active': !item.externalUrl && isActive(item.path) }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -77,19 +78,20 @@
             <transition name="fade">
               <span v-if="!sidebarCollapsed">{{ item.label }}</span>
             </transition>
-          </router-link>
+          </component>
         </div>
       </template>
 
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
         <div class="sidebar-section">
-          <router-link
+          <component
             v-for="item in userNavItems"
             :key="item.path"
-            :to="item.path"
+            :is="item.externalUrl ? 'a' : RouterLink"
+            v-bind="item.externalUrl ? { href: item.externalUrl, target: '_blank', rel: 'noopener noreferrer' } : { to: item.path }"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path) }"
+            :class="{ 'sidebar-link-active': !item.externalUrl && isActive(item.path) }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -99,7 +101,7 @@
             <transition name="fade">
               <span v-if="!sidebarCollapsed">{{ item.label }}</span>
             </transition>
-          </router-link>
+          </component>
         </div>
       </template>
     </nav>
@@ -148,7 +150,7 @@
 
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
@@ -160,6 +162,7 @@ interface NavItem {
   icon: unknown
   iconSvg?: string
   hideInSimpleMode?: boolean
+  externalUrl?: string
 }
 
 const { t } = useI18n()
@@ -498,7 +501,10 @@ const userNavItems = computed((): NavItem[] => {
             path: '/purchase',
             label: t('nav.buySubscription'),
             icon: RechargeSubscriptionIcon,
-            hideInSimpleMode: true
+            hideInSimpleMode: true,
+            ...(appStore.cachedPublicSettings?.purchase_subscription_new_tab
+              ? { externalUrl: appStore.cachedPublicSettings.purchase_subscription_url }
+              : {}),
           }
         ]
       : []),
@@ -529,7 +535,10 @@ const personalNavItems = computed((): NavItem[] => {
             path: '/purchase',
             label: t('nav.buySubscription'),
             icon: RechargeSubscriptionIcon,
-            hideInSimpleMode: true
+            hideInSimpleMode: true,
+            ...(appStore.cachedPublicSettings?.purchase_subscription_new_tab
+              ? { externalUrl: appStore.cachedPublicSettings.purchase_subscription_url }
+              : {}),
           }
         ]
       : []),

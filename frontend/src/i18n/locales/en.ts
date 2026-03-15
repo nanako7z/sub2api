@@ -4088,6 +4088,8 @@ export default {
         urlHint: 'Must be an absolute http(s) URL',
         iframeWarning:
           '⚠️ iframe note: Some websites block embedding via X-Frame-Options or CSP (frame-ancestors). If the page is blank, provide an "Open in new tab" alternative.',
+        newTab: 'New Tab Mode',
+        newTabHint: 'When enabled, clicking "Recharge / Subscribe" opens the URL directly in a new tab instead of embedding it in an iframe',
         integrationDoc: 'Payment Integration Docs',
         integrationDocHint: 'Covers endpoint specs, idempotency semantics, and code samples'
       },

@@ -53,6 +53,7 @@ type SystemSettings struct {
 	HideCcsImportButton         bool             `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled bool             `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     string           `json:"purchase_subscription_url"`
+	PurchaseSubscriptionNewTab  bool             `json:"purchase_subscription_new_tab"`
 	SoraClientEnabled           bool             `json:"sora_client_enabled"`
 	CustomMenuItems             []CustomMenuItem `json:"custom_menu_items"`
 
@@ -111,6 +112,7 @@ type PublicSettings struct {
 	HideCcsImportButton              bool             `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool             `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string           `json:"purchase_subscription_url"`
+	PurchaseSubscriptionNewTab       bool             `json:"purchase_subscription_new_tab"`
 	CustomMenuItems                  []CustomMenuItem `json:"custom_menu_items"`
 	LinuxDoOAuthEnabled              bool             `json:"linuxdo_oauth_enabled"`
 	SoraClientEnabled                bool             `json:"sora_client_enabled"`

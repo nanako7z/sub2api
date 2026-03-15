@@ -4262,6 +4262,8 @@ export default {
         urlHint: '必须是完整的 http(s) 链接',
         iframeWarning:
           '⚠️ iframe 提示：部分网站会通过 X-Frame-Options 或 CSP（frame-ancestors）禁止被 iframe 嵌入，出现空白时可引导用户使用”新窗口打开”。',
+        newTab: '新标签页模式',
+        newTabHint: '开启后点击”充值/订阅”按钮直接在新标签页打开链接，不再内嵌 iframe',
         integrationDoc: '支付集成文档',
         integrationDocHint: '包含接口说明、幂等语义及示例代码'
       },

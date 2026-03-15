@@ -1259,6 +1259,19 @@
               </p>
             </div>
 
+            <!-- New Tab Mode -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.purchase.newTab')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.purchase.newTabHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.purchase_subscription_new_tab" />
+            </div>
+
             <!-- Integration Docs -->
             <div class="flex items-center gap-2 text-sm">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1818,6 +1831,7 @@ const form = reactive<SettingsForm>({
   hide_ccs_import_button: false,
   purchase_subscription_enabled: false,
   purchase_subscription_url: '',
+  purchase_subscription_new_tab: false,
   sora_client_enabled: false,
   custom_menu_items: [] as Array<{id: string; label: string; icon_svg: string; url: string; visibility: 'user' | 'admin'; sort_order: number}>,
   smtp_host: '',
@@ -2095,6 +2109,7 @@ async function saveSettings() {
       hide_ccs_import_button: form.hide_ccs_import_button,
       purchase_subscription_enabled: form.purchase_subscription_enabled,
       purchase_subscription_url: form.purchase_subscription_url,
+      purchase_subscription_new_tab: form.purchase_subscription_new_tab,
       sora_client_enabled: form.sora_client_enabled,
       custom_menu_items: form.custom_menu_items,
       smtp_host: form.smtp_host,
