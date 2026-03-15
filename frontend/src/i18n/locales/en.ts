@@ -4435,7 +4435,9 @@ export default {
     notEnabledDesc: 'The administrator has not enabled the recharge/subscription entry. Please contact admin.',
     notConfiguredTitle: 'Recharge / Subscription URL not configured',
     notConfiguredDesc:
-      'The administrator enabled the entry but has not configured a recharge/subscription URL. Please contact admin.'
+      'The administrator enabled the entry but has not configured a recharge/subscription URL. Please contact admin.',
+    newTabTitle: 'Recharge / Subscription',
+    newTabDesc: 'This page is configured to open in a new tab. Click the button below to proceed.'
   },
 
   // Custom Page (iframe embed)

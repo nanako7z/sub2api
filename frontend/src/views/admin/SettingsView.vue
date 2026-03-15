@@ -1254,7 +1254,7 @@
               <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.settings.purchase.urlHint') }}
               </p>
-              <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              <p v-if="!form.purchase_subscription_new_tab" class="mt-2 text-xs text-amber-600 dark:text-amber-400">
                 {{ t('admin.settings.purchase.iframeWarning') }}
               </p>
             </div>

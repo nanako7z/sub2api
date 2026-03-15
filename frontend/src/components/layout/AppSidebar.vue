@@ -502,7 +502,8 @@ const userNavItems = computed((): NavItem[] => {
             label: t('nav.buySubscription'),
             icon: RechargeSubscriptionIcon,
             hideInSimpleMode: true,
-            ...(appStore.cachedPublicSettings?.purchase_subscription_new_tab
+            ...(appStore.cachedPublicSettings?.purchase_subscription_new_tab &&
+              appStore.cachedPublicSettings.purchase_subscription_url
               ? { externalUrl: appStore.cachedPublicSettings.purchase_subscription_url }
               : {}),
           }
@@ -536,7 +537,8 @@ const personalNavItems = computed((): NavItem[] => {
             label: t('nav.buySubscription'),
             icon: RechargeSubscriptionIcon,
             hideInSimpleMode: true,
-            ...(appStore.cachedPublicSettings?.purchase_subscription_new_tab
+            ...(appStore.cachedPublicSettings?.purchase_subscription_new_tab &&
+              appStore.cachedPublicSettings.purchase_subscription_url
               ? { externalUrl: appStore.cachedPublicSettings.purchase_subscription_url }
               : {}),
           }

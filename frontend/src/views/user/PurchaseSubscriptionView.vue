@@ -46,6 +46,34 @@
           </div>
         </div>
 
+        <div
+          v-else-if="purchaseNewTab"
+          class="flex h-full items-center justify-center p-10 text-center"
+        >
+          <div class="max-w-md">
+            <div
+              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/20"
+            >
+              <Icon name="externalLink" size="lg" class="text-primary-500" />
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('purchase.newTabTitle') }}
+            </h3>
+            <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+              {{ t('purchase.newTabDesc') }}
+            </p>
+            <a
+              :href="purchaseBaseUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-primary mt-6 inline-flex items-center gap-2"
+            >
+              <Icon name="externalLink" size="sm" :stroke-width="2" />
+              {{ t('purchase.openInNewTab') }}
+            </a>
+          </div>
+        </div>
+
         <div v-else class="purchase-embed-shell">
           <a
             :href="purchaseUrl"
@@ -88,13 +116,20 @@ const purchaseEnabled = computed(() => {
   return appStore.cachedPublicSettings?.purchase_subscription_enabled ?? false
 })
 
+const purchaseNewTab = computed(() => {
+  return appStore.cachedPublicSettings?.purchase_subscription_new_tab ?? false
+})
+
+const purchaseBaseUrl = computed(() => {
+  return (appStore.cachedPublicSettings?.purchase_subscription_url || '').trim()
+})
+
 const purchaseUrl = computed(() => {
-  const baseUrl = (appStore.cachedPublicSettings?.purchase_subscription_url || '').trim()
-  return buildEmbeddedUrl(baseUrl, authStore.user?.id, authStore.token, purchaseTheme.value, locale.value)
+  return buildEmbeddedUrl(purchaseBaseUrl.value, authStore.user?.id, authStore.token, purchaseTheme.value, locale.value)
 })
 
 const isValidUrl = computed(() => {
-  const url = purchaseUrl.value
+  const url = purchaseBaseUrl.value
   return url.startsWith('http://') || url.startsWith('https://')
 })
 

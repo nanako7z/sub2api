@@ -4607,7 +4607,9 @@ export default {
     notEnabledTitle: '该功能未开启',
     notEnabledDesc: '管理员暂未开启充值/订阅入口，请联系管理员。',
     notConfiguredTitle: '充值/订阅链接未配置',
-    notConfiguredDesc: '管理员已开启入口，但尚未配置充值/订阅链接，请联系管理员。'
+    notConfiguredDesc: '管理员已开启入口，但尚未配置充值/订阅链接，请联系管理员。',
+    newTabTitle: '充值/订阅',
+    newTabDesc: '该页面配置为新标签页模式，请点击下方按钮在新标签页中打开。'
   },
 
   // Custom Page (iframe embed)
