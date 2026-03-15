@@ -37,7 +37,7 @@ server:
   h2c:
     # Enable HTTP/2 Cleartext for client connections
     # 启用 HTTP/2 Cleartext 客户端连接
-    enabled: true
+    enabled: false
     # Max concurrent streams per connection
     # 每个连接的最大并发流数量
     max_concurrent_streams: 50
@@ -283,6 +283,7 @@ gateway:
       queue: 0.7
       error_rate: 0.8
       ttft: 0.5
+      session_affinity: 0.6
   # HTTP upstream connection pool settings (HTTP/2 + multi-proxy scenario defaults)
   # HTTP 上游连接池配置（HTTP/2 + 多代理场景默认值）
   # Max idle connections across all hosts
@@ -314,9 +315,9 @@ gateway:
   # Stream keepalive interval (seconds), 0=disable
   # 流式 keepalive 间隔（秒），0=禁用
   stream_keepalive_interval: 10
-  # SSE max line size in bytes (default: 40MB)
-  # SSE 单行最大字节数（默认 40MB）
-  max_line_size: 41943040
+  # SSE max line size in bytes (default: 500MB)
+  # SSE 单行最大字节数（默认 500MB）
+  max_line_size: 524288000
   # Log upstream error response body summary (safe/truncated; does not log request content)
   # 记录上游错误响应体摘要（安全/截断；不记录请求内容）
   log_upstream_error_body: true

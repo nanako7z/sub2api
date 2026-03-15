@@ -385,6 +385,7 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		// 清除粘性会话绑定，避免下次请求仍命中限流账号
 		if s.cache != nil && p.sessionHash != "" {
 			_ = s.cache.DeleteSessionAccountID(p.ctx, p.groupID, p.sessionHash)
+			_ = s.cache.RemoveStickySessionReverse(p.ctx, p.account.ID, p.groupID, p.sessionHash)
 		}
 
 		// 返回账号切换信号，让上层切换账号重试
@@ -2757,6 +2758,7 @@ func (s *AntigravityGatewayService) setModelRateLimitAndClearSession(p *handleMo
 	// 清除粘性会话绑定
 	if p.cache != nil && p.sessionHash != "" {
 		_ = p.cache.DeleteSessionAccountID(p.ctx, p.groupID, p.sessionHash)
+		_ = p.cache.RemoveStickySessionReverse(p.ctx, p.account.ID, p.groupID, p.sessionHash)
 	}
 }
 

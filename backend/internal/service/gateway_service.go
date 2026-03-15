@@ -816,12 +816,31 @@ func (s *GatewayService) GenerateAffinityHash(parsed *ParsedRequest) string {
 	return ""
 }
 
-// BindStickySession sets session -> account binding with standard TTL.
+// BindStickySession sets session -> account binding with standard TTL
+// and maintains the reverse index for session counting.
 func (s *GatewayService) BindStickySession(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
 	if sessionHash == "" || accountID <= 0 || s.cache == nil {
 		return nil
 	}
-	return s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, accountID, stickySessionTTL)
+	gid := derefGroupID(groupID)
+	if err := s.cache.SetSessionAccountID(ctx, gid, sessionHash, accountID, stickySessionTTL); err != nil {
+		return err
+	}
+	_ = s.cache.AddStickySessionReverse(ctx, accountID, gid, sessionHash, stickySessionTTL)
+	return nil
+}
+
+// unbindStickySession deletes session -> account binding
+// and removes the reverse index entry.
+func (s *GatewayService) unbindStickySession(ctx context.Context, groupID *int64, sessionHash string, accountID int64) {
+	if sessionHash == "" || s.cache == nil {
+		return
+	}
+	gid := derefGroupID(groupID)
+	_ = s.cache.DeleteSessionAccountID(ctx, gid, sessionHash)
+	if accountID > 0 {
+		_ = s.cache.RemoveStickySessionReverse(ctx, accountID, gid, sessionHash)
+	}
 }
 
 // setAffinityBinding writes the affinity hash → account binding alongside
@@ -845,25 +864,28 @@ func (s *GatewayService) refreshAffinityTTL(ctx context.Context, groupID *int64)
 }
 
 // bindSessionAndAffinity writes both the normal session hash binding and the
-// affinity hash binding in one call. Use this wherever SetSessionAccountID +
+// affinity hash binding in one call. Use this wherever BindStickySession +
 // setAffinityBinding would otherwise appear as a pair.
 func (s *GatewayService) bindSessionAndAffinity(ctx context.Context, groupID *int64, sessionHash string, accountID int64) {
 	if sessionHash == "" || s.cache == nil {
 		return
 	}
-	_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, accountID, stickySessionTTL)
+	_ = s.BindStickySession(ctx, groupID, sessionHash, accountID)
 	s.setAffinityBinding(ctx, groupID, sessionHash, accountID)
 }
 
-// refreshSessionAndAffinity refreshes both the session TTL and the affinity
-// hash TTL in one call. Use this wherever RefreshSessionTTL + refreshAffinityTTL
-// would otherwise appear as a pair.
-func (s *GatewayService) refreshSessionAndAffinity(ctx context.Context, groupID *int64, sessionHash string) {
+// refreshSessionAndAffinity refreshes the session TTL, the affinity hash TTL,
+// and the reverse index entry in one call.
+func (s *GatewayService) refreshSessionAndAffinity(ctx context.Context, groupID *int64, sessionHash string, accountID int64) {
 	if sessionHash == "" || s.cache == nil {
 		return
 	}
-	_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
+	gid := derefGroupID(groupID)
+	_ = s.cache.RefreshSessionTTL(ctx, gid, sessionHash, stickySessionTTL)
 	s.refreshAffinityTTL(ctx, groupID)
+	if accountID > 0 {
+		_ = s.cache.AddStickySessionReverse(ctx, accountID, gid, sessionHash, stickySessionTTL)
+	}
 }
 
 // GetCachedSessionAccountID retrieves the account ID bound to a sticky session.
@@ -1348,7 +1370,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				}
 				// 粘性会话命中时刷新 TTL，防止长对话超时后前缀缓存失效
 				if stickyAccountID > 0 && account.ID == stickyAccountID {
-					s.refreshSessionAndAffinity(ctx, groupID, sessionHash)
+					s.refreshSessionAndAffinity(ctx, groupID, sessionHash, stickyAccountID)
 				}
 				return &AccountSelectionResult{
 					Account:     account,
@@ -1525,7 +1547,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 									// 继续到负载感知选择
 								} else {
 									// 粘性会话命中，刷新 TTL
-									s.refreshSessionAndAffinity(ctx, groupID, sessionHash)
+									s.refreshSessionAndAffinity(ctx, groupID, sessionHash, stickyAccountID)
 									if s.debugModelRoutingEnabled() {
 										logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed sticky hit: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), stickyAccountID)
 									}
@@ -1557,7 +1579,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							// 粘性账号槽位满且等待队列已满，继续使用负载感知选择
 						}
 					} else {
-						_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+						s.unbindStickySession(ctx, groupID, sessionHash, stickyAccountID)
 					}
 				}
 			}
@@ -1666,7 +1688,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				// Check if the account needs sticky session cleanup
 				clearSticky := shouldClearStickySession(account, requestedModel)
 				if clearSticky {
-					_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+					s.unbindStickySession(ctx, groupID, sessionHash, accountID)
 				}
 				if !clearSticky && s.isAccountInGroup(account, groupID) &&
 					s.isAccountAllowedForPlatform(account, platform, useMixed) &&
@@ -1684,7 +1706,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							result.ReleaseFunc() // 释放槽位，继续到 Layer 2
 						} else {
 							// 粘性会话命中，刷新 TTL
-							s.refreshSessionAndAffinity(ctx, groupID, sessionHash)
+							s.refreshSessionAndAffinity(ctx, groupID, sessionHash, accountID)
 							return &AccountSelectionResult{
 								Account:     account,
 								Acquired:    true,
@@ -2860,7 +2882,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 					if err == nil {
 						clearSticky := shouldClearStickySession(account, requestedModel)
 						if clearSticky {
-							_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+							s.unbindStickySession(ctx, groupID, sessionHash, accountID)
 						}
 						if !clearSticky && s.isAccountInGroup(account, groupID) && account.Platform == platform && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) {
 							if s.debugModelRoutingEnabled() {
@@ -2950,11 +2972,8 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		}
 
 		if selected != nil {
-			if sessionHash != "" && s.cache != nil {
-				if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.ID, stickySessionTTL); err != nil {
-					logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
-				}
-				s.setAffinityBinding(ctx, groupID, sessionHash, selected.ID)
+			if sessionHash != "" {
+				s.bindSessionAndAffinity(ctx, groupID, sessionHash, selected.ID)
 			}
 			if s.debugModelRoutingEnabled() {
 				logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] legacy routed select: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), selected.ID)
@@ -2974,7 +2993,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 				if err == nil {
 					clearSticky := shouldClearStickySession(account, requestedModel)
 					if clearSticky {
-						_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+						s.unbindStickySession(ctx, groupID, sessionHash, accountID)
 					}
 					if !clearSticky && s.isAccountInGroup(account, groupID) && account.Platform == platform && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) {
 						return account, nil
@@ -3061,11 +3080,8 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 	}
 
 	// 4. 建立粘性绑定
-	if sessionHash != "" && s.cache != nil {
-		if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.ID, stickySessionTTL); err != nil {
-			logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
-		}
-		s.setAffinityBinding(ctx, groupID, sessionHash, selected.ID)
+	if sessionHash != "" {
+		s.bindSessionAndAffinity(ctx, groupID, sessionHash, selected.ID)
 	}
 
 	return selected, nil
@@ -3096,7 +3112,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 					if err == nil {
 						clearSticky := shouldClearStickySession(account, requestedModel)
 						if clearSticky {
-							_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+							s.unbindStickySession(ctx, groupID, sessionHash, accountID)
 						}
 						if !clearSticky && s.isAccountInGroup(account, groupID) && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) {
 							if account.Platform == nativePlatform || (account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()) {
@@ -3188,11 +3204,8 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 		}
 
 		if selected != nil {
-			if sessionHash != "" && s.cache != nil {
-				if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.ID, stickySessionTTL); err != nil {
-					logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
-				}
-				s.setAffinityBinding(ctx, groupID, sessionHash, selected.ID)
+			if sessionHash != "" {
+				s.bindSessionAndAffinity(ctx, groupID, sessionHash, selected.ID)
 			}
 			if s.debugModelRoutingEnabled() {
 				logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] legacy mixed routed select: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), selected.ID)
@@ -3212,7 +3225,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 				if err == nil {
 					clearSticky := shouldClearStickySession(account, requestedModel)
 					if clearSticky {
-						_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+						s.unbindStickySession(ctx, groupID, sessionHash, accountID)
 					}
 					if !clearSticky && s.isAccountInGroup(account, groupID) && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) {
 						if account.Platform == nativePlatform || (account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()) {
@@ -3301,11 +3314,8 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 	}
 
 	// 4. 建立粘性绑定
-	if sessionHash != "" && s.cache != nil {
-		if err := s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.ID, stickySessionTTL); err != nil {
-			logger.LegacyPrintf("service.gateway", "set session account failed: session=%s account_id=%d err=%v", sessionHash, selected.ID, err)
-		}
-		s.setAffinityBinding(ctx, groupID, sessionHash, selected.ID)
+	if sessionHash != "" {
+		s.bindSessionAndAffinity(ctx, groupID, sessionHash, selected.ID)
 	}
 
 	return selected, nil

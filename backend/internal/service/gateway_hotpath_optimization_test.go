@@ -144,6 +144,14 @@ func (s *stickyGatewayCacheHotpathStub) DeleteSessionAccountID(ctx context.Conte
 	return nil
 }
 
+func (s *stickyGatewayCacheHotpathStub) AddStickySessionReverse(ctx context.Context, accountID int64, groupID int64, sessionHash string, ttl time.Duration) error {
+	return nil
+}
+
+func (s *stickyGatewayCacheHotpathStub) RemoveStickySessionReverse(ctx context.Context, accountID int64, groupID int64, sessionHash string) error {
+	return nil
+}
+
 func (s *modelsListAccountRepoStub) ListSchedulableByGroupID(ctx context.Context, groupID int64) ([]Account, error) {
 	s.listByGroupCalls.Add(1)
 	if s.err != nil {

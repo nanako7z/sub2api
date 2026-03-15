@@ -99,9 +99,10 @@ func (s *defaultOpenAIWSStateStore) BindResponseAccount(ctx context.Context, gro
 	ttl = normalizeOpenAIWSTTL(ttl)
 	s.maybeCleanup()
 
-	expiresAt := time.Now().Add(ttl)
+	now := time.Now()
+	expiresAt := now.Add(ttl)
 	s.responseToAccountMu.Lock()
-	ensureBindingCapacity(s.responseToAccount, id, openAIWSStateStoreMaxEntriesPerMap)
+	ensureAccountBindingCapacity(s.responseToAccount, id, openAIWSStateStoreMaxEntriesPerMap, now)
 	s.responseToAccount[id] = openAIWSAccountBinding{accountID: accountID, expiresAt: expiresAt}
 	s.responseToAccountMu.Unlock()
 
@@ -173,11 +174,12 @@ func (s *defaultOpenAIWSStateStore) BindResponseConn(responseID, connID string, 
 	ttl = normalizeOpenAIWSTTL(ttl)
 	s.maybeCleanup()
 
+	now := time.Now()
 	s.responseToConnMu.Lock()
-	ensureBindingCapacity(s.responseToConn, id, openAIWSStateStoreMaxEntriesPerMap)
+	ensureConnBindingCapacity(s.responseToConn, id, openAIWSStateStoreMaxEntriesPerMap, now)
 	s.responseToConn[id] = openAIWSConnBinding{
 		connID:    conn,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: now.Add(ttl),
 	}
 	s.responseToConnMu.Unlock()
 }
@@ -218,11 +220,12 @@ func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionH
 	ttl = normalizeOpenAIWSTTL(ttl)
 	s.maybeCleanup()
 
+	now := time.Now()
 	s.sessionToTurnStateMu.Lock()
-	ensureBindingCapacity(s.sessionToTurnState, key, openAIWSStateStoreMaxEntriesPerMap)
+	ensureTurnStateBindingCapacity(s.sessionToTurnState, key, openAIWSStateStoreMaxEntriesPerMap, now)
 	s.sessionToTurnState[key] = openAIWSTurnStateBinding{
 		turnState: state,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: now.Add(ttl),
 	}
 	s.sessionToTurnStateMu.Unlock()
 }
@@ -263,11 +266,12 @@ func (s *defaultOpenAIWSStateStore) BindSessionConn(groupID int64, sessionHash, 
 	ttl = normalizeOpenAIWSTTL(ttl)
 	s.maybeCleanup()
 
+	now := time.Now()
 	s.sessionToConnMu.Lock()
-	ensureBindingCapacity(s.sessionToConn, key, openAIWSStateStoreMaxEntriesPerMap)
+	ensureSessionConnBindingCapacity(s.sessionToConn, key, openAIWSStateStoreMaxEntriesPerMap, now)
 	s.sessionToConn[key] = openAIWSSessionConnBinding{
 		connID:    conn,
-		expiresAt: time.Now().Add(ttl),
+		expiresAt: now.Add(ttl),
 	}
 	s.sessionToConnMu.Unlock()
 }
@@ -394,18 +398,61 @@ func cleanupExpiredSessionConnBindings(bindings map[string]openAIWSSessionConnBi
 	}
 }
 
-func ensureBindingCapacity[T any](bindings map[string]T, incomingKey string, maxEntries int) {
+func ensureBindingCapacityByExpiry[T any](bindings map[string]T, incomingKey string, maxEntries int, now time.Time, expiresAtFn func(T) time.Time) {
 	if len(bindings) < maxEntries || maxEntries <= 0 {
 		return
 	}
 	if _, exists := bindings[incomingKey]; exists {
 		return
 	}
-	// 固定上限保护：淘汰任意一项，优先保证内存有界。
-	for key := range bindings {
-		delete(bindings, key)
-		return
+
+	// 优先清理已过期项，尽量避免淘汰活跃会话。
+	for key, binding := range bindings {
+		if now.After(expiresAtFn(binding)) {
+			delete(bindings, key)
+			return
+		}
 	}
+
+	// 若不存在过期项，淘汰最早过期的一项，降低对活跃长 TTL 会话的影响。
+	var victimKey string
+	var victimExpiry time.Time
+	hasVictim := false
+	for key, binding := range bindings {
+		expiry := expiresAtFn(binding)
+		if !hasVictim || expiry.Before(victimExpiry) {
+			victimKey = key
+			victimExpiry = expiry
+			hasVictim = true
+		}
+	}
+	if hasVictim {
+		delete(bindings, victimKey)
+	}
+}
+
+func ensureAccountBindingCapacity(bindings map[string]openAIWSAccountBinding, incomingKey string, maxEntries int, now time.Time) {
+	ensureBindingCapacityByExpiry(bindings, incomingKey, maxEntries, now, func(binding openAIWSAccountBinding) time.Time {
+		return binding.expiresAt
+	})
+}
+
+func ensureConnBindingCapacity(bindings map[string]openAIWSConnBinding, incomingKey string, maxEntries int, now time.Time) {
+	ensureBindingCapacityByExpiry(bindings, incomingKey, maxEntries, now, func(binding openAIWSConnBinding) time.Time {
+		return binding.expiresAt
+	})
+}
+
+func ensureTurnStateBindingCapacity(bindings map[string]openAIWSTurnStateBinding, incomingKey string, maxEntries int, now time.Time) {
+	ensureBindingCapacityByExpiry(bindings, incomingKey, maxEntries, now, func(binding openAIWSTurnStateBinding) time.Time {
+		return binding.expiresAt
+	})
+}
+
+func ensureSessionConnBindingCapacity(bindings map[string]openAIWSSessionConnBinding, incomingKey string, maxEntries int, now time.Time) {
+	ensureBindingCapacityByExpiry(bindings, incomingKey, maxEntries, now, func(binding openAIWSSessionConnBinding) time.Time {
+		return binding.expiresAt
+	})
 }
 
 func normalizeOpenAIWSResponseID(responseID string) string {
