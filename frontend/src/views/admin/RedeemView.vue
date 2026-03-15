@@ -17,13 +17,13 @@
             v-model="filters.type"
             :options="filterTypeOptions"
             class="w-36"
-            @change="loadCodes"
+            @change="handleFilterChange"
           />
           <Select
             v-model="filters.status"
             :options="filterStatusOptions"
             class="w-36"
-            @change="loadCodes"
+            @change="handleFilterChange"
           />
 
           <!-- Right: Action buttons -->
@@ -35,6 +35,13 @@
               :title="t('common.refresh')"
             >
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+            </button>
+            <button
+              v-if="selectedCount > 0"
+              @click="showBatchDeleteDialog = true"
+              class="btn btn-danger"
+            >
+              {{ t('admin.redeem.batchDeleteSelected', { count: selectedCount }) }}
             </button>
             <button @click="handleExportCodes" class="btn btn-secondary">
               {{ t('admin.redeem.exportCsv') }}
@@ -48,6 +55,26 @@
 
       <template #table>
         <DataTable :columns="columns" :data="codes" :loading="loading">
+          <template #header-select>
+            <input
+              type="checkbox"
+              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="allVisibleSelected"
+              @click.stop
+              @change="toggleSelectAllVisible($event)"
+            />
+          </template>
+
+          <template #cell-select="{ row }">
+            <input
+              type="checkbox"
+              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="isSelected(row.id)"
+              @click.stop
+              @change="toggleSelectRow(row.id, $event)"
+            />
+          </template>
+
           <template #cell-code="{ value }">
             <div class="flex items-center space-x-2">
               <code class="font-mono text-sm text-gray-900 dark:text-gray-100">{{ value }}</code>
@@ -181,6 +208,18 @@
       danger
       @confirm="confirmDelete"
       @cancel="showDeleteDialog = false"
+    />
+
+    <!-- Batch Delete Selected Dialog -->
+    <ConfirmDialog
+      :show="showBatchDeleteDialog"
+      :title="t('admin.redeem.batchDeleteTitle')"
+      :message="t('admin.redeem.batchDeleteConfirm', { count: selectedCount })"
+      :confirm-text="t('common.delete')"
+      :cancel-text="t('common.cancel')"
+      danger
+      @confirm="confirmBatchDeleteSelected"
+      @cancel="showBatchDeleteDialog = false"
     />
 
     <!-- Delete Unused Codes Dialog -->
@@ -395,6 +434,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
+import { useTableSelection } from '@/composables/useTableSelection'
 import { adminAPI } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import type { RedeemCode, RedeemCodeType, Group, GroupPlatform, SubscriptionType } from '@/types'
@@ -491,6 +531,7 @@ const downloadGeneratedCodes = () => {
 }
 
 const columns = computed<Column[]>(() => [
+  { key: 'select', label: '', sortable: false },
   { key: 'code', label: t('admin.redeem.columns.code') },
   { key: 'type', label: t('admin.redeem.columns.type'), sortable: true },
   { key: 'value', label: t('admin.redeem.columns.value'), sortable: true },
@@ -541,8 +582,32 @@ let abortController: AbortController | null = null
 
 const showDeleteDialog = ref(false)
 const showDeleteUnusedDialog = ref(false)
+const showBatchDeleteDialog = ref(false)
 const deletingCode = ref<RedeemCode | null>(null)
 const copiedCode = ref<string | null>(null)
+
+const {
+  selectedSet: selectedCodeIds,
+  selectedCount,
+  allVisibleSelected,
+  isSelected,
+  select: selectCode,
+  deselect: deselectCode,
+  clear: clearSelection,
+  toggleVisible
+} = useTableSelection<RedeemCode>({
+  rows: codes,
+  getId: (code) => code.id
+})
+
+const toggleSelectRow = (id: number, event: Event) => {
+  const checked = (event.target as HTMLInputElement).checked
+  if (checked) selectCode(id)
+  else deselectCode(id)
+}
+const toggleSelectAllVisible = (event: Event) => {
+  toggleVisible((event.target as HTMLInputElement).checked)
+}
 
 const generateForm = reactive({
   type: 'balance' as RedeemCodeType,
@@ -617,14 +682,22 @@ const handleSearch = () => {
   }, 300)
 }
 
+const handleFilterChange = () => {
+  pagination.page = 1
+  clearSelection()
+  loadCodes()
+}
+
 const handlePageChange = (page: number) => {
   pagination.page = page
+  clearSelection()
   loadCodes()
 }
 
 const handlePageSizeChange = (pageSize: number) => {
   pagination.page_size = pageSize
   pagination.page = 1
+  clearSelection()
   loadCodes()
 }
 
@@ -715,23 +788,52 @@ const confirmDelete = async () => {
 
 const confirmDeleteUnused = async () => {
   try {
-    // Get all unused codes and delete them
-    const unusedCodesResponse = await adminAPI.redeem.list(1, 1000, { status: 'unused' })
-    const unusedCodeIds = unusedCodesResponse.items.map((code) => code.id)
+    // 循环分页删除，直到没有未使用码为止（避免单次只取 1000 条的截断问题）
+    const PAGE_SIZE = 1000
+    let totalDeleted = 0
+    while (true) {
+      const unusedCodesResponse = await adminAPI.redeem.list(1, PAGE_SIZE, { status: 'unused' })
+      const unusedCodeIds = unusedCodesResponse.items.map((code) => code.id)
 
-    if (unusedCodeIds.length === 0) {
-      appStore.showInfo(t('admin.redeem.noUnusedCodes'))
-      showDeleteUnusedDialog.value = false
-      return
+      if (unusedCodeIds.length === 0) break
+
+      const result = await adminAPI.redeem.batchDelete(unusedCodeIds)
+      totalDeleted += result.deleted
+
+      // 防止删除持续失败时无限循环（如所有码已被并发删除）
+      if (result.deleted === 0) break
+      // 本批已全部取出，说明没有更多了
+      if (unusedCodesResponse.items.length < PAGE_SIZE) break
     }
 
-    const result = await adminAPI.redeem.batchDelete(unusedCodeIds)
-    appStore.showSuccess(t('admin.redeem.codesDeleted', { count: result.deleted }))
+    if (totalDeleted === 0) {
+      appStore.showInfo(t('admin.redeem.noUnusedCodes'))
+    } else {
+      appStore.showSuccess(t('admin.redeem.codesDeleted', { count: totalDeleted }))
+    }
     showDeleteUnusedDialog.value = false
     loadCodes()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToDeleteUnused'))
     console.error('Error deleting unused codes:', error)
+  }
+}
+
+const confirmBatchDeleteSelected = async () => {
+  const ids = Array.from(selectedCodeIds.value)
+  if (ids.length === 0) {
+    showBatchDeleteDialog.value = false
+    return
+  }
+  try {
+    const result = await adminAPI.redeem.batchDelete(ids)
+    appStore.showSuccess(t('admin.redeem.batchDeleteSuccess', { count: result.deleted }))
+    showBatchDeleteDialog.value = false
+    clearSelection()
+    loadCodes()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.redeem.failedToBatchDelete'))
+    console.error('Error batch deleting codes:', error)
   }
 }
 

@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -87,12 +88,16 @@ var (
 	modelsListCacheStoreTotal atomic.Int64
 
 	// 提示缓存（prompt cache）命中率统计
-	promptCacheRequestTotal    atomic.Int64 // 有 token 消费的请求总数
-	promptCacheHitTotal        atomic.Int64 // cache_read_tokens > 0 的请求数
-	promptCacheMissTotal       atomic.Int64 // cache_read_tokens == 0 且 input_tokens > 0
-	promptCacheInputTokenTotal         atomic.Int64 // 累计 input_tokens（未命中缓存的部分）
-	promptCacheCreationTokenTotal      atomic.Int64 // 累计 cache_creation_tokens
-	promptCacheReadTokenTotal          atomic.Int64 // 累计 cache_read_tokens
+	promptCacheRequestTotal       atomic.Int64 // 有 token 消费的请求总数
+	promptCacheHitTotal           atomic.Int64 // cache_read_tokens > 0 的请求数
+	promptCacheMissTotal          atomic.Int64 // cache_read_tokens == 0 且 input_tokens > 0
+	promptCacheInputTokenTotal    atomic.Int64 // 累计 input_tokens（未命中缓存的部分）
+	promptCacheCreationTokenTotal atomic.Int64 // 累计 cache_creation_tokens
+	promptCacheReadTokenTotal     atomic.Int64 // 累计 cache_read_tokens
+
+	// per-model 提示缓存统计（key: model string → *modelPromptCacheStat）
+	// 用于定向定位特定模型的缓存利用率问题，因不同模型阈值差异大（Sonnet 1024 vs Haiku/Opus-4.5 4096）
+	modelPromptCacheStats sync.Map
 )
 
 func GatewayWindowCostPrefetchStats() (cacheHit, cacheMiss, batchSQL, fallback, errCount int64) {
@@ -126,6 +131,93 @@ func GatewayPromptCacheStats() (requestTotal, hit, miss, inputTokenTotal, creati
 		promptCacheInputTokenTotal.Load(),
 		promptCacheCreationTokenTotal.Load(),
 		promptCacheReadTokenTotal.Load()
+}
+
+// modelPromptCacheStat 存储单个模型的提示缓存统计，使用原子操作保证并发安全
+type modelPromptCacheStat struct {
+	requestTotal       atomic.Int64
+	hitTotal           atomic.Int64
+	missTotal          atomic.Int64
+	inputTokenTotal    atomic.Int64
+	creationTokenTotal atomic.Int64
+	readTokenTotal     atomic.Int64
+}
+
+// ModelPromptCacheStatView 是 per-model 缓存统计的只读快照
+type ModelPromptCacheStatView struct {
+	Model              string
+	RequestTotal       int64
+	HitTotal           int64
+	MissTotal          int64
+	InputTokenTotal    int64
+	CreationTokenTotal int64
+	ReadTokenTotal     int64
+	// TokenHitRate = ReadTokenTotal / (InputTokenTotal + CreationTokenTotal + ReadTokenTotal)
+	TokenHitRate float64
+}
+
+// getOrCreateModelStat 获取或创建指定模型的统计对象（加载/存储竞争安全）
+func getOrCreateModelStat(model string) *modelPromptCacheStat {
+	if v, ok := modelPromptCacheStats.Load(model); ok {
+		if s, ok := v.(*modelPromptCacheStat); ok {
+			return s
+		}
+	}
+	stat := &modelPromptCacheStat{}
+	actual, _ := modelPromptCacheStats.LoadOrStore(model, stat)
+	if s, ok := actual.(*modelPromptCacheStat); ok {
+		return s
+	}
+	return stat
+}
+
+// recordModelPromptCacheStats 记录 per-model 缓存命中率统计
+func recordModelPromptCacheStats(model string, inputTokens, creationTokens, readTokens int) {
+	if model == "" {
+		return
+	}
+	stat := getOrCreateModelStat(model)
+	stat.requestTotal.Add(1)
+	stat.inputTokenTotal.Add(int64(inputTokens))
+	stat.creationTokenTotal.Add(int64(creationTokens))
+	stat.readTokenTotal.Add(int64(readTokens))
+	if readTokens > 0 {
+		stat.hitTotal.Add(1)
+	} else {
+		stat.missTotal.Add(1)
+	}
+}
+
+// GatewayModelPromptCacheStats 返回所有模型的 per-model 缓存命中率统计快照。
+// 可用于定位特定模型缓存效果差的问题（不同模型缓存阈值差异大：Sonnet 1024 vs Haiku/Opus-4.5 4096）。
+func GatewayModelPromptCacheStats() []ModelPromptCacheStatView {
+	var result []ModelPromptCacheStatView
+	modelPromptCacheStats.Range(func(key, value any) bool {
+		model, ok := key.(string)
+		if !ok {
+			return true
+		}
+		stat, ok := value.(*modelPromptCacheStat)
+		if !ok {
+			return true
+		}
+		view := ModelPromptCacheStatView{
+			Model:              model,
+			RequestTotal:       stat.requestTotal.Load(),
+			HitTotal:           stat.hitTotal.Load(),
+			MissTotal:          stat.missTotal.Load(),
+			InputTokenTotal:    stat.inputTokenTotal.Load(),
+			CreationTokenTotal: stat.creationTokenTotal.Load(),
+			ReadTokenTotal:     stat.readTokenTotal.Load(),
+		}
+		totalTokens := view.InputTokenTotal + view.CreationTokenTotal + view.ReadTokenTotal
+		if totalTokens > 0 {
+			view.TokenHitRate = float64(view.ReadTokenTotal) / float64(totalTokens)
+		}
+		result = append(result, view)
+		return true
+	})
+	return result
 }
 
 func openAIStreamEventIsTerminal(data string) bool {
@@ -3919,12 +4011,20 @@ func minCacheTokensByModel(model string) int {
 	}
 }
 
-// injectAutoCacheControl 在客户端完全没有设置任何 cache_control 断点时，
-// 自动在 system 最后一个非 thinking 块上注入 cache_control: {"type": "ephemeral"}。
-// 条件：
+// injectAutoCacheControl 在客户端完全没有设置任何 cache_control 断点时，自动注入缓存断点。
+// 注入策略（按稳定性优先）：
+//  1. 优先注入到 system 最后一个非 thinking 块（system 缓存覆盖 tools+system 整个前缀）
+//  2. 若 system 为空或不满足条件，退而注入到 tools 最后一个工具定义（仅缓存 tools 前缀）
+//     适用于工具密集型场景（如 Claude Code），tools 列表可达数万 token 但 system 很短或为空
+//
+// 触发条件：
 //  1. 请求中 0 个 cache_control 断点（不干扰客户端自定义策略）
-//  2. 仅注入到 system 最后一个块（最稳定的前缀锚点）
+//  2. 注入位置：system 最后一个非 thinking 块 或 tools 最后一个工具
 //  3. 前缀 token 数（tools + system 文本）估算达到最小缓存阈值
+//
+// token 估算说明：len(bytes)/3 对 ASCII 和 CJK 均合理——
+//   ASCII: ~4 bytes/token，保守估算约 3 bytes/token（轻微高估，使注入更积极）
+//   CJK: 1 char = 3 bytes UTF-8 ≈ 1 token，故 byteLen/3 ≈ rune count ≈ token count
 func injectAutoCacheControl(body []byte, model string) []byte {
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -3936,52 +4036,62 @@ func injectAutoCacheControl(body []byte, model string) []byte {
 		return body
 	}
 
-	// 查找 system 最后一个非 thinking 块
-	system, ok := data["system"].([]any)
-	if !ok || len(system) == 0 {
-		return body
-	}
-
-	lastIdx := -1
-	for i := len(system) - 1; i >= 0; i-- {
-		if m, ok := system[i].(map[string]any); ok {
-			if blockType, _ := m["type"].(string); blockType != "thinking" {
-				lastIdx = i
-				break
-			}
+	// 估算前缀 token 数（tools JSON + system 文本），用于判断是否达到缓存阈值
+	totalBytes := 0
+	tools, hasTools := data["tools"].([]any)
+	var toolsJSON []byte
+	if hasTools && len(tools) > 0 {
+		if b, err := json.Marshal(tools); err == nil {
+			toolsJSON = b
+			totalBytes += len(toolsJSON)
 		}
 	}
-	if lastIdx < 0 {
-		return body
-	}
-
-	// 条件 3：估算前缀 token 数（tools JSON + system 文本）
-	totalChars := 0
-
-	// tools 的 JSON 表示
-	if tools, ok := data["tools"].([]any); ok && len(tools) > 0 {
-		if toolsJSON, err := json.Marshal(tools); err == nil {
-			totalChars += len(toolsJSON)
-		}
-	}
-
-	// system 文本
+	system, _ := data["system"].([]any)
 	for _, item := range system {
 		if m, ok := item.(map[string]any); ok {
 			if text, ok := m["text"].(string); ok {
-				totalChars += len(text)
+				totalBytes += len(text)
 			}
 		}
 	}
 
 	minTokens := minCacheTokensByModel(model)
-	if totalChars/3 < minTokens {
+	if totalBytes/3 < minTokens {
 		return body
 	}
 
-	// 注入 cache_control 到 system 最后一个非 thinking 块
-	if m, ok := system[lastIdx].(map[string]any); ok {
-		m["cache_control"] = map[string]string{"type": "ephemeral"}
+	injected := false
+
+	// 策略 1：注入到 system 最后一个非 thinking 块（覆盖 tools+system 整个前缀）
+	if len(system) > 0 {
+		lastIdx := -1
+		for i := len(system) - 1; i >= 0; i-- {
+			if m, ok := system[i].(map[string]any); ok {
+				if blockType, _ := m["type"].(string); blockType != "thinking" {
+					lastIdx = i
+					break
+				}
+			}
+		}
+		if lastIdx >= 0 {
+			if m, ok := system[lastIdx].(map[string]any); ok {
+				m["cache_control"] = map[string]string{"type": "ephemeral"}
+				injected = true
+			}
+		}
+	}
+
+	// 策略 2：system 无可注入块时，退而注入到 tools 最后一个工具（仅缓存 tools 前缀）
+	// 适用于 system 为空但 tools 很长的工具密集型场景
+	if !injected && len(tools) > 0 && len(toolsJSON) > 0 {
+		if m, ok := tools[len(tools)-1].(map[string]any); ok {
+			m["cache_control"] = map[string]string{"type": "ephemeral"}
+			injected = true
+		}
+	}
+
+	if !injected {
+		return body
 	}
 
 	result, err := json.Marshal(data)
@@ -7693,6 +7803,8 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		} else {
 			promptCacheMissTotal.Add(1)
 		}
+		// per-model 统计：用于定位特定模型缓存效果问题
+		recordModelPromptCacheStats(result.Model, result.Usage.InputTokens, result.Usage.CacheCreationInputTokens, result.Usage.CacheReadInputTokens)
 	}
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
@@ -7903,6 +8015,8 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		} else {
 			promptCacheMissTotal.Add(1)
 		}
+		// per-model 统计：用于定位特定模型缓存效果问题
+		recordModelPromptCacheStats(result.Model, result.Usage.InputTokens, result.Usage.CacheCreationInputTokens, result.Usage.CacheReadInputTokens)
 	}
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens

@@ -106,6 +106,7 @@ type openAIAccountRuntimeStats struct {
 type openAIAccountRuntimeStat struct {
 	errorRateEWMABits atomic.Uint64
 	ttftEWMABits      atomic.Uint64
+	lastUpdateNanos   atomic.Int64 // 最后一次 report() 的 UnixNano 时间戳，用于时间衰减
 }
 
 func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
@@ -176,9 +177,19 @@ func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstT
 			}
 		}
 	}
+
+	// 更新最后上报时间，供 snapshot() 的时间衰减使用
+	stat.lastUpdateNanos.Store(time.Now().UnixNano())
 }
 
-func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64, ttft float64, hasTTFT bool) {
+// ewmaErrorRateHalfLife 是错误率 EWMA 的时间半衰期。
+// 低频账户在此时间内无新请求时，历史错误率会自然衰减至一半，
+// 避免单次偶发错误在静默期长期压低账户评分。
+const ewmaErrorRateHalfLife = 30 * time.Minute
+
+// snapshot 返回账户的运行时统计快照。
+// nowNano 由调用方在调度轮次开始时捕获一次，避免每账户都调用 time.Now()（O(N) 系统调用）。
+func (s *openAIAccountRuntimeStats) snapshot(accountID int64, nowNano int64) (errorRate float64, ttft float64, hasTTFT bool) {
 	if s == nil || accountID <= 0 {
 		return 0, 0, false
 	}
@@ -190,7 +201,21 @@ func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64
 	if stat == nil {
 		return 0, 0, false
 	}
-	errorRate = clamp01(math.Float64frombits(stat.errorRateEWMABits.Load()))
+	rawErrorRate := math.Float64frombits(stat.errorRateEWMABits.Load())
+
+	// 时间衰减：若账户在半衰期内无新请求上报，错误率随时间指数衰减。
+	// 这修正了固定 alpha EWMA 对低频账户不友好的问题：
+	// 低频账户的一次偶发错误会在静默期内缓慢消散，而非长期影响调度评分。
+	lastUpdate := stat.lastUpdateNanos.Load()
+	if lastUpdate > 0 && rawErrorRate > 0 {
+		elapsed := time.Duration(nowNano - lastUpdate)
+		if elapsed > 0 {
+			decay := math.Pow(0.5, float64(elapsed)/float64(ewmaErrorRateHalfLife))
+			rawErrorRate *= decay
+		}
+	}
+
+	errorRate = clamp01(rawErrorRate)
 	ttftValue := math.Float64frombits(stat.ttftEWMABits.Load())
 	if math.IsNaN(ttftValue) {
 		return errorRate, 0, false
@@ -373,7 +398,7 @@ func (h openAIAccountCandidateHeap) Len() int {
 }
 
 func (h openAIAccountCandidateHeap) Less(i, j int) bool {
-	// 最小堆根节点保存“最差”候选，便于 O(log k) 维护 topK。
+	// 最小堆根节点保存"最差"候选，便于 O(log k) 维护 topK。
 	return isOpenAIAccountCandidateBetter(h[j], h[i])
 }
 
@@ -493,9 +518,14 @@ func deriveOpenAISelectionSeed(req OpenAIAccountScheduleRequest) uint64 {
 	}
 
 	seed := hasher.Sum64()
-	// 对“无会话锚点”的纯负载均衡请求引入时间熵，避免固定命中同一账号。
+	// 对"无会话锚点"的纯负载均衡请求引入完整时间熵，避免固定命中同一账号。
 	if strings.TrimSpace(req.SessionHash) == "" && strings.TrimSpace(req.PreviousResponseID) == "" {
 		seed ^= uint64(time.Now().UnixNano())
+	} else {
+		// 有会话锚点时混入时间低位作为并发打散因子：防止同一会话的并发重连请求（如流式断联重试）
+		// 因确定性种子而产生完全相同的 selectionOrder，将所有重试请求推向同一热点账户。
+		// 仅使用低 20 位（约 1ms 精度），保留会话哈希的主导影响，仅打破纳秒级并发的确定性。
+		seed ^= uint64(time.Now().UnixNano()) & 0xFFFFF
 	}
 	if seed == 0 {
 		seed = uint64(time.Now().UnixNano()) ^ 0x9e3779b97f4a7c15
@@ -520,7 +550,7 @@ func buildOpenAIWeightedSelectionOrder(
 		}
 	}
 	for i := range pool {
-		// 将 top-K 分值平移到正区间，避免“单一最高分账号”长期垄断。
+		// 将 top-K 分值平移到正区间，避免"单一最高分账号"长期垄断。
 		weight := (pool[i].score - minScore) + 1.0
 		if math.IsNaN(weight) || math.IsInf(weight, 0) || weight <= 0 {
 			weight = 1.0
@@ -617,6 +647,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 	}
 
+	// 捕获一次当前时间戳，供所有账户的 snapshot() 时间衰减共用，避免 O(N) 系统调用。
+	nowNano := time.Now().UnixNano()
+
 	minPriority, maxPriority := filtered[0].Priority, filtered[0].Priority
 	maxWaiting := 1
 	maxStickyCount := 1
@@ -643,7 +676,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		if loadInfo.StickySessionCount > maxStickyCount {
 			maxStickyCount = loadInfo.StickySessionCount
 		}
-		errorRate, ttft, hasTTFT := s.stats.snapshot(account.ID)
+		errorRate, ttft, hasTTFT := s.stats.snapshot(account.ID, nowNano)
 		if hasTTFT && ttft > 0 {
 			if !hasTTFTSample {
 				minTTFT, maxTTFT = ttft, ttft
@@ -704,6 +737,16 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	rankedCandidates := selectTopKOpenAICandidates(candidates, topK)
 	selectionOrder := buildOpenAIWeightedSelectionOrder(rankedCandidates, req)
 
+	cfg := s.service.schedulingConfig()
+	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
+	// 所有候选均满载时，优先选择等待队列最短的账户排队（而非综合评分最高的），
+	// 因为此时 loadFactor/queueFactor 已无区分度，等待队列长度是更直接的预计等待时间指标。
+	// resolveFreshSchedulableOpenAIAccount 涉及 DB/缓存查询，合并到单次遍历以避免满载时的二次查询。
+	type waitCandidate struct {
+		fresh        *Account
+		waitingCount int
+	}
+	var waitCandidates []waitCandidate
 	for i := 0; i < len(selectionOrder); i++ {
 		candidate := selectionOrder[i]
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.RequestedModel)
@@ -724,20 +767,19 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 				ReleaseFunc: result.ReleaseFunc,
 			}, len(candidates), topK, loadSkew, nil
 		}
+		// 槽位已满：记录以便后续选最短等待队列
+		waitCandidates = append(waitCandidates, waitCandidate{fresh: fresh, waitingCount: candidate.loadInfo.WaitingCount})
 	}
-
-	cfg := s.service.schedulingConfig()
-	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
-	for _, candidate := range selectionOrder {
-		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.RequestedModel)
-		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) {
-			continue
-		}
+	if len(waitCandidates) > 0 {
+		sort.Slice(waitCandidates, func(i, j int) bool {
+			return waitCandidates[i].waitingCount < waitCandidates[j].waitingCount
+		})
+		best := waitCandidates[0]
 		return &AccountSelectionResult{
-			Account: fresh,
+			Account: best.fresh,
 			WaitPlan: &AccountWaitPlan{
-				AccountID:      fresh.ID,
-				MaxConcurrency: fresh.Concurrency,
+				AccountID:      best.fresh.ID,
+				MaxConcurrency: best.fresh.Concurrency,
 				Timeout:        cfg.FallbackWaitTimeout,
 				MaxWaiting:     cfg.FallbackMaxWaiting,
 			},
