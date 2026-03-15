@@ -790,8 +790,11 @@ const confirmDeleteUnused = async () => {
   try {
     // 循环分页删除，直到没有未使用码为止（避免单次只取 1000 条的截断问题）
     const PAGE_SIZE = 1000
+    const maxIterations = 100
     let totalDeleted = 0
-    while (true) {
+    let iterations = 0
+    while (iterations < maxIterations) {
+      iterations++
       const unusedCodesResponse = await adminAPI.redeem.list(1, PAGE_SIZE, { status: 'unused' })
       const unusedCodeIds = unusedCodesResponse.items.map((code) => code.id)
 
@@ -806,7 +809,9 @@ const confirmDeleteUnused = async () => {
       if (unusedCodesResponse.items.length < PAGE_SIZE) break
     }
 
-    if (totalDeleted === 0) {
+    if (iterations >= maxIterations) {
+      appStore.showWarning(`Deleted ${totalDeleted} codes but iteration limit reached. Some unused codes may remain.`)
+    } else if (totalDeleted === 0) {
       appStore.showInfo(t('admin.redeem.noUnusedCodes'))
     } else {
       appStore.showSuccess(t('admin.redeem.codesDeleted', { count: totalDeleted }))
