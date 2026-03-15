@@ -1005,7 +1005,10 @@ export default {
       topUsersByUsage: '缓存未命中率 - Token用量最高用户',
       lowestCacheHitRate: '缓存未命中率 - Token命中率最低用户',
       tokenMissRate: 'Token 未命中率',
-      requestMissRate: '请求未命中率'
+      requestMissRate: '请求未命中率',
+      platformCacheHitRateTrend: '平台缓存命中率趋势',
+      tokenCacheHitRate: 'Token 命中率',
+      requestCacheHitRate: '请求命中率'
     },
 
     backup: {

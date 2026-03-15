@@ -269,6 +269,12 @@
             <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
           </div>
 
+          <!-- Platform Cache Hit Rate Trend (Full Width) -->
+          <PlatformCacheHitRateTrend
+            :trend-data="trendData"
+            :loading="chartsLoading"
+          />
+
           <!-- User Usage Trend (Full Width) -->
           <div class="card p-4">
             <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
@@ -325,6 +331,7 @@ import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import UserCacheHitRateChart from '@/components/charts/UserCacheHitRateChart.vue'
+import PlatformCacheHitRateTrend from '@/components/charts/PlatformCacheHitRateTrend.vue'
 
 import {
   Chart as ChartJS,

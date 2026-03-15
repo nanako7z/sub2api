@@ -983,7 +983,10 @@ export default {
       topUsersByUsage: 'Cache Miss Rate - Top Token Usage Users',
       lowestCacheHitRate: 'Cache Miss Rate - Lowest Token Hit Rate Users',
       tokenMissRate: 'Token Miss Rate',
-      requestMissRate: 'Request Miss Rate'
+      requestMissRate: 'Request Miss Rate',
+      platformCacheHitRateTrend: 'Platform Cache Hit Rate Trend',
+      tokenCacheHitRate: 'Token Hit Rate',
+      requestCacheHitRate: 'Request Hit Rate'
     },
 
     backup: {

@@ -64,8 +64,9 @@ type TrendDataPoint struct {
 	CacheCreationTokens int64   `json:"cache_creation_tokens"`
 	CacheReadTokens     int64   `json:"cache_read_tokens"`
 	TotalTokens         int64   `json:"total_tokens"`
-	Cost                float64 `json:"cost"`        // 标准计费
-	ActualCost          float64 `json:"actual_cost"` // 实际扣除
+	Cost                float64 `json:"cost"`              // 标准计费
+	ActualCost          float64 `json:"actual_cost"`       // 实际扣除
+	CacheHitRequests    int64   `json:"cache_hit_requests"` // cache_read_tokens > 0 的请求数
 }
 
 // ModelStat represents usage statistics for a single model

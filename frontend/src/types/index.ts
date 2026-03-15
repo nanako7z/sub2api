@@ -1154,6 +1154,7 @@ export interface TrendDataPoint {
   total_tokens: number
   cost: number // 标准计费
   actual_cost: number // 实际扣除
+  cache_hit_requests: number // cache_read_tokens > 0 的请求数
 }
 
 export interface ModelStat {
