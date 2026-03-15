@@ -653,6 +653,24 @@
               </div>
               <Toggle v-model="form.password_reset_enabled" />
             </div>
+            <!-- Frontend URL - Only show when password reset is enabled -->
+            <div
+              v-if="form.email_verify_enabled && form.password_reset_enabled"
+              class="border-t border-gray-100 pt-4 dark:border-dark-700"
+            >
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.registration.frontendUrl') }}
+              </label>
+              <input
+                v-model="form.frontend_url"
+                type="url"
+                class="input"
+                :placeholder="t('admin.settings.registration.frontendUrlPlaceholder')"
+              />
+              <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.registration.frontendUrlHint') }}
+              </p>
+            </div>
 
             <!-- TOTP 2FA -->
             <div
@@ -1599,6 +1617,7 @@
               </div>
               <Toggle v-model="form.smtp_use_tls" />
             </div>
+
           </div>
         </div>
 
@@ -1834,6 +1853,7 @@ const form = reactive<SettingsForm>({
   purchase_subscription_new_tab: false,
   sora_client_enabled: false,
   custom_menu_items: [] as Array<{id: string; label: string; icon_svg: string; url: string; visibility: 'user' | 'admin'; sort_order: number}>,
+  frontend_url: '',
   smtp_host: '',
   smtp_port: 587,
   smtp_username: '',
@@ -2112,6 +2132,7 @@ async function saveSettings() {
       purchase_subscription_new_tab: form.purchase_subscription_new_tab,
       sora_client_enabled: form.sora_client_enabled,
       custom_menu_items: form.custom_menu_items,
+      frontend_url: form.frontend_url,
       smtp_host: form.smtp_host,
       smtp_port: form.smtp_port,
       smtp_username: form.smtp_username,
