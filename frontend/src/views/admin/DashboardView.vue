@@ -261,6 +261,8 @@
               :enable-ranking-view="true"
               :ranking-items="rankingItems"
               :ranking-total-actual-cost="rankingTotalActualCost"
+              :ranking-total-requests="rankingTotalRequests"
+              :ranking-total-tokens="rankingTotalTokens"
               :loading="chartsLoading"
               :ranking-loading="rankingLoading"
               :ranking-error="rankingError"
@@ -374,6 +376,8 @@ const cacheStatsTopTrend = ref<UserCacheHitRateTrendPoint[]>([])
 const cacheStatsLowestTrend = ref<UserCacheHitRateTrendPoint[]>([])
 const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
+const rankingTotalRequests = ref(0)
+const rankingTotalTokens = ref(0)
 let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
 let cacheStatsLoadSeq = 0
@@ -388,7 +392,7 @@ const formatLocalDate = (date: Date): string => {
 const getTodayLocalDate = () => formatLocalDate(new Date())
 
 // Date range
-const granularity = ref<'day' | 'hour'>('day')
+const granularity = ref<'day' | 'hour'>('hour')
 const startDate = ref(getTodayLocalDate())
 const endDate = ref(getTodayLocalDate())
 
@@ -710,11 +714,15 @@ const loadUserSpendingRanking = async () => {
     if (currentSeq !== rankingLoadSeq) return
     rankingItems.value = response.ranking || []
     rankingTotalActualCost.value = response.total_actual_cost || 0
+    rankingTotalRequests.value = response.total_requests || 0
+    rankingTotalTokens.value = response.total_tokens || 0
   } catch (error) {
     if (currentSeq !== rankingLoadSeq) return
     console.error('Error loading user spending ranking:', error)
     rankingItems.value = []
     rankingTotalActualCost.value = 0
+    rankingTotalRequests.value = 0
+    rankingTotalTokens.value = 0
     rankingError.value = true
   } finally {
     if (currentSeq === rankingLoadSeq) {
