@@ -543,7 +543,7 @@ func TestOpenAIAccountRuntimeStats_ReportAndSnapshot(t *testing.T) {
 	secondTTFT := 200
 	stats.report(1001, false, &secondTTFT)
 
-	errorRate, ttft, hasTTFT := stats.snapshot(1001)
+	errorRate, ttft, hasTTFT := stats.snapshot(1001, time.Now().UnixNano())
 	require.True(t, hasTTFT)
 	require.InDelta(t, 0.36, errorRate, 1e-9)
 	require.InDelta(t, 120.0, ttft, 1e-9)
@@ -576,7 +576,7 @@ func TestOpenAIAccountRuntimeStats_ReportConcurrent(t *testing.T) {
 
 	require.Equal(t, accountCount, stats.size())
 	for accountID := int64(1); accountID <= accountCount; accountID++ {
-		errorRate, ttft, hasTTFT := stats.snapshot(accountID)
+		errorRate, ttft, hasTTFT := stats.snapshot(accountID, time.Now().UnixNano())
 		require.GreaterOrEqual(t, errorRate, 0.0)
 		require.LessOrEqual(t, errorRate, 1.0)
 		require.True(t, hasTTFT)

@@ -206,7 +206,7 @@ func TestRefreshSessionAndAffinity_RefreshesSessionAndAffinity(t *testing.T) {
 	ctx := ctxWithAffinity(affinityHash)
 	gid := int64(2)
 
-	svc.refreshSessionAndAffinity(ctx, &gid, sessionHash)
+	svc.refreshSessionAndAffinity(ctx, &gid, sessionHash, int64(99))
 
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
@@ -227,7 +227,7 @@ func TestRefreshSessionAndAffinity_SkipsWhenSessionHashEmpty(t *testing.T) {
 
 	ctx := ctxWithAffinity("some-affinity")
 	gid := int64(1)
-	svc.refreshSessionAndAffinity(ctx, &gid, "")
+	svc.refreshSessionAndAffinity(ctx, &gid, "", int64(0))
 
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
@@ -241,7 +241,7 @@ func TestRefreshSessionAndAffinity_OnlySessionWhenNoAffinity(t *testing.T) {
 
 	ctx := ctxWithAffinity("")
 	gid := int64(1)
-	svc.refreshSessionAndAffinity(ctx, &gid, "session-xyz")
+	svc.refreshSessionAndAffinity(ctx, &gid, "session-xyz", int64(42))
 
 	cache.mu.Lock()
 	defer cache.mu.Unlock()

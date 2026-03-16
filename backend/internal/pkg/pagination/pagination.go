@@ -32,12 +32,14 @@ func (p PaginationParams) Offset() int {
 }
 
 // Limit 获取限制数
+// 普通列表接口由 ParsePagination 将用户输入限制在 1000 以内；
+// 内部导出路径（如 Export 传 10000）不受此处上限约束，最大允许 10000。
 func (p PaginationParams) Limit() int {
 	if p.PageSize < 1 {
 		return 20
 	}
-	if p.PageSize > 100 {
-		return 100
+	if p.PageSize > 10000 {
+		return 10000
 	}
 	return p.PageSize
 }

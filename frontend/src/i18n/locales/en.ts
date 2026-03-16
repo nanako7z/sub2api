@@ -2983,6 +2983,11 @@ export default {
       codeDeleted: 'Redeem code deleted successfully',
       codesDeleted: 'Successfully deleted {count} unused code(s)',
       noUnusedCodes: 'No unused codes to delete',
+      batchDeleteSelected: 'Delete Selected ({count})',
+      batchDeleteTitle: 'Batch Delete Codes',
+      batchDeleteConfirm: 'Delete the selected {count} code(s)? Used codes will be skipped. This cannot be undone.',
+      batchDeleteSuccess: 'Successfully deleted {count} code(s)',
+      failedToBatchDelete: 'Failed to batch delete codes',
       failedToLoad: 'Failed to load redeem codes',
       failedToGenerate: 'Failed to generate codes',
       failedToExport: 'Failed to export codes',
@@ -4129,6 +4134,8 @@ export default {
         urlHint: 'Must be an absolute http(s) URL',
         iframeWarning:
           '⚠️ iframe note: Some websites block embedding via X-Frame-Options or CSP (frame-ancestors). If the page is blank, provide an "Open in new tab" alternative.',
+        newTab: 'New Tab Mode',
+        newTabHint: 'When enabled, clicking "Recharge / Subscribe" opens the URL directly in a new tab instead of embedding it in an iframe',
         integrationDoc: 'Payment Integration Docs',
         integrationDocHint: 'Covers endpoint specs, idempotency semantics, and code samples'
       },
@@ -4511,7 +4518,9 @@ export default {
     notEnabledDesc: 'The administrator has not enabled the recharge/subscription entry. Please contact admin.',
     notConfiguredTitle: 'Recharge / Subscription URL not configured',
     notConfiguredDesc:
-      'The administrator enabled the entry but has not configured a recharge/subscription URL. Please contact admin.'
+      'The administrator enabled the entry but has not configured a recharge/subscription URL. Please contact admin.',
+    newTabTitle: 'Recharge / Subscription',
+    newTabDesc: 'This page is configured to open in a new tab. Click the button below to proceed.'
   },
 
   // Custom Page (iframe embed)

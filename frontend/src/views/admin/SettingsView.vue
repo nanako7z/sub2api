@@ -1272,9 +1272,22 @@
               <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.settings.purchase.urlHint') }}
               </p>
-              <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+              <p v-if="!form.purchase_subscription_new_tab" class="mt-2 text-xs text-amber-600 dark:text-amber-400">
                 {{ t('admin.settings.purchase.iframeWarning') }}
               </p>
+            </div>
+
+            <!-- New Tab Mode -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.purchase.newTab')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.purchase.newTabHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.purchase_subscription_new_tab" />
             </div>
 
             <!-- Integration Docs -->
@@ -1837,6 +1850,7 @@ const form = reactive<SettingsForm>({
   hide_ccs_import_button: false,
   purchase_subscription_enabled: false,
   purchase_subscription_url: '',
+  purchase_subscription_new_tab: false,
   sora_client_enabled: false,
   custom_menu_items: [] as Array<{id: string; label: string; icon_svg: string; url: string; visibility: 'user' | 'admin'; sort_order: number}>,
   frontend_url: '',
@@ -2115,6 +2129,7 @@ async function saveSettings() {
       hide_ccs_import_button: form.hide_ccs_import_button,
       purchase_subscription_enabled: form.purchase_subscription_enabled,
       purchase_subscription_url: form.purchase_subscription_url,
+      purchase_subscription_new_tab: form.purchase_subscription_new_tab,
       sora_client_enabled: form.sora_client_enabled,
       custom_menu_items: form.custom_menu_items,
       frontend_url: form.frontend_url,

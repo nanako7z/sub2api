@@ -3115,6 +3115,11 @@ export default {
       codeDeleted: '兑换码删除成功',
       codesDeleted: '成功删除 {count} 个未使用的兑换码',
       noUnusedCodes: '没有未使用的兑换码可删除',
+      batchDeleteSelected: '删除选中 ({count})',
+      batchDeleteTitle: '批量删除兑换码',
+      batchDeleteConfirm: '确定要删除选中的 {count} 个兑换码吗？已使用的码不会被删除，此操作无法撤销。',
+      batchDeleteSuccess: '成功删除 {count} 个兑换码',
+      failedToBatchDelete: '批量删除兑换码失败',
       userPrefix: '用户 #{id}',
       failedToExport: '导出兑换码失败',
       failedToDeleteUnused: '删除未使用的兑换码失败',
@@ -4295,6 +4300,8 @@ export default {
         urlHint: '必须是完整的 http(s) 链接',
         iframeWarning:
           '⚠️ iframe 提示：部分网站会通过 X-Frame-Options 或 CSP（frame-ancestors）禁止被 iframe 嵌入，出现空白时可引导用户使用”新窗口打开”。',
+        newTab: '新标签页模式',
+        newTabHint: '开启后点击”充值/订阅”按钮直接在新标签页打开链接，不再内嵌 iframe',
         integrationDoc: '支付集成文档',
         integrationDocHint: '包含接口说明、幂等语义及示例代码'
       },
@@ -4675,7 +4682,9 @@ export default {
     notEnabledTitle: '该功能未开启',
     notEnabledDesc: '管理员暂未开启充值/订阅入口，请联系管理员。',
     notConfiguredTitle: '充值/订阅链接未配置',
-    notConfiguredDesc: '管理员已开启入口，但尚未配置充值/订阅链接，请联系管理员。'
+    notConfiguredDesc: '管理员已开启入口，但尚未配置充值/订阅链接，请联系管理员。',
+    newTabTitle: '充值/订阅',
+    newTabDesc: '该页面配置为新标签页模式，请点击下方按钮在新标签页中打开。'
   },
 
   // Custom Page (iframe embed)

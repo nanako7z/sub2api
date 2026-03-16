@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -86,7 +87,7 @@ var claudeFamilyPatterns = map[string][]string{
 	"opus-4.5":   {"claude-opus-4.5", "claude-opus-4-5"},
 	"opus-4":     {"claude-opus-4", "claude-3-opus"},
 	"sonnet-4.5": {"claude-sonnet-4.5", "claude-sonnet-4-5"},
-	"sonnet-4":   {"claude-sonnet-4", "claude-3-5-sonnet"},
+	"sonnet-4":   {"claude-sonnet-4"},
 	"sonnet-3.5": {"claude-3-5-sonnet", "claude-3.5-sonnet"},
 	"sonnet-3":   {"claude-3-sonnet"},
 	"haiku-3.5":  {"claude-3-5-haiku", "claude-3.5-haiku"},
@@ -514,7 +515,15 @@ func (s *PricingService) buildLookupIndex(data map[string]*LiteLLMModelPricing) 
 	baseNameIdx = make(map[string]*LiteLLMModelPricing, len(data))
 	familyIdx = make(map[string]*LiteLLMModelPricing)
 
-	for key, pricing := range data {
+	// Sort keys for deterministic first-to-win behavior
+	sortedKeys := make([]string, 0, len(data))
+	for key := range data {
+		sortedKeys = append(sortedKeys, key)
+	}
+	sort.Strings(sortedKeys)
+
+	for _, key := range sortedKeys {
+		pricing := data[key]
 		keyLower := strings.ToLower(key)
 
 		// baseName 索引（先到先得）
@@ -541,8 +550,15 @@ func (s *PricingService) buildLookupIndex(data map[string]*LiteLLMModelPricing) 
 
 // resolveModelFamily 根据模型名称返回其所属的 Claude 模型系列 key，不访问 pricingData。
 func resolveModelFamily(model string) string {
-	// 先用 familyPatterns 精确匹配
-	for family, patterns := range claudeFamilyPatterns {
+	// 先用 familyPatterns 精确匹配（按 key 排序确保确定性）
+	sortedFamilies := make([]string, 0, len(claudeFamilyPatterns))
+	for family := range claudeFamilyPatterns {
+		sortedFamilies = append(sortedFamilies, family)
+	}
+	sort.Strings(sortedFamilies)
+
+	for _, family := range sortedFamilies {
+		patterns := claudeFamilyPatterns[family]
 		for _, pattern := range patterns {
 			if strings.Contains(model, pattern) || strings.Contains(model, strings.ReplaceAll(pattern, "-", "")) {
 				return family
@@ -552,6 +568,9 @@ func resolveModelFamily(model string) string {
 
 	// 简单的关键词回退匹配
 	if strings.Contains(model, "opus") {
+		if strings.Contains(model, "4.6") || strings.Contains(model, "4-6") {
+			return "opus-4.6"
+		}
 		if strings.Contains(model, "4.5") || strings.Contains(model, "4-5") {
 			return "opus-4.5"
 		}

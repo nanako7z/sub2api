@@ -28,6 +28,14 @@ func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	}
 }
 
+func TestLoad_DefaultOpenAIWSSessionAffinityWeight(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 0.6, cfg.Gateway.OpenAIWS.SchedulerScoreWeights.SessionAffinity)
+}
+
 func TestNormalizeRunMode(t *testing.T) {
 	tests := []struct {
 		input    string

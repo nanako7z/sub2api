@@ -134,7 +134,9 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 	// 5. 设置粘性会话绑定
 	// Set sticky session binding
 	if sessionHash != "" {
-		_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), cacheKey, selected.ID, geminiStickySessionTTL)
+		gid := derefGroupID(groupID)
+		_ = s.cache.SetSessionAccountID(ctx, gid, cacheKey, selected.ID, geminiStickySessionTTL)
+		_ = s.cache.AddStickySessionReverse(ctx, selected.ID, gid, cacheKey, geminiStickySessionTTL)
 	}
 
 	return selected, nil
@@ -205,7 +207,9 @@ func (s *GeminiMessagesCompatService) tryStickySessionHit(
 	// 检查账号是否需要清理粘性会话
 	// Check if sticky session should be cleared
 	if shouldClearStickySession(account, requestedModel) {
-		_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), cacheKey)
+		gid := derefGroupID(groupID)
+		_ = s.cache.DeleteSessionAccountID(ctx, gid, cacheKey)
+		_ = s.cache.RemoveStickySessionReverse(ctx, accountID, gid, cacheKey)
 		return nil
 	}
 
@@ -217,7 +221,9 @@ func (s *GeminiMessagesCompatService) tryStickySessionHit(
 
 	// 刷新会话 TTL 并返回账号
 	// Refresh session TTL and return account
-	_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), cacheKey, geminiStickySessionTTL)
+	gid := derefGroupID(groupID)
+	_ = s.cache.RefreshSessionTTL(ctx, gid, cacheKey, geminiStickySessionTTL)
+	_ = s.cache.AddStickySessionReverse(ctx, accountID, gid, cacheKey, geminiStickySessionTTL)
 	return account
 }
 

@@ -130,30 +130,58 @@ func TestOpenAIWSStateStore_MaybeCleanupRemovesExpiredIncrementally(t *testing.T
 	require.Zero(t, remaining, "多轮 cleanup 后应逐步清空全部过期键")
 }
 
-func TestEnsureBindingCapacity_EvictsOneWhenMapIsFull(t *testing.T) {
-	bindings := map[string]int{
-		"a": 1,
-		"b": 2,
+func TestEnsureBindingCapacityByExpiry_PrefersExpiredEntry(t *testing.T) {
+	now := time.Now()
+	bindings := map[string]openAIWSConnBinding{
+		"expired": {connID: "conn_old", expiresAt: now.Add(-time.Second)},
+		"fresh":   {connID: "conn_new", expiresAt: now.Add(time.Minute)},
 	}
 
-	ensureBindingCapacity(bindings, "c", 2)
-	bindings["c"] = 3
+	ensureBindingCapacityByExpiry(bindings, "incoming", 2, now, func(binding openAIWSConnBinding) time.Time {
+		return binding.expiresAt
+	})
+	bindings["incoming"] = openAIWSConnBinding{connID: "conn_in", expiresAt: now.Add(2 * time.Minute)}
 
 	require.Len(t, bindings, 2)
-	require.Equal(t, 3, bindings["c"])
+	_, stillExpired := bindings["expired"]
+	require.False(t, stillExpired, "优先淘汰过期项")
+	_, hasIncoming := bindings["incoming"]
+	require.True(t, hasIncoming)
 }
 
-func TestEnsureBindingCapacity_DoesNotEvictWhenUpdatingExistingKey(t *testing.T) {
-	bindings := map[string]int{
-		"a": 1,
-		"b": 2,
+func TestEnsureBindingCapacityByExpiry_EvictsEarliestExpiryWhenNoExpired(t *testing.T) {
+	now := time.Now()
+	bindings := map[string]openAIWSConnBinding{
+		"earlier": {connID: "conn_1", expiresAt: now.Add(5 * time.Second)},
+		"later":   {connID: "conn_2", expiresAt: now.Add(30 * time.Second)},
 	}
 
-	ensureBindingCapacity(bindings, "a", 2)
-	bindings["a"] = 9
+	ensureBindingCapacityByExpiry(bindings, "incoming", 2, now, func(binding openAIWSConnBinding) time.Time {
+		return binding.expiresAt
+	})
+	bindings["incoming"] = openAIWSConnBinding{connID: "conn_3", expiresAt: now.Add(40 * time.Second)}
 
 	require.Len(t, bindings, 2)
-	require.Equal(t, 9, bindings["a"])
+	_, hasEarlier := bindings["earlier"]
+	require.False(t, hasEarlier, "无过期项时应淘汰最早过期项")
+	_, hasIncoming := bindings["incoming"]
+	require.True(t, hasIncoming)
+}
+
+func TestEnsureBindingCapacityByExpiry_DoesNotEvictWhenUpdatingExistingKey(t *testing.T) {
+	now := time.Now()
+	bindings := map[string]openAIWSConnBinding{
+		"a": {connID: "conn_a", expiresAt: now.Add(10 * time.Second)},
+		"b": {connID: "conn_b", expiresAt: now.Add(20 * time.Second)},
+	}
+
+	ensureBindingCapacityByExpiry(bindings, "a", 2, now, func(binding openAIWSConnBinding) time.Time {
+		return binding.expiresAt
+	})
+	bindings["a"] = openAIWSConnBinding{connID: "conn_a_new", expiresAt: now.Add(30 * time.Second)}
+
+	require.Len(t, bindings, 2)
+	require.Equal(t, "conn_a_new", bindings["a"].connID)
 }
 
 type openAIWSStateStoreTimeoutProbeCache struct {
