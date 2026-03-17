@@ -153,6 +153,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyLinuxDoConnectEnabled,
 		SettingKeyBackendModeEnabled,
 		SettingKeyReferralEnabled,
+		SettingKeyPartnerEnabled,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -200,6 +201,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		LinuxDoOAuthEnabled:              linuxDoEnabled,
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
 		ReferralEnabled:                  settings[SettingKeyReferralEnabled] == "true",
+		PartnerEnabled:                   settings[SettingKeyPartnerEnabled] == "true",
 	}, nil
 }
 

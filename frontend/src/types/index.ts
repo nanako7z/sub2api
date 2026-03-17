@@ -111,6 +111,7 @@ export interface PublicSettings {
   sora_client_enabled: boolean
   backend_mode_enabled: boolean
   referral_enabled: boolean
+  partner_enabled: boolean
   version: string
 }
 

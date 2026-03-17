@@ -57,6 +57,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		SoraClientEnabled:                settings.SoraClientEnabled,
 		BackendModeEnabled:               settings.BackendModeEnabled,
 		ReferralEnabled:                  settings.ReferralEnabled,
+		PartnerEnabled:                   settings.PartnerEnabled,
 		Version:                          h.version,
 	})
 }

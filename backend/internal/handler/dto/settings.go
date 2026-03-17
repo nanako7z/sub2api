@@ -131,6 +131,7 @@ type PublicSettings struct {
 	SoraClientEnabled                bool             `json:"sora_client_enabled"`
 	BackendModeEnabled               bool             `json:"backend_mode_enabled"`
 	ReferralEnabled                  bool             `json:"referral_enabled"`
+	PartnerEnabled                   bool             `json:"partner_enabled"`
 	Version                          string           `json:"version"`
 }
 
