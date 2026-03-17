@@ -9,7 +9,7 @@
       <!-- Settings Form -->
       <form v-else @submit.prevent="saveSettings" class="space-y-6">
         <!-- Tab Navigation -->
-        <div class="sticky top-0 z-10 overflow-x-auto settings-tabs-scroll">
+        <div class="sticky top-0 z-10">
           <nav class="settings-tabs">
             <button
               v-for="tab in settingsTabs"
@@ -696,120 +696,6 @@
                 :disabled="!form.totp_encryption_key_configured"
               />
             </div>
-          </div>
-        </div>
-
-        <!-- Referral Settings -->
-        <div class="card">
-          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.settings.referral.title') }}
-            </h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.settings.referral.description') }}
-            </p>
-          </div>
-          <div class="space-y-4 p-6">
-            <!-- Enable Referral -->
-            <div class="flex items-center justify-between">
-              <div>
-                <label class="font-medium text-gray-900 dark:text-white">{{
-                  t('admin.settings.referral.enableReferral')
-                }}</label>
-                <p class="text-sm text-gray-500 dark:text-gray-400">
-                  {{ t('admin.settings.referral.enableReferralHint') }}
-                </p>
-              </div>
-              <Toggle v-model="form.referral_enabled" />
-            </div>
-
-            <template v-if="form.referral_enabled">
-              <!-- Referral Signup Bonus -->
-              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
-                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ t('admin.settings.referral.signupBonus') }}
-                </label>
-                <input
-                  v-model.number="form.referral_signup_bonus"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  class="input w-full sm:w-48"
-                />
-                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.settings.referral.signupBonusHint') }}
-                </p>
-              </div>
-
-              <!-- Referrer Bonus -->
-              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
-                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ t('admin.settings.referral.referrerBonus') }}
-                </label>
-                <input
-                  v-model.number="form.referral_referrer_bonus"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  class="input w-full sm:w-48"
-                />
-                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.settings.referral.referrerBonusHint') }}
-                </p>
-              </div>
-
-              <!-- Commission Rate -->
-              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
-                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ t('admin.settings.referral.commissionRate') }}
-                </label>
-                <div class="flex items-center gap-2">
-                  <input
-                    v-model.number="form.referral_commission_rate"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    class="input w-full sm:w-48"
-                  />
-                  <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
-                </div>
-                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.settings.referral.commissionRateHint') }}
-                </p>
-              </div>
-
-              <!-- Max Commission Per User -->
-              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
-                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ t('admin.settings.referral.maxCommission') }}
-                </label>
-                <input
-                  v-model.number="form.referral_max_commission_per_user"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  class="input w-full sm:w-48"
-                />
-                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.settings.referral.maxCommissionHint') }}
-                </p>
-              </div>
-
-              <!-- Balance Consumption Priority -->
-              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
-                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {{ t('admin.settings.referral.balancePriority') }}
-                </label>
-                <select v-model="form.balance_consumption_priority" class="input w-full sm:w-64">
-                  <option value="normal_first">{{ t('admin.settings.referral.normalFirst') }}</option>
-                  <option value="gift_first">{{ t('admin.settings.referral.giftFirst') }}</option>
-                </select>
-                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('admin.settings.referral.balancePriorityHint') }}
-                </p>
-              </div>
-            </template>
           </div>
         </div>
 
@@ -1804,8 +1690,123 @@
           <DataManagementSettings />
         </div>
 
-        <!-- Tab: Partner Plan -->
-        <div v-show="activeTab === 'partner'" class="space-y-6">
+        <!-- Tab: Promotion (Referral + Partner) -->
+        <div v-show="activeTab === 'promotion'" class="space-y-6">
+          <!-- Referral Settings -->
+          <div class="card">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t('admin.settings.referral.title') }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.referral.description') }}
+              </p>
+            </div>
+            <div class="space-y-4 p-6">
+              <!-- Enable Referral -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="font-medium text-gray-900 dark:text-white">{{
+                    t('admin.settings.referral.enableReferral')
+                  }}</label>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.referral.enableReferralHint') }}
+                  </p>
+                </div>
+                <Toggle v-model="form.referral_enabled" />
+              </div>
+
+              <template v-if="form.referral_enabled">
+                <!-- Referral Signup Bonus -->
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.referral.signupBonus') }}
+                  </label>
+                  <input
+                    v-model.number="form.referral_signup_bonus"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input w-full sm:w-48"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.referral.signupBonusHint') }}
+                  </p>
+                </div>
+
+                <!-- Referrer Bonus -->
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.referral.referrerBonus') }}
+                  </label>
+                  <input
+                    v-model.number="form.referral_referrer_bonus"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input w-full sm:w-48"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.referral.referrerBonusHint') }}
+                  </p>
+                </div>
+
+                <!-- Commission Rate -->
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.referral.commissionRate') }}
+                  </label>
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model.number="form.referral_commission_rate"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      class="input w-full sm:w-48"
+                    />
+                    <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                  </div>
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.referral.commissionRateHint') }}
+                  </p>
+                </div>
+
+                <!-- Max Commission Per User -->
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.referral.maxCommission') }}
+                  </label>
+                  <input
+                    v-model.number="form.referral_max_commission_per_user"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input w-full sm:w-48"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.referral.maxCommissionHint') }}
+                  </p>
+                </div>
+
+                <!-- Balance Consumption Priority -->
+                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.referral.balancePriority') }}
+                  </label>
+                  <select v-model="form.balance_consumption_priority" class="input w-full sm:w-64">
+                    <option value="normal_first">{{ t('admin.settings.referral.normalFirst') }}</option>
+                    <option value="gift_first">{{ t('admin.settings.referral.giftFirst') }}</option>
+                  </select>
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.referral.balancePriorityHint') }}
+                  </p>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Partner Settings -->
           <div class="card">
             <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1849,7 +1850,7 @@
               </template>
             </div>
           </div>
-        </div>
+        </div><!-- /Tab: Promotion -->
 
         <!-- Save Button -->
         <div v-show="activeTab !== 'backup' && activeTab !== 'data'" class="flex justify-end">
@@ -1910,17 +1911,17 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const adminSettingsStore = useAdminSettingsStore()
 
-type SettingsTab = 'general' | 'security' | 'users' | 'gateway' | 'email' | 'backup' | 'data' | 'partner'
+type SettingsTab = 'general' | 'security' | 'users' | 'gateway' | 'email' | 'backup' | 'data' | 'promotion'
 const activeTab = ref<SettingsTab>('general')
 const settingsTabs = [
-  { key: 'general'  as SettingsTab, icon: 'home'   as const },
-  { key: 'security' as SettingsTab, icon: 'shield' as const },
-  { key: 'users'    as SettingsTab, icon: 'user'   as const },
-  { key: 'gateway'  as SettingsTab, icon: 'server' as const },
-  { key: 'email'    as SettingsTab, icon: 'mail'   as const },
-  { key: 'backup'   as SettingsTab, icon: 'database' as const },
-  { key: 'data'     as SettingsTab, icon: 'cube'     as const },
-  { key: 'partner'  as SettingsTab, icon: 'user'     as const },
+  { key: 'general'   as SettingsTab, icon: 'home'   as const },
+  { key: 'security'  as SettingsTab, icon: 'shield' as const },
+  { key: 'users'     as SettingsTab, icon: 'user'   as const },
+  { key: 'gateway'   as SettingsTab, icon: 'server' as const },
+  { key: 'promotion' as SettingsTab, icon: 'gift'   as const },
+  { key: 'email'     as SettingsTab, icon: 'mail'   as const },
+  { key: 'backup'    as SettingsTab, icon: 'database' as const },
+  { key: 'data'      as SettingsTab, icon: 'cube'     as const },
 ]
 const { copyToClipboard } = useClipboard()
 
@@ -2608,45 +2609,11 @@ onMounted(() => {
 
 /* ============ Settings Tab Navigation ============ */
 
-/* Scroll container: thin scrollbar on PC, auto-hide on mobile */
-.settings-tabs-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-.settings-tabs-scroll:hover {
-  scrollbar-color: rgb(0 0 0 / 0.15) transparent;
-}
-:root.dark .settings-tabs-scroll:hover {
-  scrollbar-color: rgb(255 255 255 / 0.2) transparent;
-}
-.settings-tabs-scroll::-webkit-scrollbar {
-  height: 3px;
-}
-.settings-tabs-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.settings-tabs-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-}
-.settings-tabs-scroll:hover::-webkit-scrollbar-thumb {
-  background: rgb(0 0 0 / 0.15);
-}
-:root.dark .settings-tabs-scroll:hover::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.2);
-}
-
 .settings-tabs {
-  @apply inline-flex min-w-full gap-0.5 rounded-2xl
+  @apply flex flex-wrap gap-0.5 rounded-2xl
          border border-gray-100 bg-white/80 p-1 backdrop-blur-sm
          dark:border-dark-700/50 dark:bg-dark-800/80;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.04), 0 1px 2px rgb(0 0 0 / 0.02);
-}
-
-@media (min-width: 640px) {
-  .settings-tabs {
-    @apply flex;
-  }
 }
 
 .settings-tab {
