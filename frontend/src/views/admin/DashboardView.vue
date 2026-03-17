@@ -307,21 +307,21 @@
           />
 
           <!-- Spending Trend + Leaderboard -->
-          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <UserSpendingTrend :trend-data="spendingTrendData" :loading="spendingTrendLoading" />
-            <UserSpendingLeaderboard :items="rankingItems" :loading="rankingLoading" />
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-8">
+            <UserSpendingTrend class="lg:col-span-5" :trend-data="spendingTrendData" :loading="spendingTrendLoading" />
+            <UserSpendingLeaderboard class="lg:col-span-3" :items="rankingItems" :loading="rankingLoading" />
           </div>
 
           <!-- Commission Trend + Leaderboard (referral enabled) -->
-          <div v-if="referralEnabled" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <CommissionTrend :trend-data="commissionTrendData" :loading="commissionLoading" />
-            <CommissionLeaderboard :items="commissionLeaderboardData" :loading="commissionLoading" />
+          <div v-if="referralEnabled" class="grid grid-cols-1 gap-6 lg:grid-cols-8">
+            <CommissionTrend class="lg:col-span-5" :trend-data="commissionTrendData" :loading="commissionLoading" />
+            <CommissionLeaderboard class="lg:col-span-3" :items="commissionLeaderboardData" :loading="commissionLoading" />
           </div>
 
           <!-- Partner Points Trend + Leaderboard (partner enabled) -->
-          <div v-if="partnerEnabled" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <PartnerPointsTrend :trend-data="partnerPointsTrendData" :loading="partnerPointsLoading" />
-            <PartnerPointsLeaderboard :items="partnerPointsLeaderboardData" :loading="partnerPointsLoading" />
+          <div v-if="partnerEnabled" class="grid grid-cols-1 gap-6 lg:grid-cols-8">
+            <PartnerPointsTrend class="lg:col-span-5" :trend-data="partnerPointsTrendData" :loading="partnerPointsLoading" />
+            <PartnerPointsLeaderboard class="lg:col-span-3" :items="partnerPointsLeaderboardData" :loading="partnerPointsLoading" />
           </div>
         </div>
       </template>

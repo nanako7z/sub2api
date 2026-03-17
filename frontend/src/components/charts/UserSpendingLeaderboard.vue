@@ -13,8 +13,6 @@
             <th class="pb-2 text-left">#</th>
             <th class="pb-2 text-left">{{ t('admin.dashboard.user') }}</th>
             <th class="pb-2 text-right">{{ t('admin.dashboard.actual') }}</th>
-            <th class="pb-2 text-right">{{ t('admin.dashboard.requests') }}</th>
-            <th class="pb-2 text-right">{{ t('admin.dashboard.tokens') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -32,12 +30,6 @@
             </td>
             <td class="py-1.5 text-right text-amber-600 dark:text-amber-400">
               ${{ formatCost(item.actual_cost) }}
-            </td>
-            <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-              {{ formatNumber(item.requests) }}
-            </td>
-            <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-              {{ formatTokens(item.tokens) }}
             </td>
           </tr>
         </tbody>
@@ -71,12 +63,5 @@ const formatCost = (value: number): string => {
   return value.toFixed(4)
 }
 
-const formatNumber = (value: number): string => value.toLocaleString()
 
-const formatTokens = (value: number): string => {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
-  else if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
-  else if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`
-  return value.toLocaleString()
-}
 </script>

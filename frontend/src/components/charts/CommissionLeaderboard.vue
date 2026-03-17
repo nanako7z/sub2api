@@ -13,8 +13,6 @@
             <th class="pb-2 text-left">#</th>
             <th class="pb-2 text-left">{{ t('admin.dashboard.user') }}</th>
             <th class="pb-2 text-right">{{ t('admin.dashboard.commissionAmount') }}</th>
-            <th class="pb-2 text-right">{{ t('admin.dashboard.commissionCount') }}</th>
-            <th class="pb-2 text-right">{{ t('admin.dashboard.referredUsers') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -32,12 +30,6 @@
             </td>
             <td class="py-1.5 text-right text-green-600 dark:text-green-400">
               ${{ formatCost(item.total_amount) }}
-            </td>
-            <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-              {{ item.commission_count }}
-            </td>
-            <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
-              {{ item.referred_users }}
             </td>
           </tr>
         </tbody>
