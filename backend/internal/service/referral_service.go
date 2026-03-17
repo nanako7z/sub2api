@@ -16,6 +16,7 @@ type ReferralServiceDeps struct {
 	ReferralRepo   ReferralRepositoryInterface
 	SettingService *SettingService
 	BillingCache   BillingCacheInvalidator
+	PromoRepo      PromoCodeRepository
 }
 
 // BillingCacheInvalidator 计费缓存失效接口
@@ -40,6 +41,7 @@ type ReferralService struct {
 	referralRepo   ReferralRepositoryInterface
 	settingService *SettingService
 	billingCache   BillingCacheInvalidator
+	promoRepo      PromoCodeRepository
 }
 
 func NewReferralService(deps ReferralServiceDeps) *ReferralService {
@@ -48,6 +50,7 @@ func NewReferralService(deps ReferralServiceDeps) *ReferralService {
 		referralRepo:   deps.ReferralRepo,
 		settingService: deps.SettingService,
 		billingCache:   deps.BillingCache,
+		promoRepo:      deps.PromoRepo,
 	}
 }
 
@@ -62,11 +65,18 @@ func (s *ReferralService) GetOrCreateReferralCode(ctx context.Context, userID in
 		return *user.ReferralCode, nil
 	}
 
-	// 生成推荐码，如果因唯一约束冲突失败则重试
+	// 生成推荐码，如果因唯一约束冲突或与优惠码重复则重试
 	for attempts := 0; attempts < 10; attempts++ {
 		code, err := s.generateCode()
 		if err != nil {
 			return "", fmt.Errorf("generate referral code: %w", err)
+		}
+		// 检查是否与已有优惠码冲突（优惠码使用 case-insensitive 查询）
+		if s.promoRepo != nil {
+			if _, err := s.promoRepo.GetByCode(ctx, code); err == nil {
+				slog.Warn("referral code conflicts with promo code, retrying", "code", code, "attempt", attempts+1)
+				continue
+			}
 		}
 		if err := s.userRepo.SetReferralCode(ctx, userID, code); err != nil {
 			slog.Warn("referral code conflict, retrying", "code", code, "attempt", attempts+1, "error", err)

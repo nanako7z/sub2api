@@ -190,8 +190,14 @@ func (s *PromoService) Create(ctx context.Context, input *CreatePromoCodeInput) 
 		}
 	}
 
+	// 检查是否与已有用户推荐码冲突（推荐码区分大小写，优惠码不区分，统一转大写比较）
+	upperCode := strings.ToUpper(code)
+	if _, err := s.userRepo.GetByReferralCode(ctx, upperCode); err == nil {
+		return nil, infraerrors.Conflict("PROMO_CODE_CONFLICT_REFERRAL", "this code conflicts with an existing referral code")
+	}
+
 	promoCode := &PromoCode{
-		Code:        strings.ToUpper(code),
+		Code:        upperCode,
 		BonusAmount: input.BonusAmount,
 		MaxUses:     input.MaxUses,
 		UsedCount:   0,

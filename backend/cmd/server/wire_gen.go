@@ -74,6 +74,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		ReferralRepo:   referralRepositoryInterface,
 		SettingService: settingService,
 		BillingCache:   billingCacheInvalidator,
+		PromoRepo:      promoCodeRepository,
 	}
 	referralService := service.NewReferralService(referralServiceDeps)
 	authService := service.NewAuthService(client, userRepository, redeemCodeRepository, refreshTokenCache, configConfig, settingService, emailService, turnstileService, emailQueueService, promoService, referralService, subscriptionService)
