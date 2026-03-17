@@ -236,6 +236,13 @@ const (
 	SettingKeyReferralCommissionRate       = "referral_commission_rate"         // 返佣比例 (0-100)
 	SettingKeyReferralMaxCommissionPerUser = "referral_max_commission_per_user" // 单个被推荐用户的最大返佣总额 (0=无限)
 	SettingKeyBalanceConsumptionPriority   = "balance_consumption_priority"     // 扣费优先级: "normal_first" 或 "gift_first"
+
+	// =========================
+	// 合作伙伴计划设置
+	// =========================
+
+	SettingKeyPartnerEnabled     = "partner_enabled"      // 是否启用合作伙伴计划
+	SettingKeyPartnerSignupBonus = "partner_signup_bonus"  // 伙伴渠道注册赠送金额
 )
 
 // Balance consumption priority constants

@@ -904,6 +904,7 @@ var (
 		{Name: "sora_storage_used_bytes", Type: field.TypeInt64, Default: 0},
 		{Name: "gift_balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "referral_code", Type: field.TypeString, Nullable: true, Size: 16},
+		{Name: "partner_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "referrer_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// UsersTable holds the schema information for the "users" table.
@@ -914,7 +915,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "users_users_referred_users",
-				Columns:    []*schema.Column{UsersColumns[19]},
+				Columns:    []*schema.Column{UsersColumns[20]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -932,6 +933,11 @@ var (
 			},
 			{
 				Name:    "user_referrer_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsersColumns[20]},
+			},
+			{
+				Name:    "user_partner_id",
 				Unique:  false,
 				Columns: []*schema.Column{UsersColumns[19]},
 			},

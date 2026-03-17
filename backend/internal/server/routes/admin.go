@@ -52,6 +52,9 @@ func RegisterAdminRoutes(
 		// 优惠码管理
 		registerPromoCodeRoutes(admin, h)
 
+		// 合作伙伴管理
+		registerPartnerRoutes(admin, h)
+
 		// 系统设置
 		registerSettingsRoutes(admin, h)
 
@@ -387,6 +390,19 @@ func registerPromoCodeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		promoCodes.PUT("/:id", h.Admin.Promo.Update)
 		promoCodes.DELETE("/:id", h.Admin.Promo.Delete)
 		promoCodes.GET("/:id/usages", h.Admin.Promo.GetUsages)
+	}
+}
+
+func registerPartnerRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	partners := admin.Group("/partners")
+	{
+		partners.GET("", h.Admin.Partner.List)
+		partners.GET("/:id", h.Admin.Partner.GetByID)
+		partners.POST("", h.Admin.Partner.Create)
+		partners.PUT("/:id", h.Admin.Partner.Update)
+		partners.DELETE("/:id", h.Admin.Partner.Delete)
+		partners.POST("/:id/withdraw", h.Admin.Partner.WithdrawPoints)
+		partners.GET("/:id/commissions", h.Admin.Partner.ListCommissions)
 	}
 }
 

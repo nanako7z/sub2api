@@ -435,6 +435,7 @@ var ProviderSet = wire.NewSet(
 	NewPromoService,
 	NewReferralService,
 	wire.Struct(new(ReferralServiceDeps), "*"),
+	NewPartnerService,
 	ProvideBillingCacheInvalidator,
 	NewUsageService,
 	NewDashboardService,

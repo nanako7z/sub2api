@@ -55,6 +55,8 @@ type User struct {
 	ReferralCode *string `json:"referral_code,omitempty"`
 	// ReferrerID holds the value of the "referrer_id" field.
 	ReferrerID *int64 `json:"referrer_id,omitempty"`
+	// PartnerID holds the value of the "partner_id" field.
+	PartnerID *int64 `json:"partner_id,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the UserQuery when eager-loading is set.
 	Edges        UserEdges `json:"edges"`
@@ -222,7 +224,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance, user.FieldGiftBalance:
 			values[i] = new(sql.NullFloat64)
-		case user.FieldID, user.FieldConcurrency, user.FieldSoraStorageQuotaBytes, user.FieldSoraStorageUsedBytes, user.FieldReferrerID:
+		case user.FieldID, user.FieldConcurrency, user.FieldSoraStorageQuotaBytes, user.FieldSoraStorageUsedBytes, user.FieldReferrerID, user.FieldPartnerID:
 			values[i] = new(sql.NullInt64)
 		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldReferralCode:
 			values[i] = new(sql.NullString)
@@ -367,6 +369,13 @@ func (_m *User) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ReferrerID = new(int64)
 				*_m.ReferrerID = value.Int64
+			}
+		case user.FieldPartnerID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field partner_id", values[i])
+			} else if value.Valid {
+				_m.PartnerID = new(int64)
+				*_m.PartnerID = value.Int64
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -533,6 +542,11 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	if v := _m.ReferrerID; v != nil {
 		builder.WriteString("referrer_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PartnerID; v != nil {
+		builder.WriteString("partner_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteByte(')')

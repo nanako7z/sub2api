@@ -511,6 +511,10 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	}
 	updates[SettingKeyBalanceConsumptionPriority] = settings.BalanceConsumptionPriority
 
+	// 伙伴计划设置
+	updates[SettingKeyPartnerEnabled] = strconv.FormatBool(settings.PartnerEnabled)
+	updates[SettingKeyPartnerSignupBonus] = strconv.FormatFloat(settings.PartnerSignupBonus, 'f', 8, 64)
+
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
 		// 先使 inflight singleflight 失效，再刷新缓存，缩小旧值覆盖新值的竞态窗口
@@ -938,6 +942,12 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.BalanceConsumptionPriority = settings[SettingKeyBalanceConsumptionPriority]
 	if result.BalanceConsumptionPriority == "" {
 		result.BalanceConsumptionPriority = "normal_first"
+	}
+
+	// 伙伴计划设置
+	result.PartnerEnabled = settings[SettingKeyPartnerEnabled] == "true"
+	if v, err := strconv.ParseFloat(settings[SettingKeyPartnerSignupBonus], 64); err == nil {
+		result.PartnerSignupBonus = v
 	}
 
 	return result
@@ -2113,6 +2123,27 @@ func (s *SettingService) GetReferralCommissionRate(ctx context.Context) float64 
 // GetReferralMaxCommissionPerUser 获取单个被推荐用户的最大返佣总额 (0=无限)
 func (s *SettingService) GetReferralMaxCommissionPerUser(ctx context.Context) float64 {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyReferralMaxCommissionPerUser)
+	if err != nil {
+		return 0
+	}
+	if v, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && v >= 0 {
+		return v
+	}
+	return 0
+}
+
+// IsPartnerEnabled 是否启用合作伙伴计划
+func (s *SettingService) IsPartnerEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyPartnerEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
+// GetPartnerSignupBonus 获取伙伴渠道注册赠送金额
+func (s *SettingService) GetPartnerSignupBonus(ctx context.Context) float64 {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyPartnerSignupBonus)
 	if err != nil {
 		return 0
 	}

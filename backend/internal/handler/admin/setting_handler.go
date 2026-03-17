@@ -134,6 +134,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ReferralCommissionRate:               settings.ReferralCommissionRate,
 		ReferralMaxCommissionPerUser:         settings.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:           settings.BalanceConsumptionPriority,
+		PartnerEnabled:                      settings.PartnerEnabled,
+		PartnerSignupBonus:                  settings.PartnerSignupBonus,
 	})
 }
 
@@ -221,6 +223,10 @@ type UpdateSettingsRequest struct {
 	ReferralCommissionRate       float64 `json:"referral_commission_rate"`
 	ReferralMaxCommissionPerUser float64 `json:"referral_max_commission_per_user"`
 	BalanceConsumptionPriority   string  `json:"balance_consumption_priority"`
+
+	// 伙伴计划设置
+	PartnerEnabled     bool    `json:"partner_enabled"`
+	PartnerSignupBonus float64 `json:"partner_signup_bonus"`
 }
 
 // UpdateSettings 更新系统设置
@@ -517,6 +523,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ReferralCommissionRate:           req.ReferralCommissionRate,
 		ReferralMaxCommissionPerUser:     req.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:       req.BalanceConsumptionPriority,
+		PartnerEnabled:                  req.PartnerEnabled,
+		PartnerSignupBonus:              req.PartnerSignupBonus,
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -624,6 +632,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ReferralCommissionRate:               updatedSettings.ReferralCommissionRate,
 		ReferralMaxCommissionPerUser:         updatedSettings.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:           updatedSettings.BalanceConsumptionPriority,
+		PartnerEnabled:                      updatedSettings.PartnerEnabled,
+		PartnerSignupBonus:                  updatedSettings.PartnerSignupBonus,
 	})
 }
 

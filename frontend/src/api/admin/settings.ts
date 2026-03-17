@@ -93,6 +93,10 @@ export interface SystemSettings {
   referral_commission_rate: number
   referral_max_commission_per_user: number
   balance_consumption_priority: string
+
+  // Partner system
+  partner_enabled: boolean
+  partner_signup_bonus: number
 }
 
 export interface UpdateSettingsRequest {
@@ -154,6 +158,8 @@ export interface UpdateSettingsRequest {
   referral_commission_rate?: number
   referral_max_commission_per_user?: number
   balance_consumption_priority?: string
+  partner_enabled?: boolean
+  partner_signup_bonus?: number
 }
 
 /**

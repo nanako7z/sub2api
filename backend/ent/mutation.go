@@ -22059,6 +22059,8 @@ type UserMutation struct {
 	gift_balance                  *float64
 	addgift_balance               *float64
 	referral_code                 *string
+	partner_id                    *int64
+	addpartner_id                 *int64
 	clearedFields                 map[string]struct{}
 	api_keys                      map[int64]struct{}
 	removedapi_keys               map[int64]struct{}
@@ -23047,6 +23049,76 @@ func (m *UserMutation) ResetReferrerID() {
 	delete(m.clearedFields, user.FieldReferrerID)
 }
 
+// SetPartnerID sets the "partner_id" field.
+func (m *UserMutation) SetPartnerID(i int64) {
+	m.partner_id = &i
+	m.addpartner_id = nil
+}
+
+// PartnerID returns the value of the "partner_id" field in the mutation.
+func (m *UserMutation) PartnerID() (r int64, exists bool) {
+	v := m.partner_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPartnerID returns the old "partner_id" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldPartnerID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPartnerID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPartnerID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPartnerID: %w", err)
+	}
+	return oldValue.PartnerID, nil
+}
+
+// AddPartnerID adds i to the "partner_id" field.
+func (m *UserMutation) AddPartnerID(i int64) {
+	if m.addpartner_id != nil {
+		*m.addpartner_id += i
+	} else {
+		m.addpartner_id = &i
+	}
+}
+
+// AddedPartnerID returns the value that was added to the "partner_id" field in this mutation.
+func (m *UserMutation) AddedPartnerID() (r int64, exists bool) {
+	v := m.addpartner_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPartnerID clears the value of the "partner_id" field.
+func (m *UserMutation) ClearPartnerID() {
+	m.partner_id = nil
+	m.addpartner_id = nil
+	m.clearedFields[user.FieldPartnerID] = struct{}{}
+}
+
+// PartnerIDCleared returns if the "partner_id" field was cleared in this mutation.
+func (m *UserMutation) PartnerIDCleared() bool {
+	_, ok := m.clearedFields[user.FieldPartnerID]
+	return ok
+}
+
+// ResetPartnerID resets all changes to the "partner_id" field.
+func (m *UserMutation) ResetPartnerID() {
+	m.partner_id = nil
+	m.addpartner_id = nil
+	delete(m.clearedFields, user.FieldPartnerID)
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by ids.
 func (m *UserMutation) AddAPIKeyIDs(ids ...int64) {
 	if m.api_keys == nil {
@@ -23702,7 +23774,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -23760,6 +23832,9 @@ func (m *UserMutation) Fields() []string {
 	if m.referrer != nil {
 		fields = append(fields, user.FieldReferrerID)
 	}
+	if m.partner_id != nil {
+		fields = append(fields, user.FieldPartnerID)
+	}
 	return fields
 }
 
@@ -23806,6 +23881,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.ReferralCode()
 	case user.FieldReferrerID:
 		return m.ReferrerID()
+	case user.FieldPartnerID:
+		return m.PartnerID()
 	}
 	return nil, false
 }
@@ -23853,6 +23930,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldReferralCode(ctx)
 	case user.FieldReferrerID:
 		return m.OldReferrerID(ctx)
+	case user.FieldPartnerID:
+		return m.OldPartnerID(ctx)
 	}
 	return nil, fmt.Errorf("unknown User field %s", name)
 }
@@ -23995,6 +24074,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetReferrerID(v)
 		return nil
+	case user.FieldPartnerID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPartnerID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown User field %s", name)
 }
@@ -24018,6 +24104,9 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addgift_balance != nil {
 		fields = append(fields, user.FieldGiftBalance)
 	}
+	if m.addpartner_id != nil {
+		fields = append(fields, user.FieldPartnerID)
+	}
 	return fields
 }
 
@@ -24036,6 +24125,8 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedSoraStorageUsedBytes()
 	case user.FieldGiftBalance:
 		return m.AddedGiftBalance()
+	case user.FieldPartnerID:
+		return m.AddedPartnerID()
 	}
 	return nil, false
 }
@@ -24080,6 +24171,13 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddGiftBalance(v)
 		return nil
+	case user.FieldPartnerID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPartnerID(v)
+		return nil
 	}
 	return fmt.Errorf("unknown User numeric field %s", name)
 }
@@ -24102,6 +24200,9 @@ func (m *UserMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(user.FieldReferrerID) {
 		fields = append(fields, user.FieldReferrerID)
+	}
+	if m.FieldCleared(user.FieldPartnerID) {
+		fields = append(fields, user.FieldPartnerID)
 	}
 	return fields
 }
@@ -24131,6 +24232,9 @@ func (m *UserMutation) ClearField(name string) error {
 		return nil
 	case user.FieldReferrerID:
 		m.ClearReferrerID()
+		return nil
+	case user.FieldPartnerID:
+		m.ClearPartnerID()
 		return nil
 	}
 	return fmt.Errorf("unknown User nullable field %s", name)
@@ -24196,6 +24300,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldReferrerID:
 		m.ResetReferrerID()
+		return nil
+	case user.FieldPartnerID:
+		m.ResetPartnerID()
 		return nil
 	}
 	return fmt.Errorf("unknown User field %s", name)

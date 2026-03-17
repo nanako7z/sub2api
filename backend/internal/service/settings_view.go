@@ -82,6 +82,10 @@ type SystemSettings struct {
 	ReferralCommissionRate       float64
 	ReferralMaxCommissionPerUser float64
 	BalanceConsumptionPriority   string
+
+	// 伙伴计划设置
+	PartnerEnabled     bool
+	PartnerSignupBonus float64
 }
 
 type DefaultSubscriptionSetting struct {

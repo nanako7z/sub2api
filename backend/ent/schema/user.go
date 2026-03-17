@@ -92,6 +92,10 @@ func (User) Fields() []ent.Field {
 		field.Int64("referrer_id").
 			Optional().
 			Nillable(),
+		// 推荐伙伴 ID（合作伙伴推荐）
+		field.Int64("partner_id").
+			Optional().
+			Nillable(),
 	}
 }
 
@@ -124,5 +128,6 @@ func (User) Indexes() []ent.Index {
 		index.Fields("status"),
 		index.Fields("deleted_at"),
 		index.Fields("referrer_id"),
+		index.Fields("partner_id"),
 	}
 }

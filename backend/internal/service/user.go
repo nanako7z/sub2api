@@ -33,6 +33,7 @@ type User struct {
 	GiftBalance  float64 // 赠送余额（优惠码、推荐码奖励等）
 	ReferralCode *string // 用户唯一推荐码（懒生成）
 	ReferrerID   *int64  // 推荐人 ID
+	PartnerID    *int64  // 推荐伙伴 ID
 
 	// TOTP 双因素认证字段
 	TotpSecretEncrypted *string    // AES-256-GCM 加密的 TOTP 密钥

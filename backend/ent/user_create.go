@@ -281,6 +281,20 @@ func (_c *UserCreate) SetNillableReferrerID(v *int64) *UserCreate {
 	return _c
 }
 
+// SetPartnerID sets the "partner_id" field.
+func (_c *UserCreate) SetPartnerID(v int64) *UserCreate {
+	_c.mutation.SetPartnerID(v)
+	return _c
+}
+
+// SetNillablePartnerID sets the "partner_id" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePartnerID(v *int64) *UserCreate {
+	if v != nil {
+		_c.SetPartnerID(*v)
+	}
+	return _c
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_c *UserCreate) AddAPIKeyIDs(ids ...int64) *UserCreate {
 	_c.mutation.AddAPIKeyIDs(ids...)
@@ -717,6 +731,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ReferralCode(); ok {
 		_spec.SetField(user.FieldReferralCode, field.TypeString, value)
 		_node.ReferralCode = &value
+	}
+	if value, ok := _c.mutation.PartnerID(); ok {
+		_spec.SetField(user.FieldPartnerID, field.TypeInt64, value)
+		_node.PartnerID = &value
 	}
 	if nodes := _c.mutation.APIKeysIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -1243,6 +1261,30 @@ func (u *UserUpsert) ClearReferrerID() *UserUpsert {
 	return u
 }
 
+// SetPartnerID sets the "partner_id" field.
+func (u *UserUpsert) SetPartnerID(v int64) *UserUpsert {
+	u.Set(user.FieldPartnerID, v)
+	return u
+}
+
+// UpdatePartnerID sets the "partner_id" field to the value that was provided on create.
+func (u *UserUpsert) UpdatePartnerID() *UserUpsert {
+	u.SetExcluded(user.FieldPartnerID)
+	return u
+}
+
+// AddPartnerID adds v to the "partner_id" field.
+func (u *UserUpsert) AddPartnerID(v int64) *UserUpsert {
+	u.Add(user.FieldPartnerID, v)
+	return u
+}
+
+// ClearPartnerID clears the value of the "partner_id" field.
+func (u *UserUpsert) ClearPartnerID() *UserUpsert {
+	u.SetNull(user.FieldPartnerID)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -1607,6 +1649,34 @@ func (u *UserUpsertOne) UpdateReferrerID() *UserUpsertOne {
 func (u *UserUpsertOne) ClearReferrerID() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearReferrerID()
+	})
+}
+
+// SetPartnerID sets the "partner_id" field.
+func (u *UserUpsertOne) SetPartnerID(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPartnerID(v)
+	})
+}
+
+// AddPartnerID adds v to the "partner_id" field.
+func (u *UserUpsertOne) AddPartnerID(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPartnerID(v)
+	})
+}
+
+// UpdatePartnerID sets the "partner_id" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdatePartnerID() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePartnerID()
+	})
+}
+
+// ClearPartnerID clears the value of the "partner_id" field.
+func (u *UserUpsertOne) ClearPartnerID() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearPartnerID()
 	})
 }
 
@@ -2140,6 +2210,34 @@ func (u *UserUpsertBulk) UpdateReferrerID() *UserUpsertBulk {
 func (u *UserUpsertBulk) ClearReferrerID() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearReferrerID()
+	})
+}
+
+// SetPartnerID sets the "partner_id" field.
+func (u *UserUpsertBulk) SetPartnerID(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPartnerID(v)
+	})
+}
+
+// AddPartnerID adds v to the "partner_id" field.
+func (u *UserUpsertBulk) AddPartnerID(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPartnerID(v)
+	})
+}
+
+// UpdatePartnerID sets the "partner_id" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdatePartnerID() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePartnerID()
+	})
+}
+
+// ClearPartnerID clears the value of the "partner_id" field.
+func (u *UserUpsertBulk) ClearPartnerID() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearPartnerID()
 	})
 }
 

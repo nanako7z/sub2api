@@ -684,6 +684,7 @@ type GatewayService struct {
 	modelsListCacheTTL    time.Duration
 	settingService        *SettingService
 	referralService       *ReferralService
+	partnerService        *PartnerService
 	responseHeaderFilter  *responseheaders.CompiledHeaderFilter
 	debugModelRouting     atomic.Bool
 	debugClaudeMimic      atomic.Bool
@@ -714,6 +715,7 @@ func NewGatewayService(
 	digestStore *DigestSessionStore,
 	settingService *SettingService,
 	referralService *ReferralService,
+	partnerService *PartnerService,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
@@ -743,6 +745,7 @@ func NewGatewayService(
 		userGroupRateCache:   gocache.New(userGroupRateTTL, time.Minute),
 		settingService:       settingService,
 		referralService:      referralService,
+		partnerService:       partnerService,
 		modelsListCache:      gocache.New(modelsListTTL, time.Minute),
 		modelsListCacheTTL:   modelsListTTL,
 		responseHeaderFilter: compileResponseHeaderFilter(cfg),
@@ -7589,6 +7592,17 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 					deps.referralService.RecordCommission(commCtx, referredUserID, normalCost)
 				}()
 			}
+
+			// 记录合作伙伴推广积分（仅对普通余额消费部分，1:1 比例）
+			if splitResult != nil && splitResult.NormalDeducted > 0 && p.User.PartnerID != nil && deps.partnerService != nil {
+				referredUserID := p.User.ID
+				normalCost := splitResult.NormalDeducted
+				go func() {
+					commCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					deps.partnerService.RecordCommission(commCtx, referredUserID, normalCost)
+				}()
+			}
 		}
 	}
 
@@ -7784,6 +7798,7 @@ type billingDeps struct {
 	deferredService     *DeferredService
 	settingService      *SettingService
 	referralService     *ReferralService
+	partnerService      *PartnerService
 }
 
 func (s *GatewayService) billingDeps() *billingDeps {
@@ -7795,6 +7810,7 @@ func (s *GatewayService) billingDeps() *billingDeps {
 		deferredService:     s.deferredService,
 		settingService:      s.settingService,
 		referralService:     s.referralService,
+		partnerService:      s.partnerService,
 	}
 }
 

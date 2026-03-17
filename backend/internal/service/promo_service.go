@@ -29,6 +29,7 @@ type PromoService struct {
 	billingCacheService  *BillingCacheService
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
+	partnerRepo          PartnerRepository
 }
 
 // NewPromoService 创建优惠码服务实例
@@ -38,6 +39,7 @@ func NewPromoService(
 	billingCacheService *BillingCacheService,
 	entClient *dbent.Client,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	partnerRepo PartnerRepository,
 ) *PromoService {
 	return &PromoService{
 		promoRepo:            promoRepo,
@@ -45,6 +47,7 @@ func NewPromoService(
 		billingCacheService:  billingCacheService,
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
+		partnerRepo:          partnerRepo,
 	}
 }
 
@@ -194,6 +197,13 @@ func (s *PromoService) Create(ctx context.Context, input *CreatePromoCodeInput) 
 	upperCode := strings.ToUpper(code)
 	if _, err := s.userRepo.GetByReferralCode(ctx, upperCode); err == nil {
 		return nil, infraerrors.Conflict("PROMO_CODE_CONFLICT_REFERRAL", "this code conflicts with an existing referral code")
+	}
+
+	// 检查是否与已有伙伴推荐码冲突
+	if s.partnerRepo != nil {
+		if _, err := s.partnerRepo.GetByReferralCode(ctx, upperCode); err == nil {
+			return nil, infraerrors.Conflict("PROMO_CODE_CONFLICT_PARTNER", "this code conflicts with an existing partner referral code")
+		}
 	}
 
 	promoCode := &PromoCode{

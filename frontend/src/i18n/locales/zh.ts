@@ -353,7 +353,8 @@ export default {
     buySubscription: '充值/订阅',
     docs: '文档',
     sora: 'Sora 创作',
-    referral: '推荐计划'
+    referral: '推荐计划',
+    partners: '合作伙伴'
   },
 
   // Auth
@@ -3321,6 +3322,68 @@ export default {
       failedToLoadUsages: '加载使用记录失败'
     },
 
+    // Partners
+    partners: {
+      title: '合作伙伴管理',
+      description: '管理线下推广合作伙伴',
+      search: '搜索合作伙伴...',
+      create: '创建合作伙伴',
+      edit: '编辑合作伙伴',
+      deletePartner: '删除合作伙伴',
+      allStatus: '全部状态',
+      columns: {
+        partnerName: '伙伴名称',
+        referralCode: '推荐码',
+        pendingPoints: '待提现积分',
+        withdrawnPoints: '已提现积分',
+        status: '状态',
+        createdAt: '创建时间',
+        actions: '操作'
+      },
+      partnerName: '伙伴名称',
+      partnerNamePlaceholder: '输入伙伴名称',
+      email: '邮箱',
+      emailPlaceholder: '输入邮箱地址',
+      phone: '电话',
+      phonePlaceholder: '输入电话号码',
+      referralCode: '推荐码',
+      referralCodePlaceholder: '输入推荐码或留空自动生成',
+      autoGenerate: '留空自动生成',
+      notes: '备注',
+      notesPlaceholder: '可选备注信息',
+      status: '状态',
+      atLeastOneContact: '至少填一项',
+      atLeastOneContactRequired: '邮箱和电话至少需要填写一项',
+      statusActive: '启用',
+      statusDisabled: '禁用',
+      copied: '已复制！',
+      copyRegisterLink: '复制注册链接',
+      registerLinkCopied: '注册链接已复制到剪贴板',
+      viewCommissions: '查看推广记录',
+      commissionRecords: '推广积分记录',
+      noCommissions: '暂无推广记录',
+      userPrefix: '用户 #{id}',
+      points: '积分',
+      sourceCost: '消费金额',
+      withdraw: '提现',
+      withdrawTitle: '积分提现',
+      currentPending: '当前待提现积分',
+      withdrawAmount: '提现金额',
+      withdrawing: '提现中...',
+      confirmWithdraw: '确认提现',
+      withdrawSuccess: '提现成功',
+      created: '合作伙伴创建成功',
+      updated: '合作伙伴更新成功',
+      deleted: '合作伙伴删除成功',
+      deleteConfirm: '确定要删除此合作伙伴吗？此操作无法撤销。',
+      failedToLoad: '加载合作伙伴失败',
+      failedToCreate: '创建合作伙伴失败',
+      failedToUpdate: '更新合作伙伴失败',
+      failedToDelete: '删除合作伙伴失败',
+      failedToWithdraw: '提现失败',
+      failedToLoadCommissions: '加载推广记录失败'
+    },
+
     // Usage Records
     usage: {
       title: '使用记录',
@@ -4177,6 +4240,7 @@ export default {
         email: '邮件设置',
         backup: '数据备份',
         data: 'Sora 存储',
+        partner: '伙伴计划',
       },
       emailTabDisabledTitle: '邮箱验证未启用',
       emailTabDisabledHint: '请在「安全与认证」选项卡中启用邮箱验证后，再配置 SMTP 设置。',
@@ -4282,6 +4346,14 @@ export default {
         balancePriorityHint: '用户消费时优先使用哪种余额',
         normalFirst: '优先普通余额',
         giftFirst: '优先赠送余额'
+      },
+      partner: {
+        title: '伙伴计划设置',
+        description: '配置线下推广合作伙伴的积分和奖励规则',
+        enablePartner: '启用伙伴计划',
+        enablePartnerHint: '允许通过合作伙伴推荐码引导新用户注册',
+        signupBonus: '伙伴渠道注册赠送余额',
+        signupBonusHint: '通过伙伴推荐码注册的新用户将获得的赠送余额（单位：美元）'
       },
       site: {
         title: '站点设置',

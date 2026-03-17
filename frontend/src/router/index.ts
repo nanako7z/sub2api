@@ -362,6 +362,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/partners',
+    name: 'AdminPartners',
+    component: () => import('@/views/admin/PartnersView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Partner Management',
+      titleKey: 'admin.partners.title',
+      descriptionKey: 'admin.partners.description'
+    }
+  },
+  {
     path: '/admin/settings',
     name: 'AdminSettings',
     component: () => import('@/views/admin/SettingsView.vue'),

@@ -53,6 +53,8 @@ const (
 	FieldReferralCode = "referral_code"
 	// FieldReferrerID holds the string denoting the referrer_id field in the database.
 	FieldReferrerID = "referrer_id"
+	// FieldPartnerID holds the string denoting the partner_id field in the database.
+	FieldPartnerID = "partner_id"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
 	EdgeAPIKeys = "api_keys"
 	// EdgeRedeemCodes holds the string denoting the redeem_codes edge name in mutations.
@@ -188,6 +190,7 @@ var Columns = []string{
 	FieldGiftBalance,
 	FieldReferralCode,
 	FieldReferrerID,
+	FieldPartnerID,
 }
 
 var (
@@ -355,6 +358,11 @@ func ByReferralCode(opts ...sql.OrderTermOption) OrderOption {
 // ByReferrerID orders the results by the referrer_id field.
 func ByReferrerID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReferrerID, opts...).ToFunc()
+}
+
+// ByPartnerID orders the results by the partner_id field.
+func ByPartnerID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPartnerID, opts...).ToFunc()
 }
 
 // ByAPIKeysCount orders the results by api_keys count.

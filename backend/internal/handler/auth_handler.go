@@ -24,10 +24,11 @@ type AuthHandler struct {
 	redeemService   *service.RedeemService
 	totpService     *service.TotpService
 	referralService *service.ReferralService
+	partnerService  *service.PartnerService
 }
 
 // NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userService *service.UserService, settingService *service.SettingService, promoService *service.PromoService, redeemService *service.RedeemService, totpService *service.TotpService, referralService *service.ReferralService) *AuthHandler {
+func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userService *service.UserService, settingService *service.SettingService, promoService *service.PromoService, redeemService *service.RedeemService, totpService *service.TotpService, referralService *service.ReferralService, partnerService *service.PartnerService) *AuthHandler {
 	return &AuthHandler{
 		cfg:             cfg,
 		authService:     authService,
@@ -37,6 +38,7 @@ func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userSe
 		redeemService:   redeemService,
 		totpService:     totpService,
 		referralService: referralService,
+		partnerService:  partnerService,
 	}
 }
 
@@ -380,8 +382,23 @@ func (h *AuthHandler) ValidatePromoCode(c *gin.Context) {
 		}
 	}
 
-	// 两种码都无效
-	if !promoEnabled && !referralEnabled {
+	// 推荐码也未匹配，尝试作为伙伴推荐码
+	partnerEnabled := h.partnerService != nil && h.settingSvc != nil && h.settingSvc.IsPartnerEnabled(ctx)
+	if partnerEnabled {
+		partner, partnerErr := h.partnerService.ValidatePartnerReferralCode(ctx, req.Code)
+		if partnerErr == nil && partner != nil {
+			signupBonus := h.settingSvc.GetPartnerSignupBonus(ctx)
+			response.Success(c, ValidatePromoCodeResponse{
+				Valid:       true,
+				BonusAmount: signupBonus,
+				Type:        "partner",
+			})
+			return
+		}
+	}
+
+	// 所有类型的码都无效
+	if !promoEnabled && !referralEnabled && !partnerEnabled {
 		response.Success(c, ValidatePromoCodeResponse{
 			Valid:     false,
 			ErrorCode: "PROMO_CODE_DISABLED",

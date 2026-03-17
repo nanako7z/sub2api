@@ -17,6 +17,7 @@ type ReferralServiceDeps struct {
 	SettingService *SettingService
 	BillingCache   BillingCacheInvalidator
 	PromoRepo      PromoCodeRepository
+	PartnerRepo    PartnerRepository
 }
 
 // BillingCacheInvalidator 计费缓存失效接口
@@ -42,6 +43,7 @@ type ReferralService struct {
 	settingService *SettingService
 	billingCache   BillingCacheInvalidator
 	promoRepo      PromoCodeRepository
+	partnerRepo    PartnerRepository
 }
 
 func NewReferralService(deps ReferralServiceDeps) *ReferralService {
@@ -51,6 +53,7 @@ func NewReferralService(deps ReferralServiceDeps) *ReferralService {
 		settingService: deps.SettingService,
 		billingCache:   deps.BillingCache,
 		promoRepo:      deps.PromoRepo,
+		partnerRepo:    deps.PartnerRepo,
 	}
 }
 
@@ -75,6 +78,13 @@ func (s *ReferralService) GetOrCreateReferralCode(ctx context.Context, userID in
 		if s.promoRepo != nil {
 			if _, err := s.promoRepo.GetByCode(ctx, code); err == nil {
 				slog.Warn("referral code conflicts with promo code, retrying", "code", code, "attempt", attempts+1)
+				continue
+			}
+		}
+		// 检查是否与已有伙伴推荐码冲突
+		if s.partnerRepo != nil {
+			if _, err := s.partnerRepo.GetByReferralCode(ctx, code); err == nil {
+				slog.Warn("referral code conflicts with partner code, retrying", "code", code, "attempt", attempts+1)
 				continue
 			}
 		}

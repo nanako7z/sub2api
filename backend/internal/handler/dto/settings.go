@@ -94,6 +94,10 @@ type SystemSettings struct {
 	ReferralCommissionRate       float64 `json:"referral_commission_rate"`
 	ReferralMaxCommissionPerUser float64 `json:"referral_max_commission_per_user"`
 	BalanceConsumptionPriority   string  `json:"balance_consumption_priority"`
+
+	// 伙伴计划设置
+	PartnerEnabled     bool    `json:"partner_enabled"`
+	PartnerSignupBonus float64 `json:"partner_signup_bonus"`
 }
 
 type DefaultSubscriptionSetting struct {

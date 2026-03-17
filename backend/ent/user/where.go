@@ -150,6 +150,11 @@ func ReferrerID(v int64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldReferrerID, v))
 }
 
+// PartnerID applies equality check predicate on the "partner_id" field. It's identical to PartnerIDEQ.
+func PartnerID(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPartnerID, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -1108,6 +1113,56 @@ func ReferrerIDIsNil() predicate.User {
 // ReferrerIDNotNil applies the NotNil predicate on the "referrer_id" field.
 func ReferrerIDNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldReferrerID))
+}
+
+// PartnerIDEQ applies the EQ predicate on the "partner_id" field.
+func PartnerIDEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPartnerID, v))
+}
+
+// PartnerIDNEQ applies the NEQ predicate on the "partner_id" field.
+func PartnerIDNEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPartnerID, v))
+}
+
+// PartnerIDIn applies the In predicate on the "partner_id" field.
+func PartnerIDIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPartnerID, vs...))
+}
+
+// PartnerIDNotIn applies the NotIn predicate on the "partner_id" field.
+func PartnerIDNotIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPartnerID, vs...))
+}
+
+// PartnerIDGT applies the GT predicate on the "partner_id" field.
+func PartnerIDGT(v int64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPartnerID, v))
+}
+
+// PartnerIDGTE applies the GTE predicate on the "partner_id" field.
+func PartnerIDGTE(v int64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPartnerID, v))
+}
+
+// PartnerIDLT applies the LT predicate on the "partner_id" field.
+func PartnerIDLT(v int64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPartnerID, v))
+}
+
+// PartnerIDLTE applies the LTE predicate on the "partner_id" field.
+func PartnerIDLTE(v int64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPartnerID, v))
+}
+
+// PartnerIDIsNil applies the IsNil predicate on the "partner_id" field.
+func PartnerIDIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldPartnerID))
+}
+
+// PartnerIDNotNil applies the NotNil predicate on the "partner_id" field.
+func PartnerIDNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldPartnerID))
 }
 
 // HasAPIKeys applies the HasEdge predicate on the "api_keys" edge.

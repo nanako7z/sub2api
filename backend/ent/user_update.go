@@ -346,6 +346,33 @@ func (_u *UserUpdate) ClearReferrerID() *UserUpdate {
 	return _u
 }
 
+// SetPartnerID sets the "partner_id" field.
+func (_u *UserUpdate) SetPartnerID(v int64) *UserUpdate {
+	_u.mutation.ResetPartnerID()
+	_u.mutation.SetPartnerID(v)
+	return _u
+}
+
+// SetNillablePartnerID sets the "partner_id" field if the given value is not nil.
+func (_u *UserUpdate) SetNillablePartnerID(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetPartnerID(*v)
+	}
+	return _u
+}
+
+// AddPartnerID adds value to the "partner_id" field.
+func (_u *UserUpdate) AddPartnerID(v int64) *UserUpdate {
+	_u.mutation.AddPartnerID(v)
+	return _u
+}
+
+// ClearPartnerID clears the value of the "partner_id" field.
+func (_u *UserUpdate) ClearPartnerID() *UserUpdate {
+	_u.mutation.ClearPartnerID()
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdate) AddAPIKeyIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -924,6 +951,15 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ReferralCodeCleared() {
 		_spec.ClearField(user.FieldReferralCode, field.TypeString)
+	}
+	if value, ok := _u.mutation.PartnerID(); ok {
+		_spec.SetField(user.FieldPartnerID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPartnerID(); ok {
+		_spec.AddField(user.FieldPartnerID, field.TypeInt64, value)
+	}
+	if _u.mutation.PartnerIDCleared() {
+		_spec.ClearField(user.FieldPartnerID, field.TypeInt64)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1790,6 +1826,33 @@ func (_u *UserUpdateOne) ClearReferrerID() *UserUpdateOne {
 	return _u
 }
 
+// SetPartnerID sets the "partner_id" field.
+func (_u *UserUpdateOne) SetPartnerID(v int64) *UserUpdateOne {
+	_u.mutation.ResetPartnerID()
+	_u.mutation.SetPartnerID(v)
+	return _u
+}
+
+// SetNillablePartnerID sets the "partner_id" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillablePartnerID(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetPartnerID(*v)
+	}
+	return _u
+}
+
+// AddPartnerID adds value to the "partner_id" field.
+func (_u *UserUpdateOne) AddPartnerID(v int64) *UserUpdateOne {
+	_u.mutation.AddPartnerID(v)
+	return _u
+}
+
+// ClearPartnerID clears the value of the "partner_id" field.
+func (_u *UserUpdateOne) ClearPartnerID() *UserUpdateOne {
+	_u.mutation.ClearPartnerID()
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdateOne) AddAPIKeyIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -2398,6 +2461,15 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if _u.mutation.ReferralCodeCleared() {
 		_spec.ClearField(user.FieldReferralCode, field.TypeString)
+	}
+	if value, ok := _u.mutation.PartnerID(); ok {
+		_spec.SetField(user.FieldPartnerID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPartnerID(); ok {
+		_spec.AddField(user.FieldPartnerID, field.TypeInt64, value)
+	}
+	if _u.mutation.PartnerIDCleared() {
+		_spec.ClearField(user.FieldPartnerID, field.TypeInt64)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{

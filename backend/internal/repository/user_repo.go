@@ -694,3 +694,13 @@ func (r *userRepository) SetReferrer(ctx context.Context, userID int64, referrer
 	}
 	return nil
 }
+
+// SetPartnerID 设置用户的推荐伙伴 ID
+func (r *userRepository) SetPartnerID(ctx context.Context, userID int64, partnerID int64) error {
+	client := clientFromContext(ctx, r.client)
+	_, err := client.User.UpdateOneID(userID).SetPartnerID(partnerID).Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return nil
+}

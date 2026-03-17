@@ -58,6 +58,7 @@ type UserRepository interface {
 	GetByReferralCode(ctx context.Context, code string) (*User, error)
 	SetReferralCode(ctx context.Context, userID int64, code string) error
 	SetReferrer(ctx context.Context, userID int64, referrerID int64) error
+	SetPartnerID(ctx context.Context, userID int64, partnerID int64) error
 }
 
 // UpdateProfileRequest 更新用户资料请求

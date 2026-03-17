@@ -353,7 +353,8 @@ export default {
     buySubscription: 'Recharge / Subscription',
     docs: 'Docs',
     sora: 'Sora Studio',
-    referral: 'Referral'
+    referral: 'Referral',
+    partners: 'Partners'
   },
 
   // Auth
@@ -3162,6 +3163,68 @@ export default {
       failedToLoadUsages: 'Failed to load usage records'
     },
 
+    // Partners
+    partners: {
+      title: 'Partner Management',
+      description: 'Manage offline promotion partners',
+      search: 'Search partners...',
+      create: 'Create Partner',
+      edit: 'Edit Partner',
+      deletePartner: 'Delete Partner',
+      allStatus: 'All Status',
+      columns: {
+        partnerName: 'Partner Name',
+        referralCode: 'Referral Code',
+        pendingPoints: 'Pending Points',
+        withdrawnPoints: 'Withdrawn Points',
+        status: 'Status',
+        createdAt: 'Created At',
+        actions: 'Actions'
+      },
+      partnerName: 'Partner Name',
+      partnerNamePlaceholder: 'Enter partner name',
+      email: 'Email',
+      emailPlaceholder: 'Enter email address',
+      phone: 'Phone',
+      phonePlaceholder: 'Enter phone number',
+      referralCode: 'Referral Code',
+      referralCodePlaceholder: 'Enter code or leave empty to auto-generate',
+      autoGenerate: 'Leave empty to auto-generate',
+      notes: 'Notes',
+      notesPlaceholder: 'Optional notes',
+      status: 'Status',
+      atLeastOneContact: 'At least one required',
+      atLeastOneContactRequired: 'Email or phone is required (at least one)',
+      statusActive: 'Active',
+      statusDisabled: 'Disabled',
+      copied: 'Copied!',
+      copyRegisterLink: 'Copy registration link',
+      registerLinkCopied: 'Registration link copied to clipboard',
+      viewCommissions: 'View commissions',
+      commissionRecords: 'Commission Records',
+      noCommissions: 'No commission records yet',
+      userPrefix: 'User #{id}',
+      points: 'points',
+      sourceCost: 'Source cost',
+      withdraw: 'Withdraw',
+      withdrawTitle: 'Withdraw Points',
+      currentPending: 'Current pending points',
+      withdrawAmount: 'Withdraw amount',
+      withdrawing: 'Withdrawing...',
+      confirmWithdraw: 'Confirm Withdraw',
+      withdrawSuccess: 'Withdrawal successful',
+      created: 'Partner created successfully',
+      updated: 'Partner updated successfully',
+      deleted: 'Partner deleted successfully',
+      deleteConfirm: 'Are you sure you want to delete this partner? This action cannot be undone.',
+      failedToLoad: 'Failed to load partners',
+      failedToCreate: 'Failed to create partner',
+      failedToUpdate: 'Failed to update partner',
+      failedToDelete: 'Failed to delete partner',
+      failedToWithdraw: 'Failed to withdraw points',
+      failedToLoadCommissions: 'Failed to load commission records'
+    },
+
     // Usage Records
     usage: {
       title: 'Usage Records',
@@ -4011,6 +4074,7 @@ export default {
         email: 'Email',
         backup: 'Backup',
         data: 'Sora Storage',
+        partner: 'Partner Plan',
       },
       emailTabDisabledTitle: 'Email Verification Not Enabled',
       emailTabDisabledHint: 'Enable email verification in the Security tab to configure SMTP settings.',
@@ -4118,6 +4182,14 @@ export default {
         balancePriorityHint: 'Which balance type to consume first when a user makes a request',
         normalFirst: 'Normal Balance First',
         giftFirst: 'Gift Balance First'
+      },
+      partner: {
+        title: 'Partner Plan Settings',
+        description: 'Configure partner referral rewards and commission rules',
+        enablePartner: 'Enable Partner Plan',
+        enablePartnerHint: 'Allow partners to refer new users via referral codes',
+        signupBonus: 'Partner Signup Bonus',
+        signupBonusHint: 'Bonus balance granted to users who register via a partner referral code (USD)'
       },
       site: {
         title: 'Site Settings',

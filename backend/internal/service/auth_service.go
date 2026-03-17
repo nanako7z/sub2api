@@ -71,6 +71,7 @@ type AuthService struct {
 	emailQueueService  *EmailQueueService
 	promoService       *PromoService
 	referralService    *ReferralService
+	partnerService     *PartnerService
 	defaultSubAssigner DefaultSubscriptionAssigner
 }
 
@@ -91,6 +92,7 @@ func NewAuthService(
 	emailQueueService *EmailQueueService,
 	promoService *PromoService,
 	referralService *ReferralService,
+	partnerService *PartnerService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
 ) *AuthService {
 	return &AuthService{
@@ -105,6 +107,7 @@ func NewAuthService(
 		emailQueueService:  emailQueueService,
 		promoService:       promoService,
 		referralService:    referralService,
+		partnerService:     partnerService,
 		defaultSubAssigner: defaultSubAssigner,
 	}
 }
@@ -218,9 +221,10 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 	}
 	// 应用优惠码或推荐码（如果提供）
-	// 同一输入框同时支持优惠码和推荐码，先尝试优惠码，再尝试推荐码
+	// 同一输入框同时支持优惠码、推荐码和伙伴推荐码，按优先级依次尝试
 	if promoCode != "" && s.settingService != nil {
 		promoApplied := false
+		referralApplied := false
 		// 先尝试作为优惠码
 		if s.promoService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
 			if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
@@ -231,12 +235,31 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 				promoApplied = true
 			}
 		}
-		// 优惠码未找到，尝试作为推荐码
+		// 优惠码未找到，尝试作为用户推荐码
 		if !promoApplied && s.referralService != nil && s.settingService.IsReferralEnabled(ctx) {
 			referrer, refErr := s.referralService.ValidateReferralCode(ctx, promoCode)
 			if refErr == nil && referrer != nil {
 				if err := s.referralService.ApplyReferralSignup(ctx, user.ID, referrer.ID); err != nil {
 					logger.LegacyPrintf("service.auth", "[Auth] Failed to apply referral code for user %d: %v", user.ID, err)
+				} else {
+					referralApplied = true
+				}
+			}
+		}
+		// 用户推荐码也未匹配，尝试作为伙伴推荐码
+		if !promoApplied && !referralApplied && s.partnerService != nil && s.settingService.IsPartnerEnabled(ctx) {
+			partner, partnerErr := s.partnerService.ValidatePartnerReferralCode(ctx, promoCode)
+			if partnerErr == nil && partner != nil {
+				if err := s.userRepo.SetPartnerID(ctx, user.ID, partner.ID); err != nil {
+					logger.LegacyPrintf("service.auth", "[Auth] Failed to set partner for user %d: %v", user.ID, err)
+				} else {
+					// 发放伙伴渠道独立注册赠送余额
+					partnerSignupBonus := s.settingService.GetPartnerSignupBonus(ctx)
+					if partnerSignupBonus > 0 {
+						if err := s.userRepo.UpdateGiftBalance(ctx, user.ID, partnerSignupBonus); err != nil {
+							logger.LegacyPrintf("service.auth", "[Auth] Failed to give partner signup bonus to user %d: %v", user.ID, err)
+						}
+					}
 				}
 			}
 		}
