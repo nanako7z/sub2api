@@ -2610,16 +2610,16 @@ onMounted(() => {
 /* ============ Settings Tab Navigation ============ */
 
 .settings-tabs {
-  @apply flex flex-wrap gap-0.5 rounded-2xl
+  @apply flex flex-nowrap gap-0.5 rounded-2xl
          border border-gray-100 bg-white/80 p-1 backdrop-blur-sm
          dark:border-dark-700/50 dark:bg-dark-800/80;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.04), 0 1px 2px rgb(0 0 0 / 0.02);
 }
 
 .settings-tab {
-  @apply relative flex flex-1 items-center justify-center gap-1.5
-         whitespace-nowrap rounded-xl px-2.5 py-2
-         text-sm font-medium
+  @apply relative flex items-center justify-center gap-1.5
+         whitespace-nowrap rounded-xl px-3 py-2
+         text-xs font-medium
          text-gray-500 dark:text-dark-400
          transition-all duration-200 ease-out;
 }
