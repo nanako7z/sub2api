@@ -107,8 +107,13 @@
               </button>
               <button
                 @click="handleWithdraw(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400"
-                :title="t('admin.partners.withdraw')"
+                :class="[
+                  'flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-colors',
+                  row.pending_points > 0
+                    ? 'text-gray-500 hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400'
+                    : 'cursor-not-allowed text-gray-300 dark:text-dark-600'
+                ]"
+                :title="row.pending_points > 0 ? t('admin.partners.withdraw') : t('admin.partners.noPendingPoints')"
                 :disabled="row.pending_points <= 0"
               >
                 <Icon name="dollar" size="sm" />

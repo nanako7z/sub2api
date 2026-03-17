@@ -3372,6 +3372,7 @@ export default {
       withdrawing: '提现中...',
       confirmWithdraw: '确认提现',
       withdrawSuccess: '提现成功',
+      noPendingPoints: '无待提现积分',
       created: '合作伙伴创建成功',
       updated: '合作伙伴更新成功',
       deleted: '合作伙伴删除成功',

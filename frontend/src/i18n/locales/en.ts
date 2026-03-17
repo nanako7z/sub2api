@@ -3213,6 +3213,7 @@ export default {
       withdrawing: 'Withdrawing...',
       confirmWithdraw: 'Confirm Withdraw',
       withdrawSuccess: 'Withdrawal successful',
+      noPendingPoints: 'No pending points to withdraw',
       created: 'Partner created successfully',
       updated: 'Partner updated successfully',
       deleted: 'Partner deleted successfully',
