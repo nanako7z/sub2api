@@ -128,6 +128,12 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		MinClaudeCodeVersion:                 settings.MinClaudeCodeVersion,
 		AllowUngroupedKeyScheduling:          settings.AllowUngroupedKeyScheduling,
 		BackendModeEnabled:                   settings.BackendModeEnabled,
+		ReferralEnabled:                      settings.ReferralEnabled,
+		ReferralSignupBonus:                  settings.ReferralSignupBonus,
+		ReferralReferrerBonus:                settings.ReferralReferrerBonus,
+		ReferralCommissionRate:               settings.ReferralCommissionRate,
+		ReferralMaxCommissionPerUser:         settings.ReferralMaxCommissionPerUser,
+		BalanceConsumptionPriority:           settings.BalanceConsumptionPriority,
 	})
 }
 
@@ -207,6 +213,14 @@ type UpdateSettingsRequest struct {
 
 	// Backend Mode
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
+
+	// 推荐系统设置
+	ReferralEnabled              bool    `json:"referral_enabled"`
+	ReferralSignupBonus          float64 `json:"referral_signup_bonus"`
+	ReferralReferrerBonus        float64 `json:"referral_referrer_bonus"`
+	ReferralCommissionRate       float64 `json:"referral_commission_rate"`
+	ReferralMaxCommissionPerUser float64 `json:"referral_max_commission_per_user"`
+	BalanceConsumptionPriority   string  `json:"balance_consumption_priority"`
 }
 
 // UpdateSettings 更新系统设置
@@ -497,6 +511,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		MinClaudeCodeVersion:             req.MinClaudeCodeVersion,
 		AllowUngroupedKeyScheduling:      req.AllowUngroupedKeyScheduling,
 		BackendModeEnabled:               req.BackendModeEnabled,
+		ReferralEnabled:                  req.ReferralEnabled,
+		ReferralSignupBonus:              req.ReferralSignupBonus,
+		ReferralReferrerBonus:            req.ReferralReferrerBonus,
+		ReferralCommissionRate:           req.ReferralCommissionRate,
+		ReferralMaxCommissionPerUser:     req.ReferralMaxCommissionPerUser,
+		BalanceConsumptionPriority:       req.BalanceConsumptionPriority,
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -598,6 +618,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		MinClaudeCodeVersion:                 updatedSettings.MinClaudeCodeVersion,
 		AllowUngroupedKeyScheduling:          updatedSettings.AllowUngroupedKeyScheduling,
 		BackendModeEnabled:                   updatedSettings.BackendModeEnabled,
+		ReferralEnabled:                      updatedSettings.ReferralEnabled,
+		ReferralSignupBonus:                  updatedSettings.ReferralSignupBonus,
+		ReferralReferrerBonus:                updatedSettings.ReferralReferrerBonus,
+		ReferralCommissionRate:               updatedSettings.ReferralCommissionRate,
+		ReferralMaxCommissionPerUser:         updatedSettings.ReferralMaxCommissionPerUser,
+		BalanceConsumptionPriority:           updatedSettings.BalanceConsumptionPriority,
 	})
 }
 

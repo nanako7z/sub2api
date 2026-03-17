@@ -498,6 +498,17 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	// Backend Mode
 	updates[SettingKeyBackendModeEnabled] = strconv.FormatBool(settings.BackendModeEnabled)
 
+	// 推荐系统设置
+	updates[SettingKeyReferralEnabled] = strconv.FormatBool(settings.ReferralEnabled)
+	updates[SettingKeyReferralSignupBonus] = strconv.FormatFloat(settings.ReferralSignupBonus, 'f', 8, 64)
+	updates[SettingKeyReferralReferrerBonus] = strconv.FormatFloat(settings.ReferralReferrerBonus, 'f', 8, 64)
+	updates[SettingKeyReferralCommissionRate] = strconv.FormatFloat(settings.ReferralCommissionRate, 'f', 8, 64)
+	updates[SettingKeyReferralMaxCommissionPerUser] = strconv.FormatFloat(settings.ReferralMaxCommissionPerUser, 'f', 8, 64)
+	if settings.BalanceConsumptionPriority == "" {
+		settings.BalanceConsumptionPriority = "normal_first"
+	}
+	updates[SettingKeyBalanceConsumptionPriority] = settings.BalanceConsumptionPriority
+
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
 		// 先使 inflight singleflight 失效，再刷新缓存，缩小旧值覆盖新值的竞态窗口
@@ -907,6 +918,25 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// 分组隔离
 	result.AllowUngroupedKeyScheduling = settings[SettingKeyAllowUngroupedKeyScheduling] == "true"
+
+	// 推荐系统设置
+	result.ReferralEnabled = settings[SettingKeyReferralEnabled] == "true"
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralSignupBonus], 64); err == nil {
+		result.ReferralSignupBonus = v
+	}
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralReferrerBonus], 64); err == nil {
+		result.ReferralReferrerBonus = v
+	}
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralCommissionRate], 64); err == nil {
+		result.ReferralCommissionRate = v
+	}
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralMaxCommissionPerUser], 64); err == nil {
+		result.ReferralMaxCommissionPerUser = v
+	}
+	result.BalanceConsumptionPriority = settings[SettingKeyBalanceConsumptionPriority]
+	if result.BalanceConsumptionPriority == "" {
+		result.BalanceConsumptionPriority = "normal_first"
+	}
 
 	return result
 }

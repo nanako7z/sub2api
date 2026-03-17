@@ -74,6 +74,14 @@ type SystemSettings struct {
 
 	// Backend 模式：禁用用户注册和自助服务，仅管理员可登录
 	BackendModeEnabled bool
+
+	// 推荐系统设置
+	ReferralEnabled              bool
+	ReferralSignupBonus          float64
+	ReferralReferrerBonus        float64
+	ReferralCommissionRate       float64
+	ReferralMaxCommissionPerUser float64
+	BalanceConsumptionPriority   string
 }
 
 type DefaultSubscriptionSetting struct {

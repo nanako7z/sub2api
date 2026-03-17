@@ -86,6 +86,14 @@ type SystemSettings struct {
 
 	// Backend Mode
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
+
+	// 推荐系统设置
+	ReferralEnabled              bool    `json:"referral_enabled"`
+	ReferralSignupBonus          float64 `json:"referral_signup_bonus"`
+	ReferralReferrerBonus        float64 `json:"referral_referrer_bonus"`
+	ReferralCommissionRate       float64 `json:"referral_commission_rate"`
+	ReferralMaxCommissionPerUser float64 `json:"referral_max_commission_per_user"`
+	BalanceConsumptionPriority   string  `json:"balance_consumption_priority"`
 }
 
 type DefaultSubscriptionSetting struct {
@@ -118,6 +126,7 @@ type PublicSettings struct {
 	LinuxDoOAuthEnabled              bool             `json:"linuxdo_oauth_enabled"`
 	SoraClientEnabled                bool             `json:"sora_client_enabled"`
 	BackendModeEnabled               bool             `json:"backend_mode_enabled"`
+	ReferralEnabled                  bool             `json:"referral_enabled"`
 	Version                          string           `json:"version"`
 }
 
