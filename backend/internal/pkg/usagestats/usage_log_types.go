@@ -130,6 +130,13 @@ type UserSpendingRankingResponse struct {
 	TotalTokens     int64                     `json:"total_tokens"`
 }
 
+// SpendingTrendPoint represents a single point in spending trend data (aggregated actual_cost).
+type SpendingTrendPoint struct {
+	Date            string  `json:"date"`
+	TotalActualCost float64 `json:"total_actual_cost"`
+	Count           int     `json:"count"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID      int64   `json:"user_id"`

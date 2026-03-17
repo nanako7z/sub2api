@@ -998,7 +998,20 @@ export default {
       requestMissRate: 'Request Miss Rate',
       platformCacheHitRateTrend: 'Platform Cache Hit Rate Trend',
       tokenCacheHitRate: 'Token Hit Rate',
-      requestCacheHitRate: 'Request Hit Rate'
+      requestCacheHitRate: 'Request Hit Rate',
+      spendingTrend: 'Spending Trend',
+      spendingLeaderboard: 'Spending Leaderboard',
+      actualCost: 'Actual Cost',
+      commissionTrend: 'Commission Trend',
+      commissionLeaderboard: 'Commission Leaderboard',
+      commissionAmount: 'Commission',
+      commissionCount: 'Count',
+      referredUsers: 'Referred',
+      user: 'User',
+      partnerPointsTrend: 'Partner Points Trend',
+      partnerPointsLeaderboard: 'Partner Points Leaderboard',
+      partnerPoints: 'Points',
+      partnerName: 'Partner'
     },
 
     backup: {

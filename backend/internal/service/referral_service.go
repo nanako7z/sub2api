@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -37,6 +38,10 @@ type ReferralRepositoryInterface interface {
 	ListCommissions(ctx context.Context, referrerID int64, params pagination.PaginationParams) ([]ReferralCommission, *pagination.PaginationResult, error)
 	ListReferredUsers(ctx context.Context, referrerID int64, params pagination.PaginationParams) ([]ReferredUserInfo, *pagination.PaginationResult, error)
 	CountReferredUsers(ctx context.Context, referrerID int64) (int, error)
+
+	// Dashboard analytics
+	GetCommissionTrend(ctx context.Context, start, end time.Time) ([]ReferralCommissionTrendPoint, error)
+	GetCommissionLeaderboard(ctx context.Context, start, end time.Time, limit int) ([]ReferralCommissionLeaderboardItem, error)
 }
 
 // ReferralService 推荐系统服务

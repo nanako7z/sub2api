@@ -349,5 +349,75 @@ func (r *partnerRepository) ListCommissions(ctx context.Context, partnerID int64
 	}, nil
 }
 
+// GetPointsTrend 按日期聚合合作伙伴积分趋势
+func (r *partnerRepository) GetPointsTrend(ctx context.Context, start, end time.Time) ([]service.PartnerPointsTrendPoint, error) {
+	query := `
+		SELECT DATE(created_at) AS date,
+		       COALESCE(SUM(points), 0) AS total_points,
+		       COALESCE(SUM(source_cost), 0) AS total_source_cost,
+		       COUNT(*) AS count
+		FROM partner_commissions
+		WHERE created_at >= $1 AND created_at < $2
+		GROUP BY DATE(created_at)
+		ORDER BY date`
+	rows, err := r.sql.QueryContext(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("get points trend: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []service.PartnerPointsTrendPoint
+	for rows.Next() {
+		var p service.PartnerPointsTrendPoint
+		var d time.Time
+		if err := rows.Scan(&d, &p.TotalPoints, &p.TotalSourceCost, &p.Count); err != nil {
+			return nil, fmt.Errorf("scan points trend: %w", err)
+		}
+		p.Date = d.Format("2006-01-02")
+		result = append(result, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get points trend rows: %w", err)
+	}
+	return result, nil
+}
+
+// GetPointsLeaderboard 合作伙伴积分排行榜
+func (r *partnerRepository) GetPointsLeaderboard(ctx context.Context, start, end time.Time, limit int) ([]service.PartnerPointsLeaderboardItem, error) {
+	query := `
+		SELECT pc.partner_id,
+		       COALESCE(p.partner_name, '') AS partner_name,
+		       COALESCE(p.email, '') AS email,
+		       COALESCE(SUM(pc.points), 0) AS total_points,
+		       COALESCE(SUM(pc.source_cost), 0) AS total_source_cost,
+		       COUNT(*) AS commission_count,
+		       COUNT(DISTINCT pc.referred_user_id) AS referred_users
+		FROM partner_commissions pc
+		LEFT JOIN partners p ON pc.partner_id = p.id
+		WHERE pc.created_at >= $1 AND pc.created_at < $2
+		GROUP BY pc.partner_id, p.partner_name, p.email
+		ORDER BY total_points DESC
+		LIMIT $3`
+	rows, err := r.sql.QueryContext(ctx, query, start, end, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get points leaderboard: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []service.PartnerPointsLeaderboardItem
+	for rows.Next() {
+		var item service.PartnerPointsLeaderboardItem
+		if err := rows.Scan(&item.PartnerID, &item.PartnerName, &item.Email,
+			&item.TotalPoints, &item.TotalSourceCost, &item.CommissionCount, &item.ReferredUsers); err != nil {
+			return nil, fmt.Errorf("scan points leaderboard: %w", err)
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get points leaderboard rows: %w", err)
+	}
+	return result, nil
+}
+
 // ensure interface compliance
 var _ service.PartnerRepository = (*partnerRepository)(nil)

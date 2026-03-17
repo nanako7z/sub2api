@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -24,4 +25,8 @@ type PartnerRepository interface {
 	CreateCommission(ctx context.Context, commission *PartnerCommission) error
 	CreateCommissionAndAddPoints(ctx context.Context, commission *PartnerCommission) error
 	ListCommissions(ctx context.Context, partnerID int64, params pagination.PaginationParams) ([]PartnerCommission, *pagination.PaginationResult, error)
+
+	// Dashboard analytics
+	GetPointsTrend(ctx context.Context, start, end time.Time) ([]PartnerPointsTrendPoint, error)
+	GetPointsLeaderboard(ctx context.Context, start, end time.Time, limit int) ([]PartnerPointsLeaderboardItem, error)
 }

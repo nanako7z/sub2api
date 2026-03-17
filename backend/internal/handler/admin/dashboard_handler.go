@@ -19,14 +19,23 @@ import (
 type DashboardHandler struct {
 	dashboardService   *service.DashboardService
 	aggregationService *service.DashboardAggregationService
+	referralRepo       service.ReferralRepositoryInterface
+	partnerRepo        service.PartnerRepository
 	startTime          time.Time // Server start time for uptime calculation
 }
 
 // NewDashboardHandler creates a new admin dashboard handler
-func NewDashboardHandler(dashboardService *service.DashboardService, aggregationService *service.DashboardAggregationService) *DashboardHandler {
+func NewDashboardHandler(
+	dashboardService *service.DashboardService,
+	aggregationService *service.DashboardAggregationService,
+	referralRepo service.ReferralRepositoryInterface,
+	partnerRepo service.PartnerRepository,
+) *DashboardHandler {
 	return &DashboardHandler{
 		dashboardService:   dashboardService,
 		aggregationService: aggregationService,
+		referralRepo:       referralRepo,
+		partnerRepo:        partnerRepo,
 		startTime:          time.Now(),
 	}
 }
@@ -679,4 +688,188 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 		"start_date": startTime.Format("2006-01-02"),
 		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
 	})
+}
+
+var (
+	dashboardSpendingTrendCache          = newSnapshotCache(30 * time.Second)
+	dashboardCommissionTrendCache        = newSnapshotCache(2 * time.Minute)
+	dashboardCommissionLeaderboardCache  = newSnapshotCache(5 * time.Minute)
+	dashboardPartnerPointsTrendCache     = newSnapshotCache(2 * time.Minute)
+	dashboardPartnerPointsLeaderboardCache = newSnapshotCache(5 * time.Minute)
+)
+
+// GetUserSpendingTrend handles getting user spending trend (aggregated actual_cost).
+// GET /api/v1/admin/dashboard/spending-trend
+func (h *DashboardHandler) GetUserSpendingTrend(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	granularity := c.DefaultQuery("granularity", "day")
+
+	key := mustMarshalDashboardCacheKey(dashboardEntityTrendCacheKey{
+		StartTime:   startTime.UTC().Format(time.RFC3339),
+		EndTime:     endTime.UTC().Format(time.RFC3339),
+		Granularity: granularity,
+	})
+	entry, hit, err := dashboardSpendingTrendCache.GetOrLoad(key, func() (any, error) {
+		return h.dashboardService.GetSpendingTrend(c.Request.Context(), startTime, endTime, granularity)
+	})
+	if err != nil {
+		response.Error(c, 500, "Failed to get spending trend")
+		return
+	}
+	trend, err := snapshotPayloadAs[[]usagestats.SpendingTrendPoint](entry.Payload)
+	if err != nil {
+		response.Error(c, 500, "Failed to get spending trend")
+		return
+	}
+	c.Header("X-Snapshot-Cache", cacheStatusValue(hit))
+	response.Success(c, gin.H{
+		"trend":       trend,
+		"start_date":  startTime.Format("2006-01-02"),
+		"end_date":    endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+		"granularity": granularity,
+	})
+}
+
+// GetCommissionTrend handles getting referral commission trend.
+// GET /api/v1/admin/dashboard/commission-trend
+func (h *DashboardHandler) GetCommissionTrend(c *gin.Context) {
+	if h.referralRepo == nil {
+		response.Success(c, gin.H{"trend": []any{}})
+		return
+	}
+	startTime, endTime := parseTimeRange(c)
+
+	key := mustMarshalDashboardCacheKey(struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+	}{startTime.UTC().Format(time.RFC3339), endTime.UTC().Format(time.RFC3339)})
+
+	entry, hit, err := dashboardCommissionTrendCache.GetOrLoad(key, func() (any, error) {
+		return h.referralRepo.GetCommissionTrend(c.Request.Context(), startTime, endTime)
+	})
+	if err != nil {
+		response.Error(c, 500, "Failed to get commission trend")
+		return
+	}
+	trend, err := snapshotPayloadAs[[]service.ReferralCommissionTrendPoint](entry.Payload)
+	if err != nil {
+		response.Error(c, 500, "Failed to get commission trend")
+		return
+	}
+	c.Header("X-Snapshot-Cache", cacheStatusValue(hit))
+	response.Success(c, gin.H{
+		"trend":      trend,
+		"start_date": startTime.Format("2006-01-02"),
+		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
+// GetCommissionLeaderboard handles getting referral commission leaderboard.
+// GET /api/v1/admin/dashboard/commission-leaderboard
+func (h *DashboardHandler) GetCommissionLeaderboard(c *gin.Context) {
+	if h.referralRepo == nil {
+		response.Success(c, gin.H{"leaderboard": []any{}})
+		return
+	}
+	startTime, endTime := parseTimeRange(c)
+	limit := parseRankingLimit(c.DefaultQuery("limit", "12"))
+
+	keyRaw, _ := json.Marshal(struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+		Limit int    `json:"limit"`
+	}{startTime.UTC().Format(time.RFC3339), endTime.UTC().Format(time.RFC3339), limit})
+	cacheKey := string(keyRaw)
+
+	if cached, ok := dashboardCommissionLeaderboardCache.Get(cacheKey); ok {
+		c.Header("X-Snapshot-Cache", "hit")
+		response.Success(c, cached.Payload)
+		return
+	}
+
+	items, err := h.referralRepo.GetCommissionLeaderboard(c.Request.Context(), startTime, endTime, limit)
+	if err != nil {
+		response.Error(c, 500, "Failed to get commission leaderboard")
+		return
+	}
+	payload := gin.H{
+		"leaderboard": items,
+		"start_date":  startTime.Format("2006-01-02"),
+		"end_date":    endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	}
+	dashboardCommissionLeaderboardCache.Set(cacheKey, payload)
+	c.Header("X-Snapshot-Cache", "miss")
+	response.Success(c, payload)
+}
+
+// GetPartnerPointsTrend handles getting partner points trend.
+// GET /api/v1/admin/dashboard/partner-points-trend
+func (h *DashboardHandler) GetPartnerPointsTrend(c *gin.Context) {
+	if h.partnerRepo == nil {
+		response.Success(c, gin.H{"trend": []any{}})
+		return
+	}
+	startTime, endTime := parseTimeRange(c)
+
+	key := mustMarshalDashboardCacheKey(struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+	}{startTime.UTC().Format(time.RFC3339), endTime.UTC().Format(time.RFC3339)})
+
+	entry, hit, err := dashboardPartnerPointsTrendCache.GetOrLoad(key, func() (any, error) {
+		return h.partnerRepo.GetPointsTrend(c.Request.Context(), startTime, endTime)
+	})
+	if err != nil {
+		response.Error(c, 500, "Failed to get partner points trend")
+		return
+	}
+	trend, err := snapshotPayloadAs[[]service.PartnerPointsTrendPoint](entry.Payload)
+	if err != nil {
+		response.Error(c, 500, "Failed to get partner points trend")
+		return
+	}
+	c.Header("X-Snapshot-Cache", cacheStatusValue(hit))
+	response.Success(c, gin.H{
+		"trend":      trend,
+		"start_date": startTime.Format("2006-01-02"),
+		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
+// GetPartnerPointsLeaderboard handles getting partner points leaderboard.
+// GET /api/v1/admin/dashboard/partner-points-leaderboard
+func (h *DashboardHandler) GetPartnerPointsLeaderboard(c *gin.Context) {
+	if h.partnerRepo == nil {
+		response.Success(c, gin.H{"leaderboard": []any{}})
+		return
+	}
+	startTime, endTime := parseTimeRange(c)
+	limit := parseRankingLimit(c.DefaultQuery("limit", "12"))
+
+	keyRaw, _ := json.Marshal(struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+		Limit int    `json:"limit"`
+	}{startTime.UTC().Format(time.RFC3339), endTime.UTC().Format(time.RFC3339), limit})
+	cacheKey := string(keyRaw)
+
+	if cached, ok := dashboardPartnerPointsLeaderboardCache.Get(cacheKey); ok {
+		c.Header("X-Snapshot-Cache", "hit")
+		response.Success(c, cached.Payload)
+		return
+	}
+
+	items, err := h.partnerRepo.GetPointsLeaderboard(c.Request.Context(), startTime, endTime, limit)
+	if err != nil {
+		response.Error(c, 500, "Failed to get partner points leaderboard")
+		return
+	}
+	payload := gin.H{
+		"leaderboard": items,
+		"start_date":  startTime.Format("2006-01-02"),
+		"end_date":    endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	}
+	dashboardPartnerPointsLeaderboardCache.Set(cacheKey, payload)
+	c.Header("X-Snapshot-Cache", "miss")
+	response.Success(c, payload)
 }

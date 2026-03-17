@@ -305,6 +305,24 @@
             :lowest-users-trend="cacheStatsLowestTrend"
             :loading="cacheStatsLoading"
           />
+
+          <!-- Spending Trend + Leaderboard -->
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <UserSpendingTrend :trend-data="spendingTrendData" :loading="spendingTrendLoading" />
+            <UserSpendingLeaderboard :items="rankingItems" :loading="rankingLoading" />
+          </div>
+
+          <!-- Commission Trend + Leaderboard (referral enabled) -->
+          <div v-if="referralEnabled" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <CommissionTrend :trend-data="commissionTrendData" :loading="commissionLoading" />
+            <CommissionLeaderboard :items="commissionLeaderboardData" :loading="commissionLoading" />
+          </div>
+
+          <!-- Partner Points Trend + Leaderboard (partner enabled) -->
+          <div v-if="partnerEnabled" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <PartnerPointsTrend :trend-data="partnerPointsTrendData" :loading="partnerPointsLoading" />
+            <PartnerPointsLeaderboard :items="partnerPointsLeaderboardData" :loading="partnerPointsLoading" />
+          </div>
         </div>
       </template>
     </div>
@@ -325,7 +343,12 @@ import type {
   ModelStat,
   UserUsageTrendPoint,
   UserCacheHitRateTrendPoint,
-  UserSpendingRankingItem
+  UserSpendingRankingItem,
+  SpendingTrendPoint,
+  CommissionTrendPoint,
+  CommissionLeaderboardItem,
+  PartnerPointsTrendPoint,
+  PartnerPointsLeaderboardItem
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -336,6 +359,12 @@ import ModelDistributionChart from '@/components/charts/ModelDistributionChart.v
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import UserCacheHitRateChart from '@/components/charts/UserCacheHitRateChart.vue'
 import PlatformCacheHitRateTrend from '@/components/charts/PlatformCacheHitRateTrend.vue'
+import UserSpendingTrend from '@/components/charts/UserSpendingTrend.vue'
+import UserSpendingLeaderboard from '@/components/charts/UserSpendingLeaderboard.vue'
+import CommissionTrend from '@/components/charts/CommissionTrend.vue'
+import CommissionLeaderboard from '@/components/charts/CommissionLeaderboard.vue'
+import PartnerPointsTrend from '@/components/charts/PartnerPointsTrend.vue'
+import PartnerPointsLeaderboard from '@/components/charts/PartnerPointsLeaderboard.vue'
 
 import {
   Chart as ChartJS,
@@ -380,10 +409,21 @@ const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
 const rankingTotalRequests = ref(0)
 const rankingTotalTokens = ref(0)
+const spendingTrendData = ref<SpendingTrendPoint[]>([])
+const spendingTrendLoading = ref(false)
+const commissionTrendData = ref<CommissionTrendPoint[]>([])
+const commissionLeaderboardData = ref<CommissionLeaderboardItem[]>([])
+const commissionLoading = ref(false)
+const partnerPointsTrendData = ref<PartnerPointsTrendPoint[]>([])
+const partnerPointsLeaderboardData = ref<PartnerPointsLeaderboardItem[]>([])
+const partnerPointsLoading = ref(false)
 let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
 let cacheStatsLoadSeq = 0
 let rankingLoadSeq = 0
+let spendingTrendLoadSeq = 0
+let commissionLoadSeq = 0
+let partnerPointsLoadSeq = 0
 const rankingLimit = 12
 
 // Helper function to format date in local timezone
@@ -605,6 +645,10 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
   })
 }
 
+// Feature flags
+const referralEnabled = computed(() => appStore.cachedPublicSettings?.referral_enabled ?? false)
+const partnerEnabled = computed(() => appStore.cachedPublicSettings?.partner_enabled ?? false)
+
 // Date range change handler
 const onDateRangeChange = (range: {
   startDate: string
@@ -741,12 +785,99 @@ const loadUserSpendingRanking = async () => {
   }
 }
 
+const loadSpendingTrend = async () => {
+  const currentSeq = ++spendingTrendLoadSeq
+  spendingTrendLoading.value = true
+  try {
+    const response = await adminAPI.dashboard.getSpendingTrend({
+      start_date: startDate.value,
+      end_date: endDate.value,
+      granularity: granularity.value
+    })
+    if (currentSeq !== spendingTrendLoadSeq) return
+    spendingTrendData.value = response.trend || []
+  } catch (error) {
+    if (currentSeq !== spendingTrendLoadSeq) return
+    console.error('Error loading spending trend:', error)
+    spendingTrendData.value = []
+  } finally {
+    if (currentSeq === spendingTrendLoadSeq) {
+      spendingTrendLoading.value = false
+    }
+  }
+}
+
+const loadCommissionData = async () => {
+  if (!referralEnabled.value) return
+  const currentSeq = ++commissionLoadSeq
+  commissionLoading.value = true
+  try {
+    const [trendRes, leaderboardRes] = await Promise.all([
+      adminAPI.dashboard.getCommissionTrend({
+        start_date: startDate.value,
+        end_date: endDate.value
+      }),
+      adminAPI.dashboard.getCommissionLeaderboard({
+        start_date: startDate.value,
+        end_date: endDate.value,
+        limit: rankingLimit
+      })
+    ])
+    if (currentSeq !== commissionLoadSeq) return
+    commissionTrendData.value = trendRes.trend || []
+    commissionLeaderboardData.value = leaderboardRes.leaderboard || []
+  } catch (error) {
+    if (currentSeq !== commissionLoadSeq) return
+    console.error('Error loading commission data:', error)
+    commissionTrendData.value = []
+    commissionLeaderboardData.value = []
+  } finally {
+    if (currentSeq === commissionLoadSeq) {
+      commissionLoading.value = false
+    }
+  }
+}
+
+const loadPartnerPointsData = async () => {
+  if (!partnerEnabled.value) return
+  const currentSeq = ++partnerPointsLoadSeq
+  partnerPointsLoading.value = true
+  try {
+    const [trendRes, leaderboardRes] = await Promise.all([
+      adminAPI.dashboard.getPartnerPointsTrend({
+        start_date: startDate.value,
+        end_date: endDate.value
+      }),
+      adminAPI.dashboard.getPartnerPointsLeaderboard({
+        start_date: startDate.value,
+        end_date: endDate.value,
+        limit: rankingLimit
+      })
+    ])
+    if (currentSeq !== partnerPointsLoadSeq) return
+    partnerPointsTrendData.value = trendRes.trend || []
+    partnerPointsLeaderboardData.value = leaderboardRes.leaderboard || []
+  } catch (error) {
+    if (currentSeq !== partnerPointsLoadSeq) return
+    console.error('Error loading partner points data:', error)
+    partnerPointsTrendData.value = []
+    partnerPointsLeaderboardData.value = []
+  } finally {
+    if (currentSeq === partnerPointsLoadSeq) {
+      partnerPointsLoading.value = false
+    }
+  }
+}
+
 const loadDashboardStats = async () => {
   await Promise.all([
     loadDashboardSnapshot(true),
     loadUsersTrend(),
     loadUserCacheStats(),
-    loadUserSpendingRanking()
+    loadUserSpendingRanking(),
+    loadSpendingTrend(),
+    loadCommissionData(),
+    loadPartnerPointsData()
   ])
 }
 
@@ -755,7 +886,10 @@ const loadChartData = async () => {
     loadDashboardSnapshot(false),
     loadUsersTrend(),
     loadUserCacheStats(),
-    loadUserSpendingRanking()
+    loadUserSpendingRanking(),
+    loadSpendingTrend(),
+    loadCommissionData(),
+    loadPartnerPointsData()
   ])
 }
 

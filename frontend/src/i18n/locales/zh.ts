@@ -1020,7 +1020,20 @@ export default {
       requestMissRate: '请求未命中率',
       platformCacheHitRateTrend: '平台缓存命中率趋势',
       tokenCacheHitRate: 'Token 命中率',
-      requestCacheHitRate: '请求命中率'
+      requestCacheHitRate: '请求命中率',
+      spendingTrend: '用户消费趋势',
+      spendingLeaderboard: '用户消费排行',
+      actualCost: '实际消费',
+      commissionTrend: '推荐佣金趋势',
+      commissionLeaderboard: '推荐佣金排行',
+      commissionAmount: '佣金',
+      commissionCount: '佣金次数',
+      referredUsers: '推荐用户数',
+      user: '用户',
+      partnerPointsTrend: '推广积分趋势',
+      partnerPointsLeaderboard: '推广积分排行',
+      partnerPoints: '积分',
+      partnerName: '合作伙伴'
     },
 
     backup: {

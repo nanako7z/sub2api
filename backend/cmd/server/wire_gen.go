@@ -112,7 +112,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		return nil, err
 	}
 	dashboardAggregationService := service.ProvideDashboardAggregationService(dashboardAggregationRepository, timingWheelService, configConfig)
-	dashboardHandler := admin.NewDashboardHandler(dashboardService, dashboardAggregationService)
+	dashboardHandler := admin.NewDashboardHandler(dashboardService, dashboardAggregationService, referralRepositoryInterface, partnerRepository)
 	schedulerCache := repository.NewSchedulerCache(redisClient)
 	accountRepository := repository.NewAccountRepository(client, db, schedulerCache)
 	soraAccountRepository := repository.NewSoraAccountRepository(db)

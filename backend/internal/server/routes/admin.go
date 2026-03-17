@@ -203,6 +203,11 @@ func registerDashboardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		dashboard.POST("/api-keys-usage", h.Admin.Dashboard.GetBatchAPIKeysUsage)
 		dashboard.GET("/users-cache-stats", h.Admin.Dashboard.GetUserCacheStats)
 		dashboard.GET("/user-breakdown", h.Admin.Dashboard.GetUserBreakdown)
+		dashboard.GET("/spending-trend", h.Admin.Dashboard.GetUserSpendingTrend)
+		dashboard.GET("/commission-trend", h.Admin.Dashboard.GetCommissionTrend)
+		dashboard.GET("/commission-leaderboard", h.Admin.Dashboard.GetCommissionLeaderboard)
+		dashboard.GET("/partner-points-trend", h.Admin.Dashboard.GetPartnerPointsTrend)
+		dashboard.GET("/partner-points-leaderboard", h.Admin.Dashboard.GetPartnerPointsLeaderboard)
 		dashboard.POST("/aggregation/backfill", h.Admin.Dashboard.BackfillAggregation)
 	}
 }

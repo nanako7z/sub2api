@@ -335,6 +335,14 @@ func (s *DashboardService) GetUserSpendingRanking(ctx context.Context, startTime
 	return ranking, nil
 }
 
+func (s *DashboardService) GetSpendingTrend(ctx context.Context, startTime, endTime time.Time, granularity string) ([]usagestats.SpendingTrendPoint, error) {
+	trend, err := s.usageRepo.GetSpendingTrend(ctx, startTime, endTime, granularity)
+	if err != nil {
+		return nil, fmt.Errorf("get spending trend: %w", err)
+	}
+	return trend, nil
+}
+
 func (s *DashboardService) GetUserBreakdownStats(ctx context.Context, startTime, endTime time.Time, dim usagestats.UserBreakdownDimension, limit int) ([]usagestats.UserBreakdownItem, error) {
 	stats, err := s.usageRepo.GetUserBreakdownStats(ctx, startTime, endTime, dim, limit)
 	if err != nil {

@@ -33,6 +33,25 @@ type ReferredUserInfo struct {
 	JoinedAt        time.Time `json:"joined_at"`
 }
 
+// ReferralCommissionTrendPoint 推荐佣金趋势数据点
+type ReferralCommissionTrendPoint struct {
+	Date            string  `json:"date"`
+	TotalAmount     float64 `json:"total_amount"`
+	TotalSourceCost float64 `json:"total_source_cost"`
+	Count           int     `json:"count"`
+}
+
+// ReferralCommissionLeaderboardItem 推荐佣金排行榜项
+type ReferralCommissionLeaderboardItem struct {
+	ReferrerID      int64   `json:"referrer_id"`
+	Email           string  `json:"email"`
+	Username        string  `json:"username"`
+	TotalAmount     float64 `json:"total_amount"`
+	TotalSourceCost float64 `json:"total_source_cost"`
+	CommissionCount int     `json:"commission_count"`
+	ReferredUsers   int     `json:"referred_users"`
+}
+
 // BalanceSplitResult 拆分扣费结果
 type BalanceSplitResult struct {
 	NormalDeducted float64

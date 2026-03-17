@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/referralcommission"
@@ -24,6 +25,8 @@ type ReferralRepository interface {
 	ListCommissions(ctx context.Context, referrerID int64, params pagination.PaginationParams) ([]service.ReferralCommission, *pagination.PaginationResult, error)
 	ListReferredUsers(ctx context.Context, referrerID int64, params pagination.PaginationParams) ([]service.ReferredUserInfo, *pagination.PaginationResult, error)
 	CountReferredUsers(ctx context.Context, referrerID int64) (int, error)
+	GetCommissionTrend(ctx context.Context, start, end time.Time) ([]service.ReferralCommissionTrendPoint, error)
+	GetCommissionLeaderboard(ctx context.Context, start, end time.Time, limit int) ([]service.ReferralCommissionLeaderboardItem, error)
 }
 
 type referralRepository struct {
@@ -415,6 +418,76 @@ func (r *referralRepository) CreateCommissionWithCapAndCredit(ctx context.Contex
 		return 0, fmt.Errorf("commit tx: %w", err)
 	}
 	return actualAmount, nil
+}
+
+// GetCommissionTrend 按日期聚合推荐佣金趋势
+func (r *referralRepository) GetCommissionTrend(ctx context.Context, start, end time.Time) ([]service.ReferralCommissionTrendPoint, error) {
+	query := `
+		SELECT DATE(created_at) AS date,
+		       COALESCE(SUM(amount), 0) AS total_amount,
+		       COALESCE(SUM(source_cost), 0) AS total_source_cost,
+		       COUNT(*) AS count
+		FROM referral_commissions
+		WHERE created_at >= $1 AND created_at < $2
+		GROUP BY DATE(created_at)
+		ORDER BY date`
+	rows, err := r.sql.QueryContext(ctx, query, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("get commission trend: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []service.ReferralCommissionTrendPoint
+	for rows.Next() {
+		var p service.ReferralCommissionTrendPoint
+		var d time.Time
+		if err := rows.Scan(&d, &p.TotalAmount, &p.TotalSourceCost, &p.Count); err != nil {
+			return nil, fmt.Errorf("scan commission trend: %w", err)
+		}
+		p.Date = d.Format("2006-01-02")
+		result = append(result, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get commission trend rows: %w", err)
+	}
+	return result, nil
+}
+
+// GetCommissionLeaderboard 推荐佣金排行榜
+func (r *referralRepository) GetCommissionLeaderboard(ctx context.Context, start, end time.Time, limit int) ([]service.ReferralCommissionLeaderboardItem, error) {
+	query := `
+		SELECT rc.referrer_id,
+		       COALESCE(u.email, '') AS email,
+		       COALESCE(u.username, '') AS username,
+		       COALESCE(SUM(rc.amount), 0) AS total_amount,
+		       COALESCE(SUM(rc.source_cost), 0) AS total_source_cost,
+		       COUNT(*) AS commission_count,
+		       COUNT(DISTINCT rc.referred_user_id) AS referred_users
+		FROM referral_commissions rc
+		LEFT JOIN users u ON rc.referrer_id = u.id
+		WHERE rc.created_at >= $1 AND rc.created_at < $2
+		GROUP BY rc.referrer_id, u.email, u.username
+		ORDER BY total_amount DESC
+		LIMIT $3`
+	rows, err := r.sql.QueryContext(ctx, query, start, end, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get commission leaderboard: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []service.ReferralCommissionLeaderboardItem
+	for rows.Next() {
+		var item service.ReferralCommissionLeaderboardItem
+		if err := rows.Scan(&item.ReferrerID, &item.Email, &item.Username,
+			&item.TotalAmount, &item.TotalSourceCost, &item.CommissionCount, &item.ReferredUsers); err != nil {
+			return nil, fmt.Errorf("scan commission leaderboard: %w", err)
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get commission leaderboard rows: %w", err)
+	}
+	return result, nil
 }
 
 // ensure interface compliance

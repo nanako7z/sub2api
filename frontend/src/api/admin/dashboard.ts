@@ -14,7 +14,12 @@ import type {
   UserCacheHitRateTrendPoint,
   UserSpendingRankingResponse,
   UserBreakdownItem,
-  UsageRequestType
+  UsageRequestType,
+  SpendingTrendPoint,
+  CommissionTrendPoint,
+  CommissionLeaderboardItem,
+  PartnerPointsTrendPoint,
+  PartnerPointsLeaderboardItem
 } from '@/types'
 
 /**
@@ -334,6 +339,89 @@ export async function getUserCacheStats(
   return data
 }
 
+// Spending trend
+export interface SpendingTrendResponse {
+  trend: SpendingTrendPoint[]
+  start_date: string
+  end_date: string
+  granularity: string
+}
+
+export async function getSpendingTrend(
+  params?: Pick<TrendParams, 'start_date' | 'end_date' | 'granularity'>
+): Promise<SpendingTrendResponse> {
+  const { data } = await apiClient.get<SpendingTrendResponse>('/admin/dashboard/spending-trend', {
+    params
+  })
+  return data
+}
+
+// Commission trend & leaderboard
+export interface CommissionTrendResponse {
+  trend: CommissionTrendPoint[]
+  start_date: string
+  end_date: string
+}
+
+export async function getCommissionTrend(
+  params?: Pick<TrendParams, 'start_date' | 'end_date'>
+): Promise<CommissionTrendResponse> {
+  const { data } = await apiClient.get<CommissionTrendResponse>(
+    '/admin/dashboard/commission-trend',
+    { params }
+  )
+  return data
+}
+
+export interface CommissionLeaderboardResponse {
+  leaderboard: CommissionLeaderboardItem[]
+  start_date: string
+  end_date: string
+}
+
+export async function getCommissionLeaderboard(
+  params?: Pick<TrendParams, 'start_date' | 'end_date'> & { limit?: number }
+): Promise<CommissionLeaderboardResponse> {
+  const { data } = await apiClient.get<CommissionLeaderboardResponse>(
+    '/admin/dashboard/commission-leaderboard',
+    { params }
+  )
+  return data
+}
+
+// Partner points trend & leaderboard
+export interface PartnerPointsTrendResponse {
+  trend: PartnerPointsTrendPoint[]
+  start_date: string
+  end_date: string
+}
+
+export async function getPartnerPointsTrend(
+  params?: Pick<TrendParams, 'start_date' | 'end_date'>
+): Promise<PartnerPointsTrendResponse> {
+  const { data } = await apiClient.get<PartnerPointsTrendResponse>(
+    '/admin/dashboard/partner-points-trend',
+    { params }
+  )
+  return data
+}
+
+export interface PartnerPointsLeaderboardResponse {
+  leaderboard: PartnerPointsLeaderboardItem[]
+  start_date: string
+  end_date: string
+}
+
+export async function getPartnerPointsLeaderboard(
+  params?: Pick<TrendParams, 'start_date' | 'end_date'> & { limit?: number }
+): Promise<PartnerPointsLeaderboardResponse> {
+  const { data } = await apiClient.get<PartnerPointsLeaderboardResponse>(
+    '/admin/dashboard/partner-points-leaderboard',
+    { params }
+  )
+  return data
+}
+
 export const dashboardAPI = {
   getStats,
   getRealtimeMetrics,
@@ -346,7 +434,12 @@ export const dashboardAPI = {
   getUserSpendingRanking,
   getBatchUsersUsage,
   getBatchApiKeysUsage,
-  getUserCacheStats
+  getUserCacheStats,
+  getSpendingTrend,
+  getCommissionTrend,
+  getCommissionLeaderboard,
+  getPartnerPointsTrend,
+  getPartnerPointsLeaderboard
 }
 
 export default dashboardAPI

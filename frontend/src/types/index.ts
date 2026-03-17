@@ -1258,6 +1258,49 @@ export interface UserSpendingRankingResponse {
   end_date: string
 }
 
+// Dashboard: Spending trend
+export interface SpendingTrendPoint {
+  date: string
+  total_actual_cost: number
+  count: number
+}
+
+// Dashboard: Referral commission trend & leaderboard
+export interface CommissionTrendPoint {
+  date: string
+  total_amount: number
+  total_source_cost: number
+  count: number
+}
+
+export interface CommissionLeaderboardItem {
+  referrer_id: number
+  email: string
+  username: string
+  total_amount: number
+  total_source_cost: number
+  commission_count: number
+  referred_users: number
+}
+
+// Dashboard: Partner points trend & leaderboard
+export interface PartnerPointsTrendPoint {
+  date: string
+  total_points: number
+  total_source_cost: number
+  count: number
+}
+
+export interface PartnerPointsLeaderboardItem {
+  partner_id: number
+  partner_name: string
+  email: string
+  total_points: number
+  total_source_cost: number
+  commission_count: number
+  referred_users: number
+}
+
 export interface ApiKeyUsageTrendPoint {
   date: string
   api_key_id: number

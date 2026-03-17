@@ -2282,6 +2282,45 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 	}, nil
 }
 
+// GetSpendingTrend returns aggregated actual_cost trend grouped by date/hour.
+func (r *usageLogRepository) GetSpendingTrend(ctx context.Context, startTime, endTime time.Time, granularity string) (results []usagestats.SpendingTrendPoint, err error) {
+	dateFormat := safeDateFormat(granularity)
+
+	query := fmt.Sprintf(`
+		SELECT TO_CHAR(created_at, '%s') AS date,
+		       COALESCE(SUM(actual_cost), 0) AS total_actual_cost,
+		       COUNT(*) AS count
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at < $2
+		GROUP BY TO_CHAR(created_at, '%s')
+		ORDER BY date
+	`, dateFormat, dateFormat)
+
+	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get spending trend: %w", err)
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.SpendingTrendPoint, 0)
+	for rows.Next() {
+		var p usagestats.SpendingTrendPoint
+		if err = rows.Scan(&p.Date, &p.TotalActualCost, &p.Count); err != nil {
+			return nil, err
+		}
+		results = append(results, p)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // GetUserCacheHitRateTrendLowest 返回 token 缓存命中率最低的 N 个用户的缓存命中率趋势
 func (r *usageLogRepository) GetUserCacheHitRateTrendLowest(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) (results []usagestats.UserCacheHitRateTrendPoint, err error) {
 	dateFormat := safeDateFormat(granularity)
