@@ -5078,7 +5078,10 @@ export default {
     commissionAmount: '返佣金额',
     sourceCost: '来源消费',
     commissionRate: '返佣比例',
-    date: '日期'
+    date: '日期',
+    ruleSignupBonus: '好友通过您的推荐码注册，将获得 ${amount} 赠送余额',
+    ruleCommission: '好友每次消费时，您将获得消费金额 {rate}% 的赠送余额返佣',
+    ruleNormalBalanceOnly: '仅好友使用普通余额（充值余额）消费时产生返佣，赠送余额消费不计入返佣'
   },
 
   // Balance labels

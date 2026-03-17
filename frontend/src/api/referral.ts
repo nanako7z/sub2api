@@ -9,6 +9,8 @@ export interface ReferralStats {
   referral_code: string
   total_referred: number
   total_commission: number
+  signup_bonus: number
+  commission_rate: number
 }
 
 export interface ReferredUser {

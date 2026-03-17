@@ -19,6 +19,9 @@ type ReferralStats struct {
 	TotalReferred   int                `json:"total_referred"`
 	TotalCommission float64            `json:"total_commission"`
 	ReferredUsers   []ReferredUserInfo `json:"referred_users,omitempty"`
+	// 当前生效的推荐配置（供前端展示说明）
+	SignupBonus    float64 `json:"signup_bonus"`
+	CommissionRate float64 `json:"commission_rate"`
 }
 
 // ReferredUserInfo 被推荐用户信息

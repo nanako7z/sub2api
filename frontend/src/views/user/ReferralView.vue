@@ -50,7 +50,7 @@
                     :title="t('referral.copyLink')"
                   >
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.686-3.898a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364L4.343 8.81" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
                     </svg>
                   </button>
                 </div>
@@ -104,34 +104,35 @@
           </div>
         </div>
 
-        <!-- How It Works -->
+        <!-- Referral Rules -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('referral.howItWorks') }}</h3>
           </div>
-          <div class="p-6">
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div class="text-center">
-                <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400">
-                  <span class="text-lg font-bold">1</span>
-                </div>
-                <h4 class="font-medium text-gray-900 dark:text-white">{{ t('referral.step1Title') }}</h4>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('referral.step1Desc') }}</p>
+          <div class="space-y-3 p-6">
+            <div v-if="stats.signup_bonus > 0" class="flex items-start gap-3">
+              <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                <svg class="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </div>
-              <div class="text-center">
-                <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400">
-                  <span class="text-lg font-bold">2</span>
-                </div>
-                <h4 class="font-medium text-gray-900 dark:text-white">{{ t('referral.step2Title') }}</h4>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('referral.step2Desc') }}</p>
+              <p class="text-sm text-gray-700 dark:text-gray-300">
+                {{ t('referral.ruleSignupBonus', { amount: stats.signup_bonus.toFixed(2) }) }}
+              </p>
+            </div>
+            <div v-if="stats.commission_rate > 0" class="flex items-start gap-3">
+              <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
+                <svg class="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" /></svg>
               </div>
-              <div class="text-center">
-                <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400">
-                  <span class="text-lg font-bold">3</span>
-                </div>
-                <h4 class="font-medium text-gray-900 dark:text-white">{{ t('referral.step3Title') }}</h4>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('referral.step3Desc') }}</p>
+              <p class="text-sm text-gray-700 dark:text-gray-300">
+                {{ t('referral.ruleCommission', { rate: stats.commission_rate.toFixed(1) }) }}
+              </p>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <svg class="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
               </div>
+              <p class="text-sm text-gray-700 dark:text-gray-300">
+                {{ t('referral.ruleNormalBalanceOnly') }}
+              </p>
             </div>
           </div>
         </div>
@@ -188,57 +189,6 @@
           </div>
         </div>
 
-        <!-- Commission History Table -->
-        <div class="card">
-          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('referral.commissionHistory') }}</h3>
-          </div>
-          <div class="overflow-x-auto">
-            <table v-if="commissions.length > 0" class="w-full">
-              <thead>
-                <tr class="border-b border-gray-100 dark:border-dark-700">
-                  <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('referral.commissionAmount') }}</th>
-                  <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('referral.sourceCost') }}</th>
-                  <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('referral.commissionRate') }}</th>
-                  <th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('referral.date') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-                <tr v-for="c in commissions" :key="c.id" class="hover:bg-gray-50 dark:hover:bg-dark-800/50">
-                  <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">+${{ c.amount.toFixed(4) }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-600 dark:text-gray-400">${{ c.source_cost.toFixed(4) }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-600 dark:text-gray-400">{{ c.commission_rate.toFixed(1) }}%</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-right text-sm text-gray-500 dark:text-gray-400">{{ formatDate(c.created_at) }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <div v-else class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-              {{ t('referral.noCommissions') }}
-            </div>
-          </div>
-          <!-- Pagination for commissions -->
-          <div v-if="commissionsTotal > commissionsPageSize" class="flex items-center justify-between border-t border-gray-100 px-6 py-3 dark:border-dark-700">
-            <p class="text-sm text-gray-500 dark:text-gray-400">
-              {{ t('common.total') }}: {{ commissionsTotal }}
-            </p>
-            <div class="flex gap-2">
-              <button
-                :disabled="commissionsPage <= 1"
-                @click="commissionsPage--; loadCommissions()"
-                class="btn btn-sm btn-ghost"
-              >
-                {{ t('common.back') }}
-              </button>
-              <button
-                :disabled="commissionsPage * commissionsPageSize >= commissionsTotal"
-                @click="commissionsPage++; loadCommissions()"
-                class="btn btn-sm btn-ghost"
-              >
-                {{ t('common.next') }}
-              </button>
-            </div>
-          </div>
-        </div>
       </template>
     </div>
   </AppLayout>
@@ -253,10 +203,8 @@ import {
   getReferralStats,
   generateReferralCode,
   getReferredUsers,
-  getReferralCommissions,
   type ReferralStats,
   type ReferredUser,
-  type CommissionRecord
 } from '@/api/referral'
 
 const { t } = useI18n()
@@ -268,18 +216,15 @@ const generating = ref(false)
 const stats = ref<ReferralStats>({
   referral_code: '',
   total_referred: 0,
-  total_commission: 0
+  total_commission: 0,
+  signup_bonus: 0,
+  commission_rate: 0
 })
 
 const referredUsers = ref<ReferredUser[]>([])
 const referredUsersTotal = ref(0)
 const usersPage = ref(1)
 const usersPageSize = 20
-
-const commissions = ref<CommissionRecord[]>([])
-const commissionsTotal = ref(0)
-const commissionsPage = ref(1)
-const commissionsPageSize = 20
 
 const inviteLink = computed(() => {
   if (!stats.value.referral_code) return ''
@@ -302,16 +247,6 @@ async function loadReferredUsers() {
     referredUsersTotal.value = data.total || 0
   } catch (error) {
     console.error('Failed to load referred users:', error)
-  }
-}
-
-async function loadCommissions() {
-  try {
-    const { data } = await getReferralCommissions({ page: commissionsPage.value, page_size: commissionsPageSize })
-    commissions.value = data.items || []
-    commissionsTotal.value = data.total || 0
-  } catch (error) {
-    console.error('Failed to load commissions:', error)
   }
 }
 
@@ -356,7 +291,7 @@ function formatDate(dateStr: string): string {
 
 onMounted(async () => {
   loading.value = true
-  await Promise.all([loadStats(), loadReferredUsers(), loadCommissions()])
+  await Promise.all([loadStats(), loadReferredUsers()])
   loading.value = false
 })
 </script>

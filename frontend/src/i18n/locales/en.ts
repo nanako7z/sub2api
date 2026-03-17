@@ -4888,7 +4888,10 @@ export default {
     commissionAmount: 'Commission',
     sourceCost: 'Source Cost',
     commissionRate: 'Rate',
-    date: 'Date'
+    date: 'Date',
+    ruleSignupBonus: 'Your friend will receive ${amount} bonus balance upon registering with your referral code',
+    ruleCommission: "You will earn {rate}% of your friend's spending as bonus balance commission",
+    ruleNormalBalanceOnly: 'Commission is only generated from regular balance (top-up balance) spending; bonus balance spending does not count'
   },
 
   // Balance labels
