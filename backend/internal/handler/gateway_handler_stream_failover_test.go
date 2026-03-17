@@ -48,7 +48,7 @@ func TestStreamWrittenGuard_MessagesPath_AbortFailoverOnSSEContentWritten(t *tes
 	}
 
 	// 步骤 5：守卫触发 → 调用 handleFailoverExhausted，streamStarted=true
-	h := &GatewayHandler{}
+	h := &GatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	h.handleFailoverExhausted(c, failoverErr, service.PlatformAnthropic, true)
 
 	body := w.Body.String()
@@ -87,7 +87,7 @@ func TestStreamWrittenGuard_GeminiPath_AbortFailoverOnSSEContentWritten(t *testi
 		StatusCode: http.StatusForbidden,
 	}
 
-	h := &GatewayHandler{}
+	h := &GatewayHandler{GatewayErrorHelper: &GatewayErrorHelper{}}
 	h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, true)
 
 	body := w.Body.String()

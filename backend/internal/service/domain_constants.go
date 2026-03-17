@@ -225,6 +225,23 @@ const (
 
 	// SettingKeyBackendModeEnabled Backend 模式：禁用用户注册和自助服务，仅管理员可登录
 	SettingKeyBackendModeEnabled = "backend_mode_enabled"
+
+	// =========================
+	// 推荐计划设置
+	// =========================
+
+	SettingKeyReferralEnabled              = "referral_enabled"                 // 是否启用推荐系统
+	SettingKeyReferralSignupBonus          = "referral_signup_bonus"            // 新用户使用推荐码获得的赠送余额
+	SettingKeyReferralReferrerBonus        = "referral_referrer_bonus"          // 推荐人获得的即时奖励（赠送余额）
+	SettingKeyReferralCommissionRate       = "referral_commission_rate"         // 返佣比例 (0-100)
+	SettingKeyReferralMaxCommissionPerUser = "referral_max_commission_per_user" // 单个被推荐用户的最大返佣总额 (0=无限)
+	SettingKeyBalanceConsumptionPriority   = "balance_consumption_priority"     // 扣费优先级: "normal_first" 或 "gift_first"
+)
+
+// Balance consumption priority constants
+const (
+	BalancePriorityNormalFirst = "normal_first"
+	BalancePriorityGiftFirst   = "gift_first"
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).

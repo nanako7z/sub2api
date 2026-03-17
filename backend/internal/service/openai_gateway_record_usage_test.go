@@ -68,6 +68,26 @@ func (s *openAIRecordUsageUserRepoStub) DeductBalance(ctx context.Context, id in
 	return s.deductErr
 }
 
+func (s *openAIRecordUsageUserRepoStub) DeductBalanceSplit(ctx context.Context, id int64, amount float64, _ string) (*BalanceSplitResult, error) {
+	s.deductCalls++
+	s.lastAmount = amount
+	s.lastCtxErr = ctx.Err()
+	return &BalanceSplitResult{NormalDeducted: amount}, s.deductErr
+}
+
+func (s *openAIRecordUsageUserRepoStub) UpdateGiftBalance(context.Context, int64, float64) error {
+	return nil
+}
+func (s *openAIRecordUsageUserRepoStub) GetByReferralCode(context.Context, string) (*User, error) {
+	return nil, ErrUserNotFound
+}
+func (s *openAIRecordUsageUserRepoStub) SetReferralCode(context.Context, int64, string) error {
+	return nil
+}
+func (s *openAIRecordUsageUserRepoStub) SetReferrer(context.Context, int64, int64) error {
+	return nil
+}
+
 type openAIRecordUsageSubRepoStub struct {
 	UserSubscriptionRepository
 
@@ -144,6 +164,8 @@ func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo U
 		&BillingCacheService{},
 		nil,
 		&DeferredService{},
+		nil,
+		nil,
 		nil,
 	)
 	svc.userGroupRateResolver = newUserGroupRateResolver(

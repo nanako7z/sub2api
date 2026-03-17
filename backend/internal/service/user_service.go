@@ -51,6 +51,13 @@ type UserRepository interface {
 	UpdateTotpSecret(ctx context.Context, userID int64, encryptedSecret *string) error
 	EnableTotp(ctx context.Context, userID int64) error
 	DisableTotp(ctx context.Context, userID int64) error
+
+	// 赠送余额与推荐
+	UpdateGiftBalance(ctx context.Context, id int64, amount float64) error
+	DeductBalanceSplit(ctx context.Context, id int64, amount float64, priority string) (*BalanceSplitResult, error)
+	GetByReferralCode(ctx context.Context, code string) (*User, error)
+	SetReferralCode(ctx context.Context, userID int64, code string) error
+	SetReferrer(ctx context.Context, userID int64, referrerID int64) error
 }
 
 // UpdateProfileRequest 更新用户资料请求

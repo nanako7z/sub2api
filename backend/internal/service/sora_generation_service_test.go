@@ -168,6 +168,15 @@ func (r *stubUserRepoForQuota) DisableTotp(context.Context, int64) error        
 func (r *stubUserRepoForQuota) AddGroupToAllowedGroups(context.Context, int64, int64) error {
 	return nil
 }
+func (r *stubUserRepoForQuota) UpdateGiftBalance(context.Context, int64, float64) error { return nil }
+func (r *stubUserRepoForQuota) DeductBalanceSplit(_ context.Context, _ int64, _ float64, _ string) (*BalanceSplitResult, error) {
+	return &BalanceSplitResult{}, nil
+}
+func (r *stubUserRepoForQuota) GetByReferralCode(context.Context, string) (*User, error) {
+	return nil, ErrUserNotFound
+}
+func (r *stubUserRepoForQuota) SetReferralCode(context.Context, int64, string) error { return nil }
+func (r *stubUserRepoForQuota) SetReferrer(context.Context, int64, int64) error      { return nil }
 
 // ==================== 辅助函数：构造带 CDN 缓存的 SoraS3Storage ====================
 

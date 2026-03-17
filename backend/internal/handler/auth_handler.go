@@ -16,25 +16,27 @@ import (
 
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
-	cfg           *config.Config
-	authService   *service.AuthService
-	userService   *service.UserService
-	settingSvc    *service.SettingService
-	promoService  *service.PromoService
-	redeemService *service.RedeemService
-	totpService   *service.TotpService
+	cfg             *config.Config
+	authService     *service.AuthService
+	userService     *service.UserService
+	settingSvc      *service.SettingService
+	promoService    *service.PromoService
+	redeemService   *service.RedeemService
+	totpService     *service.TotpService
+	referralService *service.ReferralService
 }
 
 // NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userService *service.UserService, settingService *service.SettingService, promoService *service.PromoService, redeemService *service.RedeemService, totpService *service.TotpService) *AuthHandler {
+func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userService *service.UserService, settingService *service.SettingService, promoService *service.PromoService, redeemService *service.RedeemService, totpService *service.TotpService, referralService *service.ReferralService) *AuthHandler {
 	return &AuthHandler{
-		cfg:           cfg,
-		authService:   authService,
-		userService:   userService,
-		settingSvc:    settingService,
-		promoService:  promoService,
-		redeemService: redeemService,
-		totpService:   totpService,
+		cfg:             cfg,
+		authService:     authService,
+		userService:     userService,
+		settingSvc:      settingService,
+		promoService:    promoService,
+		redeemService:   redeemService,
+		totpService:     totpService,
+		referralService: referralService,
 	}
 }
 
@@ -314,19 +316,13 @@ type ValidatePromoCodeResponse struct {
 	BonusAmount float64 `json:"bonus_amount,omitempty"`
 	ErrorCode   string  `json:"error_code,omitempty"`
 	Message     string  `json:"message,omitempty"`
+	Type        string  `json:"type,omitempty"` // "promo" 或 "referral"
 }
 
 // ValidatePromoCode 验证优惠码（公开接口，注册前调用）
 // POST /api/v1/auth/validate-promo-code
 func (h *AuthHandler) ValidatePromoCode(c *gin.Context) {
-	// 检查优惠码功能是否启用
-	if h.settingSvc != nil && !h.settingSvc.IsPromoCodeEnabled(c.Request.Context()) {
-		response.Success(c, ValidatePromoCodeResponse{
-			Valid:     false,
-			ErrorCode: "PROMO_CODE_DISABLED",
-		})
-		return
-	}
+	ctx := c.Request.Context()
 
 	var req ValidatePromoCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -334,41 +330,68 @@ func (h *AuthHandler) ValidatePromoCode(c *gin.Context) {
 		return
 	}
 
-	promoCode, err := h.promoService.ValidatePromoCode(c.Request.Context(), req.Code)
-	if err != nil {
-		// 根据错误类型返回对应的错误码
-		errorCode := "PROMO_CODE_INVALID"
-		switch err {
-		case service.ErrPromoCodeNotFound:
-			errorCode = "PROMO_CODE_NOT_FOUND"
-		case service.ErrPromoCodeExpired:
-			errorCode = "PROMO_CODE_EXPIRED"
-		case service.ErrPromoCodeDisabled:
-			errorCode = "PROMO_CODE_DISABLED"
-		case service.ErrPromoCodeMaxUsed:
-			errorCode = "PROMO_CODE_MAX_USED"
-		case service.ErrPromoCodeAlreadyUsed:
-			errorCode = "PROMO_CODE_ALREADY_USED"
+	promoEnabled := h.settingSvc == nil || h.settingSvc.IsPromoCodeEnabled(ctx)
+	referralEnabled := h.referralService != nil && h.settingSvc != nil && h.settingSvc.IsReferralEnabled(ctx)
+
+	// 先尝试优惠码（仅在优惠码功能开启时）
+	if promoEnabled {
+		promoCode, err := h.promoService.ValidatePromoCode(ctx, req.Code)
+		if err == nil && promoCode != nil {
+			response.Success(c, ValidatePromoCodeResponse{
+				Valid:       true,
+				BonusAmount: promoCode.BonusAmount,
+				Type:        "promo",
+			})
+			return
 		}
 
-		response.Success(c, ValidatePromoCodeResponse{
-			Valid:     false,
-			ErrorCode: errorCode,
-		})
-		return
+		// 优惠码报错且不是"未找到"，返回具体错误
+		if err != nil && err != service.ErrPromoCodeNotFound {
+			errorCode := "PROMO_CODE_INVALID"
+			switch err {
+			case service.ErrPromoCodeExpired:
+				errorCode = "PROMO_CODE_EXPIRED"
+			case service.ErrPromoCodeDisabled:
+				errorCode = "PROMO_CODE_DISABLED"
+			case service.ErrPromoCodeMaxUsed:
+				errorCode = "PROMO_CODE_MAX_USED"
+			case service.ErrPromoCodeAlreadyUsed:
+				errorCode = "PROMO_CODE_ALREADY_USED"
+			}
+			response.Success(c, ValidatePromoCodeResponse{
+				Valid:     false,
+				ErrorCode: errorCode,
+			})
+			return
+		}
 	}
 
-	if promoCode == nil {
+	// 优惠码未找到或优惠码功能关闭时，尝试作为推荐码
+	if referralEnabled {
+		referrer, refErr := h.referralService.ValidateReferralCode(ctx, req.Code)
+		if refErr == nil && referrer != nil {
+			signupBonus := h.settingSvc.GetReferralSignupBonus(ctx)
+			response.Success(c, ValidatePromoCodeResponse{
+				Valid:       true,
+				BonusAmount: signupBonus,
+				Type:        "referral",
+			})
+			return
+		}
+	}
+
+	// 两种码都无效
+	if !promoEnabled && !referralEnabled {
 		response.Success(c, ValidatePromoCodeResponse{
 			Valid:     false,
-			ErrorCode: "PROMO_CODE_INVALID",
+			ErrorCode: "PROMO_CODE_DISABLED",
 		})
 		return
 	}
 
 	response.Success(c, ValidatePromoCodeResponse{
-		Valid:       true,
-		BonusAmount: promoCode.BonusAmount,
+		Valid:     false,
+		ErrorCode: "PROMO_CODE_NOT_FOUND",
 	})
 }
 

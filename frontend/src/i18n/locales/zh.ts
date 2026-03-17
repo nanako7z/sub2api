@@ -352,7 +352,8 @@ export default {
     mySubscriptions: '我的订阅',
     buySubscription: '充值/订阅',
     docs: '文档',
-    sora: 'Sora 创作'
+    sora: 'Sora 创作',
+    referral: '推荐计划'
   },
 
   // Auth
@@ -426,6 +427,7 @@ export default {
     invitationCodeInvalid: '邀请码无效或已被使用',
     invitationCodeValidating: '正在验证邀请码...',
     invitationCodeInvalidCannotRegister: '邀请码无效，请检查后重试',
+    referralCodeValid: '好友推荐码有效，注册后双方均可获得奖励',
     linuxdo: {
       signIn: '使用 Linux.do 登录',
       orContinue: '或使用邮箱密码继续',
@@ -4252,6 +4254,24 @@ export default {
         allowUngroupedKey: '允许未分组 Key 调度',
         allowUngroupedKeyHint: '关闭后，未分配到任何分组的 API Key 将无法发起请求（返回 403）。建议保持关闭以确保所有 Key 都归属明确的分组。'
       },
+      referral: {
+        title: '推荐计划设置',
+        description: '配置用户推荐奖励和返佣规则',
+        enableReferral: '启用推荐系统',
+        enableReferralHint: '允许用户通过推荐链接邀请新用户注册',
+        signupBonus: '新用户注册赠送余额',
+        signupBonusHint: '通过推荐链接注册的新用户将获得的赠送余额（单位：美元）',
+        referrerBonus: '推荐人即时奖励',
+        referrerBonusHint: '每成功推荐一位新用户，推荐人获得的即时奖励金额（单位：美元）',
+        commissionRate: '返佣比例',
+        commissionRateHint: '被推荐用户每次消费时，推荐人获得的返佣百分比',
+        maxCommission: '单用户最大返佣总额',
+        maxCommissionHint: '单个被推荐用户累计返佣上限，0 表示无限制（单位：美元）',
+        balancePriority: '扣费优先级',
+        balancePriorityHint: '用户消费时优先使用哪种余额',
+        normalFirst: '优先普通余额',
+        giftFirst: '优先赠送余额'
+      },
       site: {
         title: '站点设置',
         description: '自定义站点品牌',
@@ -5014,5 +5034,46 @@ export default {
     examplePrompt2: '无人机航拍视角，冰岛极光下的冰川湖面反射绿色光芒，慢速推进',
     examplePrompt3: '赛博朋克风格的未来城市，霓虹灯倒映在雨后积水中，夜景，电影级色彩',
     examplePrompt4: '水墨画风格，一叶扁舟在山水间漂泊，薄雾缭绕，中国古典意境'
+  },
+
+  // Referral System
+  referral: {
+    title: '推荐计划',
+    subtitle: '邀请好友注册，双方均可获得奖励',
+    yourCode: '您的推荐码',
+    copyCode: '复制推荐码',
+    inviteLink: '邀请链接',
+    copyLink: '复制链接',
+    generateCode: '生成推荐码',
+    codeGenerated: '推荐码已生成',
+    generateFailed: '生成推荐码失败',
+    totalReferred: '推荐用户数',
+    totalCommission: '累计返佣',
+    howItWorks: '如何运作',
+    step1Title: '分享邀请链接',
+    step1Desc: '将您的专属邀请链接或推荐码分享给好友',
+    step2Title: '好友注册',
+    step2Desc: '好友通过您的链接注册并开始使用服务',
+    step3Title: '获得奖励',
+    step3Desc: '好友每次消费，您都将获得相应比例的返佣',
+    referredUsers: '推荐用户',
+    noReferredUsers: '暂无推荐用户',
+    userEmail: '邮箱',
+    username: '用户名',
+    commissionEarned: '贡献返佣',
+    joinedAt: '注册时间',
+    commissionHistory: '返佣记录',
+    noCommissions: '暂无返佣记录',
+    commissionAmount: '返佣金额',
+    sourceCost: '来源消费',
+    commissionRate: '返佣比例',
+    date: '日期'
+  },
+
+  // Balance labels
+  balance: {
+    normal: '普通余额',
+    gift: '赠送余额',
+    total: '总余额'
   }
 }

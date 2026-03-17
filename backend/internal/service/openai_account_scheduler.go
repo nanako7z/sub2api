@@ -537,6 +537,13 @@ func buildOpenAIWeightedSelectionOrder(
 	candidates []openAIAccountCandidateScore,
 	req OpenAIAccountScheduleRequest,
 ) []openAIAccountCandidateScore {
+	return buildOpenAIWeightedSelectionOrderWithSeed(candidates, deriveOpenAISelectionSeed(req))
+}
+
+func buildOpenAIWeightedSelectionOrderWithSeed(
+	candidates []openAIAccountCandidateScore,
+	seed uint64,
+) []openAIAccountCandidateScore {
 	if len(candidates) <= 1 {
 		return append([]openAIAccountCandidateScore(nil), candidates...)
 	}
@@ -559,7 +566,7 @@ func buildOpenAIWeightedSelectionOrder(
 	}
 
 	order := make([]openAIAccountCandidateScore, 0, len(pool))
-	rng := newOpenAISelectionRNG(deriveOpenAISelectionSeed(req))
+	rng := newOpenAISelectionRNG(seed)
 	for len(pool) > 0 {
 		total := 0.0
 		for _, w := range weights {

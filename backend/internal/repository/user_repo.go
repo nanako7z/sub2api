@@ -588,3 +588,109 @@ func (r *userRepository) DisableTotp(ctx context.Context, userID int64) error {
 	}
 	return nil
 }
+
+// UpdateGiftBalance 增加用户赠送余额
+func (r *userRepository) UpdateGiftBalance(ctx context.Context, id int64, amount float64) error {
+	client := clientFromContext(ctx, r.client)
+	n, err := client.User.Update().Where(dbuser.IDEQ(id)).AddGiftBalance(amount).Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	if n == 0 {
+		return service.ErrUserNotFound
+	}
+	return nil
+}
+
+// DeductBalanceSplit 拆分扣费：根据优先级从普通余额和赠送余额中扣除
+func (r *userRepository) DeductBalanceSplit(ctx context.Context, id int64, amount float64, priority string) (*service.BalanceSplitResult, error) {
+	// 两个 SQL 都统一 RETURNING normal_deducted, gift_deducted 以消除列序混淆
+	var query string
+	if priority == service.BalancePriorityGiftFirst {
+		// 赠送余额优先
+		query = `
+			WITH pre AS (
+				SELECT balance, gift_balance FROM users WHERE id = $1 FOR UPDATE
+			)
+			UPDATE users SET
+				gift_balance = gift_balance - LEAST((SELECT gift_balance FROM pre), $2),
+				balance = balance - GREATEST($2 - (SELECT gift_balance FROM pre), 0)
+			WHERE id = $1
+			RETURNING
+				GREATEST($2 - (SELECT gift_balance FROM pre), 0),
+				LEAST((SELECT gift_balance FROM pre), $2)
+		`
+	} else {
+		// 普通余额优先（默认）
+		query = `
+			WITH pre AS (
+				SELECT balance, gift_balance FROM users WHERE id = $1 FOR UPDATE
+			)
+			UPDATE users SET
+				balance = balance - LEAST((SELECT balance FROM pre), $2),
+				gift_balance = gift_balance - GREATEST($2 - (SELECT balance FROM pre), 0)
+			WHERE id = $1
+			RETURNING
+				LEAST((SELECT balance FROM pre), $2),
+				GREATEST($2 - (SELECT balance FROM pre), 0)
+		`
+	}
+
+	rows, err := r.sql.QueryContext(ctx, query, id, amount)
+	if err != nil {
+		return nil, fmt.Errorf("deduct balance split: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	if !rows.Next() {
+		return nil, service.ErrUserNotFound
+	}
+	var normalDeducted, giftDeducted float64
+	if err := rows.Scan(&normalDeducted, &giftDeducted); err != nil {
+		return nil, fmt.Errorf("deduct balance split scan: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("deduct balance split rows: %w", err)
+	}
+
+	return &service.BalanceSplitResult{
+		NormalDeducted: normalDeducted,
+		GiftDeducted:   giftDeducted,
+	}, nil
+}
+
+// GetByReferralCode 根据推荐码查找用户
+func (r *userRepository) GetByReferralCode(ctx context.Context, code string) (*service.User, error) {
+	client := clientFromContext(ctx, r.client)
+	u, err := client.User.Query().
+		Where(
+			dbuser.ReferralCodeEQ(code),
+			dbuser.DeletedAtIsNil(),
+			dbuser.StatusEQ(service.StatusActive),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return userEntityToService(u), nil
+}
+
+// SetReferralCode 设置用户的推荐码
+func (r *userRepository) SetReferralCode(ctx context.Context, userID int64, code string) error {
+	client := clientFromContext(ctx, r.client)
+	_, err := client.User.UpdateOneID(userID).SetReferralCode(code).Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return nil
+}
+
+// SetReferrer 设置用户的推荐人
+func (r *userRepository) SetReferrer(ctx context.Context, userID int64, referrerID int64) error {
+	client := clientFromContext(ctx, r.client)
+	_, err := client.User.UpdateOneID(userID).SetReferrerID(referrerID).Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return nil
+}

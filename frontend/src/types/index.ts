@@ -30,6 +30,8 @@ export interface User {
   email: string
   role: 'admin' | 'user' // User role for authorization
   balance: number // User balance for API usage
+  gift_balance?: number // Gift balance from referrals/promos
+  referral_code?: string // User's referral code
   concurrency: number // Allowed concurrent requests
   status: 'active' | 'disabled' // Account status
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
@@ -108,6 +110,7 @@ export interface PublicSettings {
   linuxdo_oauth_enabled: boolean
   sora_client_enabled: boolean
   backend_mode_enabled: boolean
+  referral_enabled: boolean
   version: string
 }
 

@@ -108,6 +108,7 @@ type PublicSettings struct {
 
 	LinuxDoOAuthEnabled bool
 	BackendModeEnabled  bool
+	ReferralEnabled     bool
 	Version             string
 }
 

@@ -464,6 +464,7 @@ func TestSoraGatewayHandler_ChatCompletions(t *testing.T) {
 		nil, // rpmCache
 		nil, // digestStore
 		nil, // settingService
+		nil, // referralService
 	)
 
 	soraClient := &stubSoraClient{imageURLs: []string{"https://example.com/a.png"}}

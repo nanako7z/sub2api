@@ -254,6 +254,7 @@ export interface ValidatePromoCodeResponse {
   bonus_amount?: number
   error_code?: string
   message?: string
+  type?: 'promo' | 'referral'
 }
 
 /**

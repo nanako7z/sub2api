@@ -311,13 +311,13 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 	return balance, nil
 }
 
-// getUserBalanceFromDB 从数据库获取用户余额
+// getUserBalanceFromDB 从数据库获取用户余额（含赠送余额）
 func (s *BillingCacheService) getUserBalanceFromDB(ctx context.Context, userID int64) (float64, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return 0, fmt.Errorf("get user balance: %w", err)
 	}
-	return user.Balance, nil
+	return user.Balance + user.GiftBalance, nil
 }
 
 // setBalanceCache 设置余额缓存

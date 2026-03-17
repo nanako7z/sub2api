@@ -601,6 +601,7 @@ func userEntityToService(u *dbent.User) *service.User {
 		PasswordHash:          u.PasswordHash,
 		Role:                  u.Role,
 		Balance:               u.Balance,
+		GiftBalance:           u.GiftBalance,
 		Concurrency:           u.Concurrency,
 		Status:                u.Status,
 		SoraStorageQuotaBytes: u.SoraStorageQuotaBytes,
@@ -608,6 +609,8 @@ func userEntityToService(u *dbent.User) *service.User {
 		TotpSecretEncrypted:   u.TotpSecretEncrypted,
 		TotpEnabled:           u.TotpEnabled,
 		TotpEnabledAt:         u.TotpEnabledAt,
+		ReferralCode:          u.ReferralCode,
+		ReferrerID:            u.ReferrerID,
 		CreatedAt:             u.CreatedAt,
 		UpdatedAt:             u.UpdatedAt,
 	}

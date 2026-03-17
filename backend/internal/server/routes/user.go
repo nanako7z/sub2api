@@ -90,5 +90,16 @@ func RegisterUserRoutes(
 			subscriptions.GET("/progress", h.Subscription.GetProgress)
 			subscriptions.GET("/summary", h.Subscription.GetSummary)
 		}
+
+		// 推荐计划
+		if h.Referral != nil {
+			referral := authenticated.Group("/referral")
+			{
+				referral.GET("/stats", h.Referral.GetStats)
+				referral.POST("/code", h.Referral.GenerateCode)
+				referral.GET("/users", h.Referral.ListReferredUsers)
+				referral.GET("/commissions", h.Referral.ListCommissions)
+			}
+		}
 	}
 }

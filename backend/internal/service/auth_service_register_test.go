@@ -140,6 +140,7 @@ func newAuthService(repo *userRepoStub, settings map[string]string, emailCache E
 		nil,
 		nil,
 		nil, // promoService
+		nil, // referralService
 		nil, // defaultSubAssigner
 	)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralcommission"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
@@ -284,6 +285,67 @@ func (_u *UserUpdate) AddSoraStorageUsedBytes(v int64) *UserUpdate {
 	return _u
 }
 
+// SetGiftBalance sets the "gift_balance" field.
+func (_u *UserUpdate) SetGiftBalance(v float64) *UserUpdate {
+	_u.mutation.ResetGiftBalance()
+	_u.mutation.SetGiftBalance(v)
+	return _u
+}
+
+// SetNillableGiftBalance sets the "gift_balance" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableGiftBalance(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetGiftBalance(*v)
+	}
+	return _u
+}
+
+// AddGiftBalance adds value to the "gift_balance" field.
+func (_u *UserUpdate) AddGiftBalance(v float64) *UserUpdate {
+	_u.mutation.AddGiftBalance(v)
+	return _u
+}
+
+// SetReferralCode sets the "referral_code" field.
+func (_u *UserUpdate) SetReferralCode(v string) *UserUpdate {
+	_u.mutation.SetReferralCode(v)
+	return _u
+}
+
+// SetNillableReferralCode sets the "referral_code" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableReferralCode(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetReferralCode(*v)
+	}
+	return _u
+}
+
+// ClearReferralCode clears the value of the "referral_code" field.
+func (_u *UserUpdate) ClearReferralCode() *UserUpdate {
+	_u.mutation.ClearReferralCode()
+	return _u
+}
+
+// SetReferrerID sets the "referrer_id" field.
+func (_u *UserUpdate) SetReferrerID(v int64) *UserUpdate {
+	_u.mutation.SetReferrerID(v)
+	return _u
+}
+
+// SetNillableReferrerID sets the "referrer_id" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableReferrerID(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetReferrerID(*v)
+	}
+	return _u
+}
+
+// ClearReferrerID clears the value of the "referrer_id" field.
+func (_u *UserUpdate) ClearReferrerID() *UserUpdate {
+	_u.mutation.ClearReferrerID()
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdate) AddAPIKeyIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -417,6 +479,41 @@ func (_u *UserUpdate) AddPromoCodeUsages(v ...*PromoCodeUsage) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.AddPromoCodeUsageIDs(ids...)
+}
+
+// AddReferredUserIDs adds the "referred_users" edge to the User entity by IDs.
+func (_u *UserUpdate) AddReferredUserIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddReferredUserIDs(ids...)
+	return _u
+}
+
+// AddReferredUsers adds the "referred_users" edges to the User entity.
+func (_u *UserUpdate) AddReferredUsers(v ...*User) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddReferredUserIDs(ids...)
+}
+
+// SetReferrer sets the "referrer" edge to the User entity.
+func (_u *UserUpdate) SetReferrer(v *User) *UserUpdate {
+	return _u.SetReferrerID(v.ID)
+}
+
+// AddReferralCommissionIDs adds the "referral_commissions" edge to the ReferralCommission entity by IDs.
+func (_u *UserUpdate) AddReferralCommissionIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddReferralCommissionIDs(ids...)
+	return _u
+}
+
+// AddReferralCommissions adds the "referral_commissions" edges to the ReferralCommission entity.
+func (_u *UserUpdate) AddReferralCommissions(v ...*ReferralCommission) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddReferralCommissionIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -613,6 +710,54 @@ func (_u *UserUpdate) RemovePromoCodeUsages(v ...*PromoCodeUsage) *UserUpdate {
 	return _u.RemovePromoCodeUsageIDs(ids...)
 }
 
+// ClearReferredUsers clears all "referred_users" edges to the User entity.
+func (_u *UserUpdate) ClearReferredUsers() *UserUpdate {
+	_u.mutation.ClearReferredUsers()
+	return _u
+}
+
+// RemoveReferredUserIDs removes the "referred_users" edge to User entities by IDs.
+func (_u *UserUpdate) RemoveReferredUserIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveReferredUserIDs(ids...)
+	return _u
+}
+
+// RemoveReferredUsers removes "referred_users" edges to User entities.
+func (_u *UserUpdate) RemoveReferredUsers(v ...*User) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveReferredUserIDs(ids...)
+}
+
+// ClearReferrer clears the "referrer" edge to the User entity.
+func (_u *UserUpdate) ClearReferrer() *UserUpdate {
+	_u.mutation.ClearReferrer()
+	return _u
+}
+
+// ClearReferralCommissions clears all "referral_commissions" edges to the ReferralCommission entity.
+func (_u *UserUpdate) ClearReferralCommissions() *UserUpdate {
+	_u.mutation.ClearReferralCommissions()
+	return _u
+}
+
+// RemoveReferralCommissionIDs removes the "referral_commissions" edge to ReferralCommission entities by IDs.
+func (_u *UserUpdate) RemoveReferralCommissionIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveReferralCommissionIDs(ids...)
+	return _u
+}
+
+// RemoveReferralCommissions removes "referral_commissions" edges to ReferralCommission entities.
+func (_u *UserUpdate) RemoveReferralCommissions(v ...*ReferralCommission) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveReferralCommissionIDs(ids...)
+}
+
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (_u *UserUpdate) Save(ctx context.Context) (int, error) {
 	if err := _u.defaults(); err != nil {
@@ -680,6 +825,11 @@ func (_u *UserUpdate) check() error {
 	if v, ok := _u.mutation.Username(); ok {
 		if err := user.UsernameValidator(v); err != nil {
 			return &ValidationError{Name: "username", err: fmt.Errorf(`ent: validator failed for field "User.username": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ReferralCode(); ok {
+		if err := user.ReferralCodeValidator(v); err != nil {
+			return &ValidationError{Name: "referral_code", err: fmt.Errorf(`ent: validator failed for field "User.referral_code": %w`, err)}
 		}
 	}
 	return nil
@@ -762,6 +912,18 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedSoraStorageUsedBytes(); ok {
 		_spec.AddField(user.FieldSoraStorageUsedBytes, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GiftBalance(); ok {
+		_spec.SetField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedGiftBalance(); ok {
+		_spec.AddField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.ReferralCode(); ok {
+		_spec.SetField(user.FieldReferralCode, field.TypeString, value)
+	}
+	if _u.mutation.ReferralCodeCleared() {
+		_spec.ClearField(user.FieldReferralCode, field.TypeString)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1173,6 +1335,125 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(promocodeusage.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReferredUsersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferredUsersTable,
+			Columns: []string{user.ReferredUsersColumn},
+			Bidi:    true,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedReferredUsersIDs(); len(nodes) > 0 && !_u.mutation.ReferredUsersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferredUsersTable,
+			Columns: []string{user.ReferredUsersColumn},
+			Bidi:    true,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReferredUsersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferredUsersTable,
+			Columns: []string{user.ReferredUsersColumn},
+			Bidi:    true,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReferrerCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   user.ReferrerTable,
+			Columns: []string{user.ReferrerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReferrerIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   user.ReferrerTable,
+			Columns: []string{user.ReferrerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReferralCommissionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralCommissionsTable,
+			Columns: []string{user.ReferralCommissionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralcommission.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedReferralCommissionsIDs(); len(nodes) > 0 && !_u.mutation.ReferralCommissionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralCommissionsTable,
+			Columns: []string{user.ReferralCommissionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralcommission.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReferralCommissionsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralCommissionsTable,
+			Columns: []string{user.ReferralCommissionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralcommission.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1448,6 +1729,67 @@ func (_u *UserUpdateOne) AddSoraStorageUsedBytes(v int64) *UserUpdateOne {
 	return _u
 }
 
+// SetGiftBalance sets the "gift_balance" field.
+func (_u *UserUpdateOne) SetGiftBalance(v float64) *UserUpdateOne {
+	_u.mutation.ResetGiftBalance()
+	_u.mutation.SetGiftBalance(v)
+	return _u
+}
+
+// SetNillableGiftBalance sets the "gift_balance" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableGiftBalance(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetGiftBalance(*v)
+	}
+	return _u
+}
+
+// AddGiftBalance adds value to the "gift_balance" field.
+func (_u *UserUpdateOne) AddGiftBalance(v float64) *UserUpdateOne {
+	_u.mutation.AddGiftBalance(v)
+	return _u
+}
+
+// SetReferralCode sets the "referral_code" field.
+func (_u *UserUpdateOne) SetReferralCode(v string) *UserUpdateOne {
+	_u.mutation.SetReferralCode(v)
+	return _u
+}
+
+// SetNillableReferralCode sets the "referral_code" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableReferralCode(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetReferralCode(*v)
+	}
+	return _u
+}
+
+// ClearReferralCode clears the value of the "referral_code" field.
+func (_u *UserUpdateOne) ClearReferralCode() *UserUpdateOne {
+	_u.mutation.ClearReferralCode()
+	return _u
+}
+
+// SetReferrerID sets the "referrer_id" field.
+func (_u *UserUpdateOne) SetReferrerID(v int64) *UserUpdateOne {
+	_u.mutation.SetReferrerID(v)
+	return _u
+}
+
+// SetNillableReferrerID sets the "referrer_id" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableReferrerID(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetReferrerID(*v)
+	}
+	return _u
+}
+
+// ClearReferrerID clears the value of the "referrer_id" field.
+func (_u *UserUpdateOne) ClearReferrerID() *UserUpdateOne {
+	_u.mutation.ClearReferrerID()
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdateOne) AddAPIKeyIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -1581,6 +1923,41 @@ func (_u *UserUpdateOne) AddPromoCodeUsages(v ...*PromoCodeUsage) *UserUpdateOne
 		ids[i] = v[i].ID
 	}
 	return _u.AddPromoCodeUsageIDs(ids...)
+}
+
+// AddReferredUserIDs adds the "referred_users" edge to the User entity by IDs.
+func (_u *UserUpdateOne) AddReferredUserIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddReferredUserIDs(ids...)
+	return _u
+}
+
+// AddReferredUsers adds the "referred_users" edges to the User entity.
+func (_u *UserUpdateOne) AddReferredUsers(v ...*User) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddReferredUserIDs(ids...)
+}
+
+// SetReferrer sets the "referrer" edge to the User entity.
+func (_u *UserUpdateOne) SetReferrer(v *User) *UserUpdateOne {
+	return _u.SetReferrerID(v.ID)
+}
+
+// AddReferralCommissionIDs adds the "referral_commissions" edge to the ReferralCommission entity by IDs.
+func (_u *UserUpdateOne) AddReferralCommissionIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddReferralCommissionIDs(ids...)
+	return _u
+}
+
+// AddReferralCommissions adds the "referral_commissions" edges to the ReferralCommission entity.
+func (_u *UserUpdateOne) AddReferralCommissions(v ...*ReferralCommission) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddReferralCommissionIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -1777,6 +2154,54 @@ func (_u *UserUpdateOne) RemovePromoCodeUsages(v ...*PromoCodeUsage) *UserUpdate
 	return _u.RemovePromoCodeUsageIDs(ids...)
 }
 
+// ClearReferredUsers clears all "referred_users" edges to the User entity.
+func (_u *UserUpdateOne) ClearReferredUsers() *UserUpdateOne {
+	_u.mutation.ClearReferredUsers()
+	return _u
+}
+
+// RemoveReferredUserIDs removes the "referred_users" edge to User entities by IDs.
+func (_u *UserUpdateOne) RemoveReferredUserIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveReferredUserIDs(ids...)
+	return _u
+}
+
+// RemoveReferredUsers removes "referred_users" edges to User entities.
+func (_u *UserUpdateOne) RemoveReferredUsers(v ...*User) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveReferredUserIDs(ids...)
+}
+
+// ClearReferrer clears the "referrer" edge to the User entity.
+func (_u *UserUpdateOne) ClearReferrer() *UserUpdateOne {
+	_u.mutation.ClearReferrer()
+	return _u
+}
+
+// ClearReferralCommissions clears all "referral_commissions" edges to the ReferralCommission entity.
+func (_u *UserUpdateOne) ClearReferralCommissions() *UserUpdateOne {
+	_u.mutation.ClearReferralCommissions()
+	return _u
+}
+
+// RemoveReferralCommissionIDs removes the "referral_commissions" edge to ReferralCommission entities by IDs.
+func (_u *UserUpdateOne) RemoveReferralCommissionIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveReferralCommissionIDs(ids...)
+	return _u
+}
+
+// RemoveReferralCommissions removes "referral_commissions" edges to ReferralCommission entities.
+func (_u *UserUpdateOne) RemoveReferralCommissions(v ...*ReferralCommission) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveReferralCommissionIDs(ids...)
+}
+
 // Where appends a list predicates to the UserUpdate builder.
 func (_u *UserUpdateOne) Where(ps ...predicate.User) *UserUpdateOne {
 	_u.mutation.Where(ps...)
@@ -1857,6 +2282,11 @@ func (_u *UserUpdateOne) check() error {
 	if v, ok := _u.mutation.Username(); ok {
 		if err := user.UsernameValidator(v); err != nil {
 			return &ValidationError{Name: "username", err: fmt.Errorf(`ent: validator failed for field "User.username": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.ReferralCode(); ok {
+		if err := user.ReferralCodeValidator(v); err != nil {
+			return &ValidationError{Name: "referral_code", err: fmt.Errorf(`ent: validator failed for field "User.referral_code": %w`, err)}
 		}
 	}
 	return nil
@@ -1956,6 +2386,18 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedSoraStorageUsedBytes(); ok {
 		_spec.AddField(user.FieldSoraStorageUsedBytes, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.GiftBalance(); ok {
+		_spec.SetField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedGiftBalance(); ok {
+		_spec.AddField(user.FieldGiftBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.ReferralCode(); ok {
+		_spec.SetField(user.FieldReferralCode, field.TypeString, value)
+	}
+	if _u.mutation.ReferralCodeCleared() {
+		_spec.ClearField(user.FieldReferralCode, field.TypeString)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -2367,6 +2809,125 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(promocodeusage.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReferredUsersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferredUsersTable,
+			Columns: []string{user.ReferredUsersColumn},
+			Bidi:    true,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedReferredUsersIDs(); len(nodes) > 0 && !_u.mutation.ReferredUsersCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferredUsersTable,
+			Columns: []string{user.ReferredUsersColumn},
+			Bidi:    true,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReferredUsersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferredUsersTable,
+			Columns: []string{user.ReferredUsersColumn},
+			Bidi:    true,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReferrerCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   user.ReferrerTable,
+			Columns: []string{user.ReferrerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReferrerIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   user.ReferrerTable,
+			Columns: []string{user.ReferrerColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ReferralCommissionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralCommissionsTable,
+			Columns: []string{user.ReferralCommissionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralcommission.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedReferralCommissionsIDs(); len(nodes) > 0 && !_u.mutation.ReferralCommissionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralCommissionsTable,
+			Columns: []string{user.ReferralCommissionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralcommission.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ReferralCommissionsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralCommissionsTable,
+			Columns: []string{user.ReferralCommissionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralcommission.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

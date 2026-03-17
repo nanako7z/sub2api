@@ -78,6 +78,20 @@ func (User) Fields() []ent.Field {
 			Default(0),
 		field.Int64("sora_storage_used_bytes").
 			Default(0),
+
+		// 赠送余额（优惠码、推荐码注册奖励等）
+		field.Float("gift_balance").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0),
+		// 推荐码（懒生成，每个用户唯一）
+		field.String("referral_code").
+			MaxLen(16).
+			Optional().
+			Nillable(),
+		// 推荐人 ID（自引用外键）
+		field.Int64("referrer_id").
+			Optional().
+			Nillable(),
 	}
 }
 
@@ -93,6 +107,14 @@ func (User) Edges() []ent.Edge {
 		edge.To("usage_logs", UsageLog.Type),
 		edge.To("attribute_values", UserAttributeValue.Type),
 		edge.To("promo_code_usages", PromoCodeUsage.Type),
+		// 推荐关系：一个用户可以推荐多个用户
+		edge.To("referred_users", User.Type),
+		edge.From("referrer", User.Type).
+			Ref("referred_users").
+			Field("referrer_id").
+			Unique(),
+		// 推荐返佣记录
+		edge.To("referral_commissions", ReferralCommission.Type),
 	}
 }
 
@@ -101,5 +123,6 @@ func (User) Indexes() []ent.Index {
 		// email 字段已在 Fields() 中声明 Unique()，无需重复索引
 		index.Fields("status"),
 		index.Fields("deleted_at"),
+		index.Fields("referrer_id"),
 	}
 }

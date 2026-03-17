@@ -70,6 +70,21 @@ func (s *userRepoStubForGroupUpdate) UpdateTotpSecret(context.Context, int64, *s
 }
 func (s *userRepoStubForGroupUpdate) EnableTotp(context.Context, int64) error  { panic("unexpected") }
 func (s *userRepoStubForGroupUpdate) DisableTotp(context.Context, int64) error { panic("unexpected") }
+func (s *userRepoStubForGroupUpdate) UpdateGiftBalance(context.Context, int64, float64) error {
+	panic("unexpected")
+}
+func (s *userRepoStubForGroupUpdate) DeductBalanceSplit(context.Context, int64, float64, string) (*BalanceSplitResult, error) {
+	panic("unexpected")
+}
+func (s *userRepoStubForGroupUpdate) GetByReferralCode(context.Context, string) (*User, error) {
+	panic("unexpected")
+}
+func (s *userRepoStubForGroupUpdate) SetReferralCode(context.Context, int64, string) error {
+	panic("unexpected")
+}
+func (s *userRepoStubForGroupUpdate) SetReferrer(context.Context, int64, int64) error {
+	panic("unexpected")
+}
 
 // apiKeyRepoStubForGroupUpdate implements APIKeyRepository for AdminUpdateAPIKeyGroupID tests.
 type apiKeyRepoStubForGroupUpdate struct {

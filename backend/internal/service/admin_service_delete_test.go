@@ -108,6 +108,21 @@ func (s *userRepoStub) EnableTotp(ctx context.Context, userID int64) error {
 func (s *userRepoStub) DisableTotp(ctx context.Context, userID int64) error {
 	panic("unexpected DisableTotp call")
 }
+func (s *userRepoStub) UpdateGiftBalance(context.Context, int64, float64) error {
+	panic("unexpected UpdateGiftBalance call")
+}
+func (s *userRepoStub) DeductBalanceSplit(context.Context, int64, float64, string) (*BalanceSplitResult, error) {
+	panic("unexpected DeductBalanceSplit call")
+}
+func (s *userRepoStub) GetByReferralCode(context.Context, string) (*User, error) {
+	panic("unexpected GetByReferralCode call")
+}
+func (s *userRepoStub) SetReferralCode(context.Context, int64, string) error {
+	panic("unexpected SetReferralCode call")
+}
+func (s *userRepoStub) SetReferrer(context.Context, int64, int64) error {
+	panic("unexpected SetReferrer call")
+}
 
 type groupRepoStub struct {
 	affectedUserIDs []int64

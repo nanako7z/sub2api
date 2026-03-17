@@ -352,7 +352,8 @@ export default {
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
     docs: 'Docs',
-    sora: 'Sora Studio'
+    sora: 'Sora Studio',
+    referral: 'Referral'
   },
 
   // Auth
@@ -427,6 +428,7 @@ export default {
     invitationCodeInvalid: 'Invalid or used invitation code',
     invitationCodeValidating: 'Validating invitation code...',
     invitationCodeInvalidCannotRegister: 'Invalid invitation code. Please check and try again',
+    referralCodeValid: 'Referral code valid! Both you and your friend will receive rewards',
     linuxdo: {
       signIn: 'Continue with Linux.do',
       orContinue: 'or continue with email',
@@ -4088,6 +4090,24 @@ export default {
         allowUngroupedKey: 'Allow Ungrouped Key Scheduling',
         allowUngroupedKeyHint: 'When disabled, API Keys not assigned to any group cannot make requests (403 Forbidden). Keep disabled to ensure all Keys belong to a specific group.'
       },
+      referral: {
+        title: 'Referral Program Settings',
+        description: 'Configure referral rewards and commission rules',
+        enableReferral: 'Enable Referral System',
+        enableReferralHint: 'Allow users to invite new users through referral links',
+        signupBonus: 'New User Signup Bonus',
+        signupBonusHint: 'Gift balance awarded to new users who register via a referral link (in USD)',
+        referrerBonus: 'Referrer Instant Reward',
+        referrerBonusHint: 'Instant reward for the referrer when a new user signs up (in USD)',
+        commissionRate: 'Commission Rate',
+        commissionRateHint: 'Percentage of referred user spending that the referrer earns as commission',
+        maxCommission: 'Max Commission Per User',
+        maxCommissionHint: 'Maximum total commission from a single referred user, 0 = unlimited (in USD)',
+        balancePriority: 'Balance Consumption Priority',
+        balancePriorityHint: 'Which balance type to consume first when a user makes a request',
+        normalFirst: 'Normal Balance First',
+        giftFirst: 'Gift Balance First'
+      },
       site: {
         title: 'Site Settings',
         description: 'Customize site branding',
@@ -4824,5 +4844,46 @@ export default {
     examplePrompt2: 'Drone aerial view, green aurora reflecting on a glacial lake in Iceland, slow push-in',
     examplePrompt3: 'Cyberpunk futuristic city, neon lights reflected in rain puddles, nightscape, cinematic colors',
     examplePrompt4: 'Chinese ink painting style, a small boat drifting among misty mountains and rivers, classical atmosphere'
+  },
+
+  // Referral System
+  referral: {
+    title: 'Referral Program',
+    subtitle: 'Invite friends to sign up and both of you will earn rewards',
+    yourCode: 'Your Referral Code',
+    copyCode: 'Copy referral code',
+    inviteLink: 'Invite Link',
+    copyLink: 'Copy link',
+    generateCode: 'Generate Referral Code',
+    codeGenerated: 'Referral code generated',
+    generateFailed: 'Failed to generate referral code',
+    totalReferred: 'Total Referred',
+    totalCommission: 'Total Commission',
+    howItWorks: 'How It Works',
+    step1Title: 'Share Your Link',
+    step1Desc: 'Share your unique invite link or referral code with friends',
+    step2Title: 'Friends Sign Up',
+    step2Desc: 'Friends register through your link and start using the service',
+    step3Title: 'Earn Rewards',
+    step3Desc: 'Earn commission from every purchase your referred users make',
+    referredUsers: 'Referred Users',
+    noReferredUsers: 'No referred users yet',
+    userEmail: 'Email',
+    username: 'Username',
+    commissionEarned: 'Commission Earned',
+    joinedAt: 'Joined',
+    commissionHistory: 'Commission History',
+    noCommissions: 'No commission records yet',
+    commissionAmount: 'Commission',
+    sourceCost: 'Source Cost',
+    commissionRate: 'Rate',
+    date: 'Date'
+  },
+
+  // Balance labels
+  balance: {
+    normal: 'Normal Balance',
+    gift: 'Gift Balance',
+    total: 'Total Balance'
   }
 }

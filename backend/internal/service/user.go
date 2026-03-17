@@ -29,6 +29,11 @@ type User struct {
 	SoraStorageQuotaBytes int64 // 用户级 Sora 存储配额（0 表示使用分组或系统默认值）
 	SoraStorageUsedBytes  int64 // Sora 存储已用量
 
+	// 赠送余额与推荐
+	GiftBalance  float64 // 赠送余额（优惠码、推荐码奖励等）
+	ReferralCode *string // 用户唯一推荐码（懒生成）
+	ReferrerID   *int64  // 推荐人 ID
+
 	// TOTP 双因素认证字段
 	TotpSecretEncrypted *string    // AES-256-GCM 加密的 TOTP 密钥
 	TotpEnabled         bool       // 是否启用 TOTP

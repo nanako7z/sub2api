@@ -18,9 +18,11 @@ func UserFromServiceShallow(u *service.User) *User {
 		Username:      u.Username,
 		Role:          u.Role,
 		Balance:       u.Balance,
+		GiftBalance:   u.GiftBalance,
 		Concurrency:   u.Concurrency,
 		Status:        u.Status,
 		AllowedGroups: u.AllowedGroups,
+		ReferralCode:  u.ReferralCode,
 		CreatedAt:     u.CreatedAt,
 		UpdatedAt:     u.UpdatedAt,
 	}

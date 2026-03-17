@@ -683,6 +683,7 @@ type GatewayService struct {
 	modelsListCache       *gocache.Cache
 	modelsListCacheTTL    time.Duration
 	settingService        *SettingService
+	referralService       *ReferralService
 	responseHeaderFilter  *responseheaders.CompiledHeaderFilter
 	debugModelRouting     atomic.Bool
 	debugClaudeMimic      atomic.Bool
@@ -712,6 +713,7 @@ func NewGatewayService(
 	rpmCache RPMCache,
 	digestStore *DigestSessionStore,
 	settingService *SettingService,
+	referralService *ReferralService,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
@@ -740,6 +742,7 @@ func NewGatewayService(
 		rpmCache:             rpmCache,
 		userGroupRateCache:   gocache.New(userGroupRateTTL, time.Minute),
 		settingService:       settingService,
+		referralService:      referralService,
 		modelsListCache:      gocache.New(modelsListTTL, time.Minute),
 		modelsListCacheTTL:   modelsListTTL,
 		responseHeaderFilter: compileResponseHeaderFilter(cfg),
@@ -7566,10 +7569,26 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 		}
 	} else {
 		if cost.ActualCost > 0 {
-			if err := deps.userRepo.DeductBalance(billingCtx, p.User.ID, cost.ActualCost); err != nil {
+			priority := BalancePriorityNormalFirst
+			if deps.settingService != nil {
+				priority = deps.settingService.GetBalanceConsumptionPriority(billingCtx)
+			}
+			splitResult, err := deps.userRepo.DeductBalanceSplit(billingCtx, p.User.ID, cost.ActualCost, priority)
+			if err != nil {
 				slog.Error("deduct balance failed", "user_id", p.User.ID, "error", err)
 			}
 			deps.billingCacheService.QueueDeductBalance(p.User.ID, cost.ActualCost)
+
+			// 记录推荐返佣（仅对普通余额消费部分）
+			if splitResult != nil && splitResult.NormalDeducted > 0 && p.User.ReferrerID != nil && deps.referralService != nil {
+				referredUserID := p.User.ID
+				normalCost := splitResult.NormalDeducted
+				go func() {
+					commCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					deps.referralService.RecordCommission(commCtx, referredUserID, normalCost)
+				}()
+			}
 		}
 	}
 
@@ -7763,6 +7782,8 @@ type billingDeps struct {
 	userSubRepo         UserSubscriptionRepository
 	billingCacheService *BillingCacheService
 	deferredService     *DeferredService
+	settingService      *SettingService
+	referralService     *ReferralService
 }
 
 func (s *GatewayService) billingDeps() *billingDeps {
@@ -7772,6 +7793,8 @@ func (s *GatewayService) billingDeps() *billingDeps {
 		userSubRepo:         s.userSubRepo,
 		billingCacheService: s.billingCacheService,
 		deferredService:     s.deferredService,
+		settingService:      s.settingService,
+		referralService:     s.referralService,
 	}
 }
 

@@ -376,6 +376,24 @@ func ProvideOpsScheduledReportService(
 	return svc
 }
 
+// ProvideBillingCacheInvalidator 提供 BillingCacheInvalidator 适配器
+func ProvideBillingCacheInvalidator(billingCache *BillingCacheService) BillingCacheInvalidator {
+	return &billingCacheInvalidatorAdapter{billingCache: billingCache}
+}
+
+// billingCacheInvalidatorAdapter 适配 BillingCacheService 到 BillingCacheInvalidator 接口
+type billingCacheInvalidatorAdapter struct {
+	billingCache *BillingCacheService
+}
+
+func (a *billingCacheInvalidatorAdapter) InvalidateUserBalance(userID int64) {
+	if a.billingCache != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = a.billingCache.InvalidateUserBalance(ctx, userID)
+	}
+}
+
 // ProvideAPIKeyAuthCacheInvalidator 提供 API Key 认证缓存失效能力
 func ProvideAPIKeyAuthCacheInvalidator(apiKeyService *APIKeyService) APIKeyAuthCacheInvalidator {
 	// Start Pub/Sub subscriber for L1 cache invalidation across instances
@@ -415,6 +433,9 @@ var ProviderSet = wire.NewSet(
 	NewProxyService,
 	NewRedeemService,
 	NewPromoService,
+	NewReferralService,
+	wire.Struct(new(ReferralServiceDeps), "*"),
+	ProvideBillingCacheInvalidator,
 	NewUsageService,
 	NewDashboardService,
 	ProvidePricingService,

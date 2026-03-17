@@ -699,6 +699,120 @@
           </div>
         </div>
 
+        <!-- Referral Settings -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.referral.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.referral.description') }}
+            </p>
+          </div>
+          <div class="space-y-4 p-6">
+            <!-- Enable Referral -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.referral.enableReferral')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.referral.enableReferralHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.referral_enabled" />
+            </div>
+
+            <template v-if="form.referral_enabled">
+              <!-- Referral Signup Bonus -->
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.referral.signupBonus') }}
+                </label>
+                <input
+                  v-model.number="form.referral_signup_bonus"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="input w-full sm:w-48"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.referral.signupBonusHint') }}
+                </p>
+              </div>
+
+              <!-- Referrer Bonus -->
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.referral.referrerBonus') }}
+                </label>
+                <input
+                  v-model.number="form.referral_referrer_bonus"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="input w-full sm:w-48"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.referral.referrerBonusHint') }}
+                </p>
+              </div>
+
+              <!-- Commission Rate -->
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.referral.commissionRate') }}
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model.number="form.referral_commission_rate"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    class="input w-full sm:w-48"
+                  />
+                  <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+                </div>
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.referral.commissionRateHint') }}
+                </p>
+              </div>
+
+              <!-- Max Commission Per User -->
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.referral.maxCommission') }}
+                </label>
+                <input
+                  v-model.number="form.referral_max_commission_per_user"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="input w-full sm:w-48"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.referral.maxCommissionHint') }}
+                </p>
+              </div>
+
+              <!-- Balance Consumption Priority -->
+              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.referral.balancePriority') }}
+                </label>
+                <select v-model="form.balance_consumption_priority" class="input w-full sm:w-64">
+                  <option value="normal_first">{{ t('admin.settings.referral.normalFirst') }}</option>
+                  <option value="gift_first">{{ t('admin.settings.referral.giftFirst') }}</option>
+                </select>
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.referral.balancePriorityHint') }}
+                </p>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <!-- Cloudflare Turnstile Settings -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -1862,6 +1976,13 @@ const form = reactive<SettingsForm>({
   smtp_from_email: '',
   smtp_from_name: '',
   smtp_use_tls: true,
+  // Referral system
+  referral_enabled: false,
+  referral_signup_bonus: 0,
+  referral_referrer_bonus: 0,
+  referral_commission_rate: 0,
+  referral_max_commission_per_user: 0,
+  balance_consumption_priority: 'normal_first' as string,
   // Cloudflare Turnstile
   turnstile_enabled: false,
   turnstile_site_key: '',
@@ -2155,7 +2276,13 @@ async function saveSettings() {
       enable_identity_patch: form.enable_identity_patch,
       identity_patch_prompt: form.identity_patch_prompt,
       min_claude_code_version: form.min_claude_code_version,
-      allow_ungrouped_key_scheduling: form.allow_ungrouped_key_scheduling
+      allow_ungrouped_key_scheduling: form.allow_ungrouped_key_scheduling,
+      referral_enabled: form.referral_enabled,
+      referral_signup_bonus: form.referral_signup_bonus,
+      referral_referrer_bonus: form.referral_referrer_bonus,
+      referral_commission_rate: form.referral_commission_rate,
+      referral_max_commission_per_user: form.referral_max_commission_per_user,
+      balance_consumption_priority: form.balance_consumption_priority
     }
     const updated = await adminAPI.settings.updateSettings(payload)
     Object.assign(form, updated)

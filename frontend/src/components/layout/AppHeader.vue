@@ -47,7 +47,7 @@
         <!-- Balance Display -->
         <div
           v-if="user"
-          class="hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
         >
           <svg
             class="h-4 w-4 text-primary-600 dark:text-primary-400"
@@ -63,8 +63,30 @@
             />
           </svg>
           <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
-            ${{ user.balance?.toFixed(2) || '0.00' }}
+            ${{ totalBalance }}
           </span>
+          <!-- Balance Breakdown Tooltip -->
+          <div
+            v-if="hasGiftBalance"
+            class="pointer-events-none absolute right-0 top-full z-50 mt-2 w-48 rounded-lg border border-gray-200 bg-white p-3 opacity-0 shadow-lg transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 dark:border-dark-700 dark:bg-dark-800"
+          >
+            <div class="space-y-1.5 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="text-gray-500 dark:text-gray-400">{{ t('balance.normal') }}</span>
+                <span class="font-medium text-gray-900 dark:text-white">${{ (user.balance ?? 0).toFixed(2) }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-gray-500 dark:text-gray-400">{{ t('balance.gift') }}</span>
+                <span class="font-medium text-emerald-600 dark:text-emerald-400">${{ (user.gift_balance ?? 0).toFixed(2) }}</span>
+              </div>
+              <div class="border-t border-gray-100 pt-1.5 dark:border-dark-700">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('balance.total') }}</span>
+                  <span class="font-semibold text-primary-600 dark:text-primary-400">${{ totalBalance }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- User Dropdown -->
@@ -107,7 +129,11 @@
                   {{ t('common.balance') }}
                 </div>
                 <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">
-                  ${{ user.balance?.toFixed(2) || '0.00' }}
+                  ${{ totalBalance }}
+                </div>
+                <div v-if="hasGiftBalance" class="mt-1 space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  <div>{{ t('balance.normal') }}: ${{ (user.balance ?? 0).toFixed(2) }}</div>
+                  <div>{{ t('balance.gift') }}: ${{ (user.gift_balance ?? 0).toFixed(2) }}</div>
                 </div>
               </div>
 
@@ -230,6 +256,16 @@ const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => appStore.docUrl)
+
+const totalBalance = computed(() => {
+  const balance = user.value?.balance ?? 0
+  const giftBalance = user.value?.gift_balance ?? 0
+  return (balance + giftBalance).toFixed(2)
+})
+
+const hasGiftBalance = computed(() => {
+  return (user.value?.gift_balance ?? 0) > 0
+})
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {

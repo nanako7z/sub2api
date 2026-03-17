@@ -152,6 +152,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyCustomMenuItems,
 		SettingKeyLinuxDoConnectEnabled,
 		SettingKeyBackendModeEnabled,
+		SettingKeyReferralEnabled,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -198,6 +199,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
 		LinuxDoOAuthEnabled:              linuxDoEnabled,
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
+		ReferralEnabled:                  settings[SettingKeyReferralEnabled] == "true",
 	}, nil
 }
 
@@ -2023,6 +2025,76 @@ func isEmptyLegacySoraS3Settings(settings *SoraS3Settings) bool {
 func maxInt64(value int64, min int64) int64 {
 	if value < min {
 		return min
+	}
+	return value
+}
+
+// ============================================================
+// 推荐计划设置 helpers
+// ============================================================
+
+// IsReferralEnabled 检查是否启用推荐系统
+func (s *SettingService) IsReferralEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyReferralEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
+// GetReferralSignupBonus 获取新用户使用推荐码获得的赠送余额
+func (s *SettingService) GetReferralSignupBonus(ctx context.Context) float64 {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyReferralSignupBonus)
+	if err != nil {
+		return 0
+	}
+	if v, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && v >= 0 {
+		return v
+	}
+	return 0
+}
+
+// GetReferralReferrerBonus 获取推荐人获得的即时奖励
+func (s *SettingService) GetReferralReferrerBonus(ctx context.Context) float64 {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyReferralReferrerBonus)
+	if err != nil {
+		return 0
+	}
+	if v, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && v >= 0 {
+		return v
+	}
+	return 0
+}
+
+// GetReferralCommissionRate 获取返佣比例 (0-100)
+func (s *SettingService) GetReferralCommissionRate(ctx context.Context) float64 {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyReferralCommissionRate)
+	if err != nil {
+		return 0
+	}
+	if v, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && v >= 0 && v <= 100 {
+		return v
+	}
+	return 0
+}
+
+// GetReferralMaxCommissionPerUser 获取单个被推荐用户的最大返佣总额 (0=无限)
+func (s *SettingService) GetReferralMaxCommissionPerUser(ctx context.Context) float64 {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyReferralMaxCommissionPerUser)
+	if err != nil {
+		return 0
+	}
+	if v, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && v >= 0 {
+		return v
+	}
+	return 0
+}
+
+// GetBalanceConsumptionPriority 获取扣费优先级
+func (s *SettingService) GetBalanceConsumptionPriority(ctx context.Context) string {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyBalanceConsumptionPriority)
+	if err != nil || (value != BalancePriorityNormalFirst && value != BalancePriorityGiftFirst) {
+		return BalancePriorityNormalFirst
 	}
 	return value
 }

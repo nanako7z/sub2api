@@ -85,6 +85,14 @@ export interface SystemSettings {
 
   // 分组隔离
   allow_ungrouped_key_scheduling: boolean
+
+  // Referral system
+  referral_enabled: boolean
+  referral_signup_bonus: number
+  referral_referrer_bonus: number
+  referral_commission_rate: number
+  referral_max_commission_per_user: number
+  balance_consumption_priority: string
 }
 
 export interface UpdateSettingsRequest {
@@ -140,6 +148,12 @@ export interface UpdateSettingsRequest {
   ops_metrics_interval_seconds?: number
   min_claude_code_version?: string
   allow_ungrouped_key_scheduling?: boolean
+  referral_enabled?: boolean
+  referral_signup_bonus?: number
+  referral_referrer_bonus?: number
+  referral_commission_rate?: number
+  referral_max_commission_per_user?: number
+  balance_consumption_priority?: string
 }
 
 /**

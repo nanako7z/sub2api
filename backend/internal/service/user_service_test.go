@@ -49,6 +49,13 @@ func (m *mockUserRepo) AddGroupToAllowedGroups(context.Context, int64, int64) er
 func (m *mockUserRepo) UpdateTotpSecret(context.Context, int64, *string) error      { return nil }
 func (m *mockUserRepo) EnableTotp(context.Context, int64) error                { return nil }
 func (m *mockUserRepo) DisableTotp(context.Context, int64) error               { return nil }
+func (m *mockUserRepo) UpdateGiftBalance(context.Context, int64, float64) error { return nil }
+func (m *mockUserRepo) DeductBalanceSplit(_ context.Context, _ int64, _ float64, _ string) (*BalanceSplitResult, error) {
+	return &BalanceSplitResult{}, nil
+}
+func (m *mockUserRepo) GetByReferralCode(context.Context, string) (*User, error) { return nil, ErrUserNotFound }
+func (m *mockUserRepo) SetReferralCode(context.Context, int64, string) error     { return nil }
+func (m *mockUserRepo) SetReferrer(context.Context, int64, int64) error          { return nil }
 
 // --- mock: APIKeyAuthCacheInvalidator ---
 

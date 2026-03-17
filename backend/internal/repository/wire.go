@@ -73,6 +73,7 @@ var ProviderSet = wire.NewSet(
 	NewUserAttributeValueRepository,
 	NewUserGroupRateRepository,
 	NewErrorPassthroughRepository,
+	ProvideReferralRepository,
 
 	// Cache implementations
 	NewGatewayCache,
@@ -121,6 +122,11 @@ var ProviderSet = wire.NewSet(
 	ProvideSQLDB,
 	ProvideRedis,
 )
+
+// ProvideReferralRepository 创建推荐仓库并适配为 service 层接口
+func ProvideReferralRepository(client *ent.Client, sqlDB *sql.DB) service.ReferralRepositoryInterface {
+	return NewReferralRepository(client, sqlDB)
+}
 
 // ProvideEnt 为依赖注入提供 Ent 客户端。
 //

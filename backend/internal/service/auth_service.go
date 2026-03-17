@@ -70,6 +70,7 @@ type AuthService struct {
 	turnstileService   *TurnstileService
 	emailQueueService  *EmailQueueService
 	promoService       *PromoService
+	referralService    *ReferralService
 	defaultSubAssigner DefaultSubscriptionAssigner
 }
 
@@ -89,6 +90,7 @@ func NewAuthService(
 	turnstileService *TurnstileService,
 	emailQueueService *EmailQueueService,
 	promoService *PromoService,
+	referralService *ReferralService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
 ) *AuthService {
 	return &AuthService{
@@ -102,6 +104,7 @@ func NewAuthService(
 		turnstileService:   turnstileService,
 		emailQueueService:  emailQueueService,
 		promoService:       promoService,
+		referralService:    referralService,
 		defaultSubAssigner: defaultSubAssigner,
 	}
 }
@@ -214,16 +217,32 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to mark invitation code as used for user %d: %v", user.ID, err)
 		}
 	}
-	// 应用优惠码（如果提供且功能已启用）
-	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
-		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
-			// 优惠码应用失败不影响注册，只记录日志
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to apply promo code for user %d: %v", user.ID, err)
-		} else {
-			// 重新获取用户信息以获取更新后的余额
-			if updatedUser, err := s.userRepo.GetByID(ctx, user.ID); err == nil {
-				user = updatedUser
+	// 应用优惠码或推荐码（如果提供）
+	// 同一输入框同时支持优惠码和推荐码，先尝试优惠码，再尝试推荐码
+	if promoCode != "" && s.settingService != nil {
+		promoApplied := false
+		// 先尝试作为优惠码
+		if s.promoService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
+			if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
+				if !errors.Is(err, ErrPromoCodeNotFound) {
+					logger.LegacyPrintf("service.auth", "[Auth] Failed to apply promo code for user %d: %v", user.ID, err)
+				}
+			} else {
+				promoApplied = true
 			}
+		}
+		// 优惠码未找到，尝试作为推荐码
+		if !promoApplied && s.referralService != nil && s.settingService.IsReferralEnabled(ctx) {
+			referrer, refErr := s.referralService.ValidateReferralCode(ctx, promoCode)
+			if refErr == nil && referrer != nil {
+				if err := s.referralService.ApplyReferralSignup(ctx, user.ID, referrer.ID); err != nil {
+					logger.LegacyPrintf("service.auth", "[Auth] Failed to apply referral code for user %d: %v", user.ID, err)
+				}
+			}
+		}
+		// 重新获取用户信息以获取更新后的余额
+		if updatedUser, err := s.userRepo.GetByID(ctx, user.ID); err == nil {
+			user = updatedUser
 		}
 	}
 

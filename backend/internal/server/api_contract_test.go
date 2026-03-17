@@ -53,6 +53,7 @@ func TestAPIContracts(t *testing.T) {
 					"username": "alice",
 					"role": "user",
 					"balance": 12.5,
+					"gift_balance": 0,
 					"concurrency": 5,
 					"status": "active",
 					"allowed_groups": null,
@@ -536,6 +537,7 @@ func TestAPIContracts(t *testing.T) {
 					"hide_ccs_import_button": false,
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
+					"purchase_subscription_new_tab": false,
 					"min_claude_code_version": "",
 					"allow_ungrouped_key_scheduling": false,
 					"backend_mode_enabled": false,
@@ -648,7 +650,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingService := service.NewSettingService(settingRepo, cfg)
 
 	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, nil, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
+	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil)
@@ -821,6 +823,26 @@ func (r *stubUserRepo) EnableTotp(ctx context.Context, userID int64) error {
 
 func (r *stubUserRepo) DisableTotp(ctx context.Context, userID int64) error {
 	return errors.New("not implemented")
+}
+
+func (r *stubUserRepo) UpdateGiftBalance(ctx context.Context, id int64, amount float64) error {
+	return nil
+}
+
+func (r *stubUserRepo) DeductBalanceSplit(ctx context.Context, id int64, amount float64, priority string) (*service.BalanceSplitResult, error) {
+	return nil, nil
+}
+
+func (r *stubUserRepo) GetByReferralCode(ctx context.Context, code string) (*service.User, error) {
+	return nil, nil
+}
+
+func (r *stubUserRepo) SetReferralCode(ctx context.Context, userID int64, code string) error {
+	return nil
+}
+
+func (r *stubUserRepo) SetReferrer(ctx context.Context, userID int64, referrerID int64) error {
+	return nil
 }
 
 type stubApiKeyCache struct{}

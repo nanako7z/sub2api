@@ -190,7 +190,10 @@
             <div v-if="promoValidation.valid" class="mt-2 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 dark:bg-green-900/20">
               <Icon name="gift" size="sm" class="text-green-600 dark:text-green-400" />
               <span class="text-sm text-green-700 dark:text-green-400">
-                {{ t('auth.promoCodeValid', { amount: promoValidation.bonusAmount?.toFixed(2) }) }}
+                {{ promoValidation.type === 'referral'
+                  ? t('auth.referralCodeValid')
+                  : t('auth.promoCodeValid', { amount: promoValidation.bonusAmount?.toFixed(2) })
+                }}
               </span>
             </div>
             <p v-else-if="promoValidation.invalid" class="input-error-text">
@@ -336,7 +339,8 @@ const promoValidation = reactive({
   valid: false,
   invalid: false,
   bonusAmount: null as number | null,
-  message: ''
+  message: '',
+  type: '' as string
 })
 let promoValidateTimeout: ReturnType<typeof setTimeout> | null = null
 
@@ -415,6 +419,7 @@ function handlePromoCodeInput(): void {
   promoValidation.invalid = false
   promoValidation.bonusAmount = null
   promoValidation.message = ''
+  promoValidation.type = ''
 
   if (!code) {
     promoValidating.value = false
@@ -444,10 +449,12 @@ async function validatePromoCodeDebounced(code: string): Promise<void> {
       promoValidation.invalid = false
       promoValidation.bonusAmount = result.bonus_amount || 0
       promoValidation.message = ''
+      promoValidation.type = result.type || 'promo'
     } else {
       promoValidation.valid = false
       promoValidation.invalid = true
       promoValidation.bonusAmount = null
+      promoValidation.type = ''
       // 根据错误码显示对应的翻译
       promoValidation.message = getPromoErrorMessage(result.error_code)
     }

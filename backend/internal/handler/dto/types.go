@@ -8,9 +8,11 @@ type User struct {
 	Username      string    `json:"username"`
 	Role          string    `json:"role"`
 	Balance       float64   `json:"balance"`
+	GiftBalance   float64   `json:"gift_balance"`
 	Concurrency   int       `json:"concurrency"`
 	Status        string    `json:"status"`
 	AllowedGroups []int64   `json:"allowed_groups"`
+	ReferralCode  *string   `json:"referral_code,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 

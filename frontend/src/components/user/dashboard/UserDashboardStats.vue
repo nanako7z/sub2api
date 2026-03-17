@@ -11,8 +11,11 @@
         </div>
         <div>
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.balance') }}</p>
-          <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.available') }}</p>
+          <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance + giftBalance) }}</p>
+          <p v-if="giftBalance > 0" class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('balance.normal') }}: ${{ formatBalance(balance) }} / {{ t('balance.gift') }}: ${{ formatBalance(giftBalance) }}
+          </p>
+          <p v-else class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.available') }}</p>
         </div>
       </div>
     </div>
@@ -141,6 +144,7 @@ import type { UserDashboardStats as UserStatsType } from '@/api/usage'
 defineProps<{
   stats: UserStatsType
   balance: number
+  giftBalance: number
   isSimple: boolean
 }>()
 const { t } = useI18n()

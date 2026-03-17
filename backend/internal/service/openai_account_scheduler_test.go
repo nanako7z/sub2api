@@ -639,14 +639,12 @@ func TestBuildOpenAIWeightedSelectionOrder_DeterministicBySessionSeed(t *testing
 			score:    2.1,
 		},
 	}
-	req := OpenAIAccountScheduleRequest{
-		GroupID:        int64PtrForTest(99),
-		SessionHash:    "session_seed_fixed",
-		RequestedModel: "gpt-5.1",
-	}
 
-	first := buildOpenAIWeightedSelectionOrder(candidates, req)
-	second := buildOpenAIWeightedSelectionOrder(candidates, req)
+	// 使用固定 seed 验证确定性（deriveOpenAISelectionSeed 会混入时间低位作为并发打散因子）
+	const fixedSeed uint64 = 0xDEADBEEF12345678
+
+	first := buildOpenAIWeightedSelectionOrderWithSeed(candidates, fixedSeed)
+	second := buildOpenAIWeightedSelectionOrderWithSeed(candidates, fixedSeed)
 	require.Len(t, first, len(candidates))
 	require.Len(t, second, len(candidates))
 	for i := range first {
