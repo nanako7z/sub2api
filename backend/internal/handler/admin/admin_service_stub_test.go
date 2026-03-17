@@ -385,7 +385,7 @@ func (s *stubAdminService) CheckProxyQuality(ctx context.Context, id int64) (*se
 	}, nil
 }
 
-func (s *stubAdminService) ListRedeemCodes(ctx context.Context, page, pageSize int, codeType, status, search string) ([]service.RedeemCode, int64, error) {
+func (s *stubAdminService) ListRedeemCodes(ctx context.Context, page, pageSize int, codeType, status, search, sortBy, sortOrder string) ([]service.RedeemCode, int64, error) {
 	return s.redeems, int64(len(s.redeems)), nil
 }
 

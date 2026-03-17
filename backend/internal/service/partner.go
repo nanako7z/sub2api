@@ -4,17 +4,18 @@ import "time"
 
 // Partner 合作伙伴
 type Partner struct {
-	ID              int64
-	PartnerName     string
-	Email           *string
-	Phone           *string
-	ReferralCode    string
-	PendingPoints   float64
-	WithdrawnPoints float64
-	Notes           *string
-	Status          string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                 int64
+	PartnerName        string
+	Email              *string
+	Phone              *string
+	ReferralCode       string
+	PendingPoints      float64
+	WithdrawnPoints    float64
+	Notes              *string
+	Status             string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ReferredUsersCount int64 // 已推广用户数（users.partner_id = id 的行数）
 }
 
 // PartnerCommission 合作伙伴推广积分记录

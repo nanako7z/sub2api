@@ -1342,6 +1342,7 @@ export default {
         balance: 'Balance',
         usage: 'Usage',
         concurrency: 'Concurrency',
+        referrer: 'Referrer',
         status: 'Status',
         created: 'Created',
         actions: 'Actions'
@@ -1365,6 +1366,8 @@ export default {
       groupChangedSuccess: 'Group updated successfully',
       groupChangedWithGrant: 'Group updated. User auto-granted access to "{group}"',
       groupChangeFailed: 'Failed to update group',
+      referrerPrefix: 'User #{id}',
+      partnerPrefix: 'Partner #{id}',
       noUsersYet: 'No users yet',
       createFirstUser: 'Create your first user to get started.',
       userCreated: 'User created successfully',
@@ -3188,6 +3191,7 @@ export default {
       columns: {
         partnerName: 'Partner Name',
         referralCode: 'Referral Code',
+        referredUsersCount: 'Referred Users',
         pendingPoints: 'Pending Points',
         withdrawnPoints: 'Withdrawn Points',
         status: 'Status',

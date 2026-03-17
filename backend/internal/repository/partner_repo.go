@@ -172,8 +172,9 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 
 	// List
 	listQuery := fmt.Sprintf(
-		`SELECT id, partner_name, email, phone, referral_code, pending_points, withdrawn_points, notes, status, created_at, updated_at
-		FROM partners %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
+		`SELECT p.id, p.partner_name, p.email, p.phone, p.referral_code, p.pending_points, p.withdrawn_points, p.notes, p.status, p.created_at, p.updated_at,
+		       (SELECT COUNT(*) FROM users u WHERE u.partner_id = p.id) AS referred_users_count
+		FROM partners p %s ORDER BY p.created_at DESC LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1,
 	)
 	args = append(args, pageLimit, params.Offset())
@@ -190,7 +191,7 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 		if err := rows.Scan(
 			&p.ID, &p.PartnerName, &p.Email, &p.Phone, &p.ReferralCode,
 			&p.PendingPoints, &p.WithdrawnPoints, &p.Notes, &p.Status,
-			&p.CreatedAt, &p.UpdatedAt,
+			&p.CreatedAt, &p.UpdatedAt, &p.ReferredUsersCount,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan partner: %w", err)
 		}

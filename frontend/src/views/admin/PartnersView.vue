@@ -65,6 +65,10 @@
             </div>
           </template>
 
+          <template #cell-referred_users_count="{ value }">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ value }}</span>
+          </template>
+
           <template #cell-pending_points="{ value }">
             <span class="text-sm font-medium text-amber-600 dark:text-amber-400">
               {{ value.toFixed(2) }}
@@ -499,6 +503,7 @@ const statusOptions = computed(() => [
 const columns = computed<Column[]>(() => [
   { key: 'partner_name', label: t('admin.partners.columns.partnerName') },
   { key: 'referral_code', label: t('admin.partners.columns.referralCode') },
+  { key: 'referred_users_count', label: t('admin.partners.columns.referredUsersCount') },
   { key: 'pending_points', label: t('admin.partners.columns.pendingPoints'), sortable: true },
   { key: 'withdrawn_points', label: t('admin.partners.columns.withdrawnPoints'), sortable: true },
   { key: 'status', label: t('admin.partners.columns.status'), sortable: true },
@@ -574,7 +579,7 @@ const copyCode = async (text: string) => {
 
 const copyRegisterLink = async (partner: Partner) => {
   const baseUrl = window.location.origin
-  const registerLink = `${baseUrl}/register?code=${encodeURIComponent(partner.referral_code)}`
+  const registerLink = `${baseUrl}/register?promo=${encodeURIComponent(partner.referral_code)}`
 
   try {
     await navigator.clipboard.writeText(registerLink)

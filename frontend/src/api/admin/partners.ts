@@ -17,6 +17,7 @@ export interface Partner {
   status: string
   created_at: string
   updated_at: string
+  referred_users_count: number
 }
 
 export interface PartnerCommission {

@@ -366,6 +366,16 @@
             </div>
           </template>
 
+          <template #cell-referrer="{ row }">
+            <span v-if="row.partner_id" class="text-sm text-purple-600 dark:text-purple-400">
+              {{ t('admin.users.partnerPrefix', { id: row.partner_id }) }}
+            </span>
+            <span v-else-if="row.referrer_id" class="text-sm text-blue-600 dark:text-blue-400">
+              {{ t('admin.users.referrerPrefix', { id: row.referrer_id }) }}
+            </span>
+            <span v-else class="text-sm text-gray-400">-</span>
+          </template>
+
           <template #cell-created_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
@@ -610,6 +620,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'balance', label: t('admin.users.columns.balance'), sortable: true },
   { key: 'usage', label: t('admin.users.columns.usage'), sortable: false },
   { key: 'concurrency', label: t('admin.users.columns.concurrency'), sortable: true },
+  { key: 'referrer', label: t('admin.users.columns.referrer'), sortable: false },
   { key: 'status', label: t('admin.users.columns.status'), sortable: true },
   { key: 'created_at', label: t('admin.users.columns.created'), sortable: true },
   { key: 'actions', label: t('admin.users.columns.actions'), sortable: false }
@@ -625,7 +636,7 @@ const toggleableColumns = computed(() =>
 const hiddenColumns = reactive<Set<string>>(new Set())
 
 // Default hidden columns (columns hidden by default on first load)
-const DEFAULT_HIDDEN_COLUMNS = ['notes', 'subscriptions', 'usage', 'concurrency']
+const DEFAULT_HIDDEN_COLUMNS = ['notes', 'subscriptions', 'usage', 'concurrency', 'referrer']
 
 // localStorage key for column settings
 const HIDDEN_COLUMNS_KEY = 'user-hidden-columns'

@@ -1369,6 +1369,7 @@ export default {
         balance: '余额',
         usage: '用量',
         concurrency: '并发数',
+        referrer: '推荐人',
         status: '状态',
         created: '创建时间',
         actions: '操作'
@@ -1392,6 +1393,8 @@ export default {
       groupChangedSuccess: '分组修改成功',
       groupChangedWithGrant: '分组修改成功，已自动为用户添加「{group}」分组权限',
       groupChangeFailed: '分组修改失败',
+      referrerPrefix: '用户 #{id}',
+      partnerPrefix: '伙伴 #{id}',
       noUsersYet: '暂无用户',
       createFirstUser: '创建您的第一个用户以开始使用系统',
       userCreated: '用户创建成功',
@@ -3347,6 +3350,7 @@ export default {
       columns: {
         partnerName: '伙伴名称',
         referralCode: '推荐码',
+        referredUsersCount: '已推广用户数',
         pendingPoints: '待提现积分',
         withdrawnPoints: '已提现积分',
         status: '状态',

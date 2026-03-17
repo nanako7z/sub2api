@@ -50,6 +50,9 @@ export interface AdminUser extends User {
   // Sora 存储配额（字节）
   sora_storage_quota_bytes: number
   sora_storage_used_bytes: number
+  // 推荐来源：推荐人用户 ID 或合作伙伴 ID
+  referrer_id?: number
+  partner_id?: number
 }
 
 export interface LoginRequest {

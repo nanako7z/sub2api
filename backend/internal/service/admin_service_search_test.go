@@ -129,7 +129,7 @@ type redeemRepoStubForAdminList struct {
 	listWithFiltersErr    error
 }
 
-func (s *redeemRepoStubForAdminList) ListWithFilters(_ context.Context, params pagination.PaginationParams, codeType, status, search string) ([]RedeemCode, *pagination.PaginationResult, error) {
+func (s *redeemRepoStubForAdminList) ListWithFilters(_ context.Context, params pagination.PaginationParams, codeType, status, search, sortBy, sortOrder string) ([]RedeemCode, *pagination.PaginationResult, error) {
 	s.listWithFiltersCalls++
 	s.listWithFiltersParams = params
 	s.listWithFiltersType = codeType
@@ -232,7 +232,7 @@ func TestAdminService_ListRedeemCodes_WithSearch(t *testing.T) {
 		}
 		svc := &adminServiceImpl{redeemCodeRepo: repo}
 
-		codes, total, err := svc.ListRedeemCodes(context.Background(), 1, 20, RedeemTypeBalance, StatusUnused, "ABC")
+		codes, total, err := svc.ListRedeemCodes(context.Background(), 1, 20, RedeemTypeBalance, StatusUnused, "ABC", "", "")
 		require.NoError(t, err)
 		require.Equal(t, int64(3), total)
 		require.Equal(t, []RedeemCode{{ID: 4, Code: "ABC"}}, codes)

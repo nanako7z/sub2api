@@ -54,7 +54,7 @@
       </template>
 
       <template #table>
-        <DataTable :columns="columns" :data="codes" :loading="loading">
+        <DataTable :columns="columns" :data="codes" :loading="loading" :server-side-sort="true" @sort="handleSort">
           <template #header-select>
             <input
               type="checkbox"
@@ -571,6 +571,10 @@ const filters = reactive({
   type: '',
   status: ''
 })
+const sortState = reactive({
+  sort_by: '',
+  sort_order: 'desc' as 'asc' | 'desc'
+})
 const pagination = reactive({
   page: 1,
   page_size: 20,
@@ -643,7 +647,9 @@ const loadCodes = async () => {
       {
         type: filters.type as RedeemCodeType,
         status: filters.status as any,
-        search: searchQuery.value || undefined
+        search: searchQuery.value || undefined,
+        sort_by: sortState.sort_by || undefined,
+        sort_order: sortState.sort_order
       },
       {
         signal: currentController.signal
@@ -691,6 +697,13 @@ const handleFilterChange = () => {
 const handlePageChange = (page: number) => {
   pagination.page = page
   clearSelection()
+  loadCodes()
+}
+
+const handleSort = (key: string, order: 'asc' | 'desc') => {
+  sortState.sort_by = key
+  sortState.sort_order = order
+  pagination.page = 1
   loadCodes()
 }
 

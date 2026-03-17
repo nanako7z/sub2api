@@ -94,10 +94,10 @@ func (r *redeemCodeRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *redeemCodeRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.RedeemCode, *pagination.PaginationResult, error) {
-	return r.ListWithFilters(ctx, params, "", "", "")
+	return r.ListWithFilters(ctx, params, "", "", "", "", "")
 }
 
-func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search, sortBy, sortOrder string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
 	q := r.client.RedeemCode.Query()
 
 	if codeType != "" {
@@ -120,12 +120,33 @@ func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagin
 		return nil, nil, err
 	}
 
+	// Determine sort field
+	var field string
+	switch sortBy {
+	case "type":
+		field = redeemcode.FieldType
+	case "value":
+		field = redeemcode.FieldValue
+	case "status":
+		field = redeemcode.FieldStatus
+	case "used_at":
+		field = redeemcode.FieldUsedAt
+	default:
+		field = redeemcode.FieldID
+	}
+
+	// Determine sort order (default: desc)
+	if sortOrder == "asc" && sortBy != "" {
+		q = q.Order(dbent.Asc(field))
+	} else {
+		q = q.Order(dbent.Desc(field))
+	}
+
 	codes, err := q.
 		WithUser().
 		WithGroup().
 		Offset(params.Offset()).
 		Limit(params.Limit()).
-		Order(dbent.Desc(redeemcode.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, nil, err

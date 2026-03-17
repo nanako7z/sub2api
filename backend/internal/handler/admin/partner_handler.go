@@ -26,17 +26,18 @@ func NewPartnerHandler(partnerService *service.PartnerService) *PartnerHandler {
 
 // PartnerResponse represents a partner in API responses
 type PartnerResponse struct {
-	ID              int64   `json:"id"`
-	PartnerName     string  `json:"partner_name"`
-	Email           *string `json:"email"`
-	Phone           *string `json:"phone"`
-	ReferralCode    string  `json:"referral_code"`
-	PendingPoints   float64 `json:"pending_points"`
-	WithdrawnPoints float64 `json:"withdrawn_points"`
-	Notes           *string `json:"notes"`
-	Status          string  `json:"status"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	ID                 int64   `json:"id"`
+	PartnerName        string  `json:"partner_name"`
+	Email              *string `json:"email"`
+	Phone              *string `json:"phone"`
+	ReferralCode       string  `json:"referral_code"`
+	PendingPoints      float64 `json:"pending_points"`
+	WithdrawnPoints    float64 `json:"withdrawn_points"`
+	Notes              *string `json:"notes"`
+	Status             string  `json:"status"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
+	ReferredUsersCount int64   `json:"referred_users_count"`
 }
 
 // PartnerCommissionResponse represents a partner commission in API responses
@@ -51,17 +52,18 @@ type PartnerCommissionResponse struct {
 
 func partnerToResponse(p *service.Partner) *PartnerResponse {
 	return &PartnerResponse{
-		ID:              p.ID,
-		PartnerName:     p.PartnerName,
-		Email:           p.Email,
-		Phone:           p.Phone,
-		ReferralCode:    p.ReferralCode,
-		PendingPoints:   p.PendingPoints,
-		WithdrawnPoints: p.WithdrawnPoints,
-		Notes:           p.Notes,
-		Status:          p.Status,
-		CreatedAt:       p.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:       p.UpdatedAt.Format(time.RFC3339),
+		ID:                 p.ID,
+		PartnerName:        p.PartnerName,
+		Email:              p.Email,
+		Phone:              p.Phone,
+		ReferralCode:       p.ReferralCode,
+		PendingPoints:      p.PendingPoints,
+		WithdrawnPoints:    p.WithdrawnPoints,
+		Notes:              p.Notes,
+		Status:             p.Status,
+		CreatedAt:          p.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:          p.UpdatedAt.Format(time.RFC3339),
+		ReferredUsersCount: p.ReferredUsersCount,
 	}
 }
 

@@ -31,6 +31,9 @@ type AdminUser struct {
 	GroupRates            map[int64]float64 `json:"group_rates,omitempty"`
 	SoraStorageQuotaBytes int64             `json:"sora_storage_quota_bytes"`
 	SoraStorageUsedBytes  int64             `json:"sora_storage_used_bytes"`
+	// 推荐来源（推荐人用户 ID 或合作伙伴 ID）
+	ReferrerID *int64 `json:"referrer_id,omitempty"`
+	PartnerID  *int64 `json:"partner_id,omitempty"`
 }
 
 type APIKey struct {
