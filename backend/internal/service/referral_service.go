@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/big"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
@@ -18,6 +19,7 @@ type ReferralServiceDeps struct {
 	BillingCache   BillingCacheInvalidator
 	PromoRepo      PromoCodeRepository
 	PartnerRepo    PartnerRepository
+	EntClient      *dbent.Client // 用于事务支持
 }
 
 // BillingCacheInvalidator 计费缓存失效接口
@@ -29,6 +31,7 @@ type BillingCacheInvalidator interface {
 type ReferralRepositoryInterface interface {
 	CreateCommission(ctx context.Context, commission *ReferralCommission) error
 	CreateCommissionWithCap(ctx context.Context, commission *ReferralCommission, maxPerUser float64) (float64, error)
+	CreateCommissionWithCapAndCredit(ctx context.Context, commission *ReferralCommission, maxPerUser float64, referrerID int64) (float64, error)
 	GetTotalCommissionForPair(ctx context.Context, referrerID, referredUserID int64) (float64, error)
 	GetTotalCommission(ctx context.Context, referrerID int64) (float64, error)
 	ListCommissions(ctx context.Context, referrerID int64, params pagination.PaginationParams) ([]ReferralCommission, *pagination.PaginationResult, error)
@@ -44,6 +47,7 @@ type ReferralService struct {
 	billingCache   BillingCacheInvalidator
 	promoRepo      PromoCodeRepository
 	partnerRepo    PartnerRepository
+	entClient      *dbent.Client
 }
 
 func NewReferralService(deps ReferralServiceDeps) *ReferralService {
@@ -54,6 +58,7 @@ func NewReferralService(deps ReferralServiceDeps) *ReferralService {
 		billingCache:   deps.BillingCache,
 		promoRepo:      deps.PromoRepo,
 		partnerRepo:    deps.PartnerRepo,
+		entClient:      deps.EntClient,
 	}
 }
 
@@ -69,7 +74,7 @@ func (s *ReferralService) GetOrCreateReferralCode(ctx context.Context, userID in
 	}
 
 	// 生成推荐码，如果因唯一约束冲突或与优惠码重复则重试
-	for attempts := 0; attempts < 10; attempts++ {
+	for attempts := 0; attempts < 50; attempts++ {
 		code, err := s.generateCode()
 		if err != nil {
 			return "", fmt.Errorf("generate referral code: %w", err)
@@ -114,12 +119,48 @@ func (s *ReferralService) ValidateReferralCode(ctx context.Context, code string)
 }
 
 // ApplyReferralSignup 注册时应用推荐关系
+// 所有操作在同一个 ent 事务中执行，避免部分成功导致状态不一致
 func (s *ReferralService) ApplyReferralSignup(ctx context.Context, newUserID int64, referrerID int64) error {
 	// 防止自己推荐自己
 	if newUserID == referrerID {
 		return fmt.Errorf("cannot refer yourself")
 	}
 
+	// 在事务中执行所有操作
+	if s.entClient != nil {
+		tx, err := s.entClient.Tx(ctx)
+		if err != nil {
+			return fmt.Errorf("begin transaction: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		txCtx := dbent.NewTxContext(ctx, tx)
+
+		if err := s.applyReferralSignupInCtx(txCtx, newUserID, referrerID); err != nil {
+			return err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit transaction: %w", err)
+		}
+	} else {
+		// 无 ent client 时直接执行（向后兼容测试场景）
+		if err := s.applyReferralSignupInCtx(ctx, newUserID, referrerID); err != nil {
+			return err
+		}
+	}
+
+	// 失效推荐人的计费缓存（事务提交后执行）
+	referrerBonus := s.settingService.GetReferralReferrerBonus(ctx)
+	if referrerBonus > 0 && s.billingCache != nil {
+		s.billingCache.InvalidateUserBalance(referrerID)
+	}
+
+	return nil
+}
+
+// applyReferralSignupInCtx 在给定 context（可能包含事务）中执行推荐注册逻辑
+func (s *ReferralService) applyReferralSignupInCtx(ctx context.Context, newUserID int64, referrerID int64) error {
 	// 设置推荐关系
 	if err := s.userRepo.SetReferrer(ctx, newUserID, referrerID); err != nil {
 		return fmt.Errorf("set referrer: %w", err)
@@ -138,10 +179,6 @@ func (s *ReferralService) ApplyReferralSignup(ctx context.Context, newUserID int
 	if referrerBonus > 0 {
 		if err := s.userRepo.UpdateGiftBalance(ctx, referrerID, referrerBonus); err != nil {
 			return fmt.Errorf("give referrer bonus to user %d: %w", referrerID, err)
-		}
-		// 失效推荐人的计费缓存
-		if s.billingCache != nil {
-			s.billingCache.InvalidateUserBalance(referrerID)
 		}
 	}
 
@@ -185,21 +222,15 @@ func (s *ReferralService) RecordCommission(ctx context.Context, referredUserID i
 		CommissionRate: rate,
 	}
 
-	// 原子化 cap 检查 + 插入，避免并发超额
+	// 原子化 cap 检查 + 插入 + 推荐人余额增加，在同一事务中完成
 	maxPerUser := s.settingService.GetReferralMaxCommissionPerUser(ctx)
-	actualAmount, err := s.referralRepo.CreateCommissionWithCap(ctx, commission, maxPerUser)
+	actualAmount, err := s.referralRepo.CreateCommissionWithCapAndCredit(ctx, commission, maxPerUser, referrerID)
 	if err != nil {
 		slog.Error("failed to create referral commission", "error", err)
 		return
 	}
 	if actualAmount <= 0 {
 		return // 已达上限
-	}
-
-	// 给推荐人增加赠送余额
-	if err := s.userRepo.UpdateGiftBalance(ctx, referrerID, actualAmount); err != nil {
-		slog.Error("failed to credit referrer commission", "referrer_id", referrerID, "amount", actualAmount, "error", err)
-		return
 	}
 
 	// 失效推荐人的计费缓存

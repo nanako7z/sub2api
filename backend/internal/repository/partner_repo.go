@@ -104,6 +104,37 @@ func (r *partnerRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// DeleteWithCleanup 删除合作伙伴并清理关联用户的 partner_id。
+// 在同一事务中先将引用该 partner 的用户 partner_id 置 NULL，再删除 partner 记录，
+// 避免悬空引用导致后续积分静默丢失。
+func (r *partnerRepository) DeleteWithCleanup(ctx context.Context, id int64) error {
+	tx, err := r.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// 清理关联用户的 partner_id
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET partner_id = NULL WHERE partner_id = $1`, id); err != nil {
+		return fmt.Errorf("clear users partner_id: %w", err)
+	}
+
+	// 删除 partner 记录
+	result, err := tx.ExecContext(ctx, `DELETE FROM partners WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete partner: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("partner not found")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
 func (r *partnerRepository) List(ctx context.Context, params pagination.PaginationParams, filters service.PartnerListFilters) ([]service.Partner, *pagination.PaginationResult, error) {
 	var conditions []string
 	var args []any
@@ -116,9 +147,9 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 	}
 	if filters.Search != "" {
 		searchPattern := "%" + filters.Search + "%"
-		conditions = append(conditions, fmt.Sprintf("(partner_name ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d)", argIdx, argIdx, argIdx))
-		args = append(args, searchPattern)
-		argIdx++
+		conditions = append(conditions, fmt.Sprintf("(partner_name ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d)", argIdx, argIdx+1, argIdx+2))
+		args = append(args, searchPattern, searchPattern, searchPattern)
+		argIdx += 3
 	}
 
 	where := ""
@@ -133,9 +164,10 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 		return nil, nil, fmt.Errorf("count partners: %w", err)
 	}
 
-	pages := int(total) / params.PageSize
-	if int(total)%params.PageSize > 0 {
-		pages++
+	pageLimit := params.Limit()
+	pages := 0
+	if pageLimit > 0 && total > 0 {
+		pages = (int(total) + pageLimit - 1) / pageLimit
 	}
 
 	// List
@@ -144,7 +176,7 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 		FROM partners %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1,
 	)
-	args = append(args, params.PageSize, params.Offset())
+	args = append(args, pageLimit, params.Offset())
 
 	rows, err := r.sql.QueryContext(ctx, listQuery, args...)
 	if err != nil {
@@ -171,7 +203,7 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 	return partners, &pagination.PaginationResult{
 		Total:    total,
 		Page:     params.Page,
-		PageSize: params.PageSize,
+		PageSize: pageLimit,
 		Pages:    pages,
 	}, nil
 }
@@ -222,6 +254,54 @@ func (r *partnerRepository) CreateCommission(ctx context.Context, commission *se
 	).Scan(&commission.ID)
 }
 
+// CreateCommissionAndAddPoints 原子化创建积分记录并增加伙伴待结算积分。
+// 两步操作在同一个 sql.Tx 中完成，避免记录入库但积分未增加的不一致问题。
+func (r *partnerRepository) CreateCommissionAndAddPoints(ctx context.Context, commission *service.PartnerCommission) error {
+	tx, err := r.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// 插入积分记录
+	now := time.Now()
+	commission.CreatedAt = now
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO partner_commissions (partner_id, referred_user_id, points, source_cost, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		commission.PartnerID,
+		commission.ReferredUserID,
+		commission.Points,
+		commission.SourceCost,
+		now,
+	).Scan(&commission.ID)
+	if err != nil {
+		return fmt.Errorf("insert partner commission: %w", err)
+	}
+
+	// 增加伙伴待结算积分
+	result, err := tx.ExecContext(ctx,
+		`UPDATE partners SET pending_points = pending_points + $2, updated_at = NOW() WHERE id = $1`,
+		commission.PartnerID, commission.Points,
+	)
+	if err != nil {
+		return fmt.Errorf("add pending points: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("partner not found")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
 func (r *partnerRepository) ListCommissions(ctx context.Context, partnerID int64, params pagination.PaginationParams) ([]service.PartnerCommission, *pagination.PaginationResult, error) {
 	// Count
 	var total int64
@@ -231,9 +311,10 @@ func (r *partnerRepository) ListCommissions(ctx context.Context, partnerID int64
 		return nil, nil, fmt.Errorf("count partner commissions: %w", err)
 	}
 
-	pages := int(total) / params.PageSize
-	if int(total)%params.PageSize > 0 {
-		pages++
+	commPageLimit := params.Limit()
+	commPages := 0
+	if commPageLimit > 0 && total > 0 {
+		commPages = (int(total) + commPageLimit - 1) / commPageLimit
 	}
 
 	// List
@@ -241,7 +322,7 @@ func (r *partnerRepository) ListCommissions(ctx context.Context, partnerID int64
 		`SELECT id, partner_id, referred_user_id, points, source_cost, created_at
 		FROM partner_commissions WHERE partner_id = $1
 		ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-		partnerID, params.PageSize, params.Offset(),
+		partnerID, commPageLimit, params.Offset(),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list partner commissions: %w", err)
@@ -263,8 +344,8 @@ func (r *partnerRepository) ListCommissions(ctx context.Context, partnerID int64
 	return commissions, &pagination.PaginationResult{
 		Total:    total,
 		Page:     params.Page,
-		PageSize: params.PageSize,
-		Pages:    pages,
+		PageSize: commPageLimit,
+		Pages:    commPages,
 	}, nil
 }
 

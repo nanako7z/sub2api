@@ -13,6 +13,7 @@ type PartnerRepository interface {
 	GetByReferralCode(ctx context.Context, code string) (*Partner, error)
 	Update(ctx context.Context, partner *Partner) error
 	Delete(ctx context.Context, id int64) error
+	DeleteWithCleanup(ctx context.Context, id int64) error
 	List(ctx context.Context, params pagination.PaginationParams, filters PartnerListFilters) ([]Partner, *pagination.PaginationResult, error)
 
 	// 积分操作（原子 SQL 更新）
@@ -21,5 +22,6 @@ type PartnerRepository interface {
 
 	// 积分记录
 	CreateCommission(ctx context.Context, commission *PartnerCommission) error
+	CreateCommissionAndAddPoints(ctx context.Context, commission *PartnerCommission) error
 	ListCommissions(ctx context.Context, partnerID int64, params pagination.PaginationParams) ([]PartnerCommission, *pagination.PaginationResult, error)
 }

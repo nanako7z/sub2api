@@ -77,6 +77,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		BillingCache:   billingCacheInvalidator,
 		PromoRepo:      promoCodeRepository,
 		PartnerRepo:    partnerRepository,
+		EntClient:      client,
 	}
 	referralService := service.NewReferralService(referralServiceDeps)
 	partnerService := service.NewPartnerService(partnerRepository, userRepository, promoCodeRepository, settingService)

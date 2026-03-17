@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -17,6 +18,7 @@ import (
 type ReferralRepository interface {
 	CreateCommission(ctx context.Context, commission *service.ReferralCommission) error
 	CreateCommissionWithCap(ctx context.Context, commission *service.ReferralCommission, maxPerUser float64) (float64, error)
+	CreateCommissionWithCapAndCredit(ctx context.Context, commission *service.ReferralCommission, maxPerUser float64, referrerID int64) (float64, error)
 	GetTotalCommissionForPair(ctx context.Context, referrerID, referredUserID int64) (float64, error)
 	GetTotalCommission(ctx context.Context, referrerID int64) (float64, error)
 	ListCommissions(ctx context.Context, referrerID int64, params pagination.PaginationParams) ([]service.ReferralCommission, *pagination.PaginationResult, error)
@@ -27,10 +29,11 @@ type ReferralRepository interface {
 type referralRepository struct {
 	client *dbent.Client
 	sql    sqlExecutor
+	db     *sql.DB // 用于开启事务（BeginTx）
 }
 
 func NewReferralRepository(client *dbent.Client, sqlDB *sql.DB) ReferralRepository {
-	return &referralRepository{client: client, sql: sqlDB}
+	return &referralRepository{client: client, sql: sqlDB, db: sqlDB}
 }
 
 // CreateCommission 创建一条返佣记录
@@ -161,7 +164,11 @@ func (r *referralRepository) ListReferredUsers(ctx context.Context, referrerID i
 		for i, u := range users {
 			userIDs[i] = u.ID
 		}
-		commissionMap, _ = r.batchGetCommissionsForPairs(ctx, referrerID, userIDs)
+		var batchErr error
+		commissionMap, batchErr = r.batchGetCommissionsForPairs(ctx, referrerID, userIDs)
+		if batchErr != nil {
+			slog.Error("failed to batch get commissions for pairs", "referrer_id", referrerID, "error", batchErr)
+		}
 	}
 
 	result := make([]service.ReferredUserInfo, 0, len(users))
@@ -265,12 +272,17 @@ func (r *referralRepository) CreateCommissionWithCap(ctx context.Context, commis
 	}
 
 	// 原子化：在单条 SQL 中检查 cap 并插入，用 FOR UPDATE 锁防止并发超额
+	// 注意：FOR UPDATE 不能与聚合函数同层使用，需先锁行再聚合
 	query := `
-		WITH current AS (
-			SELECT COALESCE(SUM(amount), 0) AS total
+		WITH locked_rows AS (
+			SELECT amount
 			FROM referral_commissions
 			WHERE referrer_id = $1 AND referred_user_id = $2
 			FOR UPDATE
+		),
+		current AS (
+			SELECT COALESCE(SUM(amount), 0) AS total
+			FROM locked_rows
 		),
 		capped AS (
 			SELECT LEAST($3, GREATEST($6 - total, 0)) AS final_amount
@@ -303,6 +315,104 @@ func (r *referralRepository) CreateCommissionWithCap(ctx context.Context, commis
 	}
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("create commission with cap rows: %w", err)
+	}
+	return actualAmount, nil
+}
+
+// CreateCommissionWithCapAndCredit 原子化创建返佣记录（带 cap）并增加推荐人赠送余额。
+// 整个操作在同一个 sql.Tx 中完成，避免 commission 入库但余额未增加的不一致问题。
+// 返回实际记录的金额（0 表示已达上限未插入）。
+func (r *referralRepository) CreateCommissionWithCapAndCredit(ctx context.Context, commission *service.ReferralCommission, maxPerUser float64, referrerID int64) (float64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var actualAmount float64
+
+	if maxPerUser <= 0 {
+		// 无上限，直接插入
+		insertQuery := `
+			INSERT INTO referral_commissions (referrer_id, referred_user_id, amount, source_cost, commission_rate, created_at)
+			VALUES ($1, $2, $3, $4, $5, NOW())
+			RETURNING amount`
+		err = tx.QueryRowContext(ctx, insertQuery,
+			commission.ReferrerID,
+			commission.ReferredUserID,
+			commission.Amount,
+			commission.SourceCost,
+			commission.CommissionRate,
+		).Scan(&actualAmount)
+		if err != nil {
+			return 0, fmt.Errorf("insert commission: %w", err)
+		}
+	} else {
+		// 带 cap 的原子插入（FOR UPDATE 先锁行再聚合）
+		capQuery := `
+			WITH locked_rows AS (
+				SELECT amount
+				FROM referral_commissions
+				WHERE referrer_id = $1 AND referred_user_id = $2
+				FOR UPDATE
+			),
+			current AS (
+				SELECT COALESCE(SUM(amount), 0) AS total
+				FROM locked_rows
+			),
+			capped AS (
+				SELECT LEAST($3, GREATEST($6 - total, 0)) AS final_amount
+				FROM current
+			)
+			INSERT INTO referral_commissions (referrer_id, referred_user_id, amount, source_cost, commission_rate, created_at)
+			SELECT $1, $2, final_amount, $4, $5, NOW()
+			FROM capped
+			WHERE final_amount > 0
+			RETURNING amount`
+		rows, err := tx.QueryContext(ctx, capQuery,
+			commission.ReferrerID,
+			commission.ReferredUserID,
+			commission.Amount,
+			commission.SourceCost,
+			commission.CommissionRate,
+			maxPerUser,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("create commission with cap: %w", err)
+		}
+		if rows.Next() {
+			if err := rows.Scan(&actualAmount); err != nil {
+				_ = rows.Close()
+				return 0, fmt.Errorf("scan commission amount: %w", err)
+			}
+		}
+		_ = rows.Close()
+		if err := rows.Err(); err != nil {
+			return 0, fmt.Errorf("create commission with cap rows: %w", err)
+		}
+	}
+
+	if actualAmount <= 0 {
+		// 已达上限，无需更新余额，也不需要提交（rollback 即可）
+		return 0, nil
+	}
+
+	// 在同一事务中增加推荐人赠送余额
+	creditQuery := `UPDATE users SET gift_balance = gift_balance + $2 WHERE id = $1`
+	result, err := tx.ExecContext(ctx, creditQuery, referrerID, actualAmount)
+	if err != nil {
+		return 0, fmt.Errorf("credit referrer gift balance: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return 0, fmt.Errorf("referrer user not found: %d", referrerID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit tx: %w", err)
 	}
 	return actualAmount, nil
 }

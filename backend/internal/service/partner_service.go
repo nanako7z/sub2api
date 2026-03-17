@@ -128,9 +128,9 @@ func (s *PartnerService) Update(ctx context.Context, id int64, input *UpdatePart
 	return partner, nil
 }
 
-// Delete 删除合作伙伴
+// Delete 删除合作伙伴（同时清理关联用户的 partner_id）
 func (s *PartnerService) Delete(ctx context.Context, id int64) error {
-	return s.partnerRepo.Delete(ctx, id)
+	return s.partnerRepo.DeleteWithCleanup(ctx, id)
 }
 
 // GetByID 获取合作伙伴
@@ -145,6 +145,9 @@ func (s *PartnerService) List(ctx context.Context, params pagination.PaginationP
 
 // ValidatePartnerReferralCode 验证伙伴推荐码是否有效
 func (s *PartnerService) ValidatePartnerReferralCode(ctx context.Context, code string) (*Partner, error) {
+	if !s.settingService.IsPartnerEnabled(ctx) {
+		return nil, fmt.Errorf("partner system is disabled")
+	}
 	partner, err := s.partnerRepo.GetByReferralCode(ctx, code)
 	if err != nil {
 		return nil, err
@@ -173,6 +176,12 @@ func (s *PartnerService) RecordCommission(ctx context.Context, referredUserID in
 	}
 	partnerID := *user.PartnerID
 
+	// 检查合作伙伴是否仍处于活跃状态，已禁用的伙伴不再计入积分
+	partner, err := s.partnerRepo.GetByID(ctx, partnerID)
+	if err != nil || partner.Status != StatusActive {
+		return
+	}
+
 	// 1:1 积分比例
 	points := normalBalanceCost
 
@@ -183,13 +192,9 @@ func (s *PartnerService) RecordCommission(ctx context.Context, referredUserID in
 		SourceCost:     normalBalanceCost,
 	}
 
-	if err := s.partnerRepo.CreateCommission(ctx, commission); err != nil {
-		slog.Error("failed to create partner commission", "error", err)
-		return
-	}
-
-	if err := s.partnerRepo.AddPendingPoints(ctx, partnerID, points); err != nil {
-		slog.Error("failed to add partner pending points", "partner_id", partnerID, "points", points, "error", err)
+	// 原子化创建积分记录 + 增加待结算积分，在同一事务中完成
+	if err := s.partnerRepo.CreateCommissionAndAddPoints(ctx, commission); err != nil {
+		slog.Error("failed to create partner commission and add points", "partner_id", partnerID, "points", points, "error", err)
 	}
 }
 
@@ -237,7 +242,7 @@ func (s *PartnerService) generateUniqueCode(ctx context.Context) (string, error)
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	const suffixLen = 7
 
-	for attempts := 0; attempts < 10; attempts++ {
+	for attempts := 0; attempts < 50; attempts++ {
 		suffix := make([]byte, suffixLen)
 		for i := range suffix {
 			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
