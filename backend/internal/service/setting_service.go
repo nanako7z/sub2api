@@ -256,6 +256,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		LinuxDoOAuthEnabled              bool            `json:"linuxdo_oauth_enabled"`
 		BackendModeEnabled               bool            `json:"backend_mode_enabled"`
 		ReferralEnabled                  bool            `json:"referral_enabled"`
+		PartnerEnabled                   bool            `json:"partner_enabled"`
 		Version                          string          `json:"version,omitempty"`
 	}{
 		RegistrationEnabled:              settings.RegistrationEnabled,
@@ -283,6 +284,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		LinuxDoOAuthEnabled:              settings.LinuxDoOAuthEnabled,
 		BackendModeEnabled:               settings.BackendModeEnabled,
 		ReferralEnabled:                  settings.ReferralEnabled,
+		PartnerEnabled:                   settings.PartnerEnabled,
 		Version:                          s.version,
 	}, nil
 }
