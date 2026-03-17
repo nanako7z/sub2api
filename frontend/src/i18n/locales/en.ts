@@ -3209,7 +3209,7 @@ export default {
       withdraw: 'Withdraw',
       withdrawTitle: 'Withdraw Points',
       currentPending: 'Current pending points',
-      withdrawAmount: 'Withdraw amount',
+      withdrawAmount: 'Withdraw points',
       withdrawing: 'Withdrawing...',
       confirmWithdraw: 'Confirm Withdraw',
       withdrawSuccess: 'Withdrawal successful',

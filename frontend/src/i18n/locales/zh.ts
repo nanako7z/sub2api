@@ -3368,7 +3368,7 @@ export default {
       withdraw: '提现',
       withdrawTitle: '积分提现',
       currentPending: '当前待提现积分',
-      withdrawAmount: '提现金额',
+      withdrawAmount: '提现积分',
       withdrawing: '提现中...',
       confirmWithdraw: '确认提现',
       withdrawSuccess: '提现成功',
