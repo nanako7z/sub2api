@@ -28,7 +28,10 @@
           <div class="flex-shrink-0 text-right">
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentBalance') }}</p>
             <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ user.balance?.toFixed(2) || '0.00' }}
+              ${{ ((user.balance || 0) + (user.gift_balance || 0)).toFixed(2) }}
+            </p>
+            <p v-if="(user.gift_balance || 0) > 0" class="text-xs text-gray-500 dark:text-dark-400">
+              {{ t('balance.normal') }}: ${{ (user.balance || 0).toFixed(2) }} / {{ t('balance.gift') }}: ${{ (user.gift_balance || 0).toFixed(2) }}
             </p>
           </div>
         </div>

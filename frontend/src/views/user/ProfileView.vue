@@ -2,9 +2,20 @@
   <AppLayout>
     <div class="mx-auto max-w-4xl space-y-6">
       <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
-        <StatCard :title="t('profile.accountBalance')" :value="formatCurrency(user?.balance || 0)" :icon="WalletIcon" icon-variant="success" />
-        <StatCard :title="t('profile.concurrencyLimit')" :value="user?.concurrency || 0" :icon="BoltIcon" icon-variant="warning" />
-        <StatCard :title="t('profile.memberSince')" :value="formatDate(user?.created_at || '', { year: 'numeric', month: 'long' })" :icon="CalendarIcon" icon-variant="primary" />
+        <div class="stat-card">
+          <div class="stat-icon stat-icon-success">
+            <Icon name="dollar" size="lg" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="stat-label truncate">{{ t('profile.accountBalance') }}</p>
+            <p class="stat-value mt-1">${{ formatBalance(totalBalance) }}</p>
+            <p v-if="(user?.gift_balance ?? 0) > 0" class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('balance.normal') }}: ${{ formatBalance(user?.balance || 0) }} / {{ t('balance.gift') }}: ${{ formatBalance(user?.gift_balance || 0) }}
+            </p>
+          </div>
+        </div>
+        <StatCard :title="t('profile.concurrencyLimit')" :value="user?.concurrency || 0" :icon="BoltIconComp" icon-variant="warning" />
+        <StatCard :title="t('profile.memberSince')" :value="formatDate(user?.created_at || '', { year: 'numeric', month: 'long' })" :icon="CalendarIconComp" icon-variant="primary" />
       </div>
       <ProfileInfoCard :user="user" />
       <div v-if="contactInfo" class="card border-primary-200 bg-primary-50 dark:bg-primary-900/20 p-6">
@@ -34,10 +45,10 @@ import { Icon } from '@/components/icons'
 const { t } = useI18n(); const authStore = useAuthStore(); const user = computed(() => authStore.user)
 const contactInfo = ref('')
 
-const WalletIcon = { render: () => h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [h('path', { d: 'M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12' })]) }
-const BoltIcon = { render: () => h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [h('path', { d: 'm3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z' })]) }
-const CalendarIcon = { render: () => h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [h('path', { d: 'M6.75 3v2.25M17.25 3v2.25' })]) }
+const BoltIconComp = { render: () => h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', d: 'M13 10V3L4 14h7v7l9-11h-7z' })]) }
+const CalendarIconComp = { render: () => h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', d: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5' })]) }
+const totalBalance = computed(() => (user.value?.balance || 0) + (user.value?.gift_balance || 0))
+const formatBalance = (v: number) => v.toFixed(2)
 
 onMounted(async () => { try { const s = await authAPI.getPublicSettings(); contactInfo.value = s.contact_info || '' } catch (error) { console.error('Failed to load contact info:', error) } })
-const formatCurrency = (v: number) => `$${v.toFixed(2)}`
 </script>
