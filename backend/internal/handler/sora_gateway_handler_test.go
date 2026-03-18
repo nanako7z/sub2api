@@ -408,6 +408,9 @@ func (s *stubUsageLogRepo) GetUserCacheHitRateTrendByUsage(ctx context.Context, 
 func (s *stubUsageLogRepo) GetUserCacheHitRateTrendLowest(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
 	return nil, nil
 }
+func (s *stubUsageLogRepo) GetSpendingTrend(ctx context.Context, startTime, endTime time.Time, granularity string) ([]usagestats.SpendingTrendPoint, error) {
+	return nil, nil
+}
 
 func TestSoraGatewayHandler_ChatCompletions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -468,6 +471,7 @@ func TestSoraGatewayHandler_ChatCompletions(t *testing.T) {
 		nil, // digestStore
 		nil, // settingService
 		nil, // referralService
+		nil, // partnerService
 	)
 
 	soraClient := &stubSoraClient{imageURLs: []string{"https://example.com/a.png"}}

@@ -159,6 +159,7 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // digestStore
 		nil, // settingService
 		nil, // referralService
+		nil, // partnerService
 	)
 
 	// RunModeSimple：跳过计费检查，避免引入 repo/cache 依赖。

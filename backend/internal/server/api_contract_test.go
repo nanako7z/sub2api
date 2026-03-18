@@ -541,6 +541,13 @@ func TestAPIContracts(t *testing.T) {
 					"min_claude_code_version": "",
 					"allow_ungrouped_key_scheduling": false,
 					"backend_mode_enabled": false,
+					"balance_consumption_priority": "normal_first",
+					"referral_enabled": false,
+					"referral_commission_rate": 0,
+					"referral_signup_bonus": 0,
+					"referral_referrer_bonus": 0,
+					"referral_max_commission_per_user": 0,
+					"partner_enabled": false,
 					"custom_menu_items": []
 				}
 			}`,
@@ -650,7 +657,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingService := service.NewSettingService(settingRepo, cfg)
 
 	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, nil, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
+	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil)
@@ -842,6 +849,10 @@ func (r *stubUserRepo) SetReferralCode(ctx context.Context, userID int64, code s
 }
 
 func (r *stubUserRepo) SetReferrer(ctx context.Context, userID int64, referrerID int64) error {
+	return nil
+}
+
+func (r *stubUserRepo) SetPartnerID(ctx context.Context, userID int64, partnerID int64) error {
 	return nil
 }
 
@@ -1236,7 +1247,7 @@ func (stubRedeemCodeRepo) List(ctx context.Context, params pagination.Pagination
 	return nil, nil, errors.New("not implemented")
 }
 
-func (stubRedeemCodeRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+func (stubRedeemCodeRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search, sortBy, sortOrder string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
@@ -1813,6 +1824,10 @@ func (r *stubUsageLogRepo) GetUserCacheHitRateTrendByUsage(ctx context.Context, 
 }
 func (r *stubUsageLogRepo) GetUserCacheHitRateTrendLowest(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
 	return nil, nil
+}
+
+func (r *stubUsageLogRepo) GetSpendingTrend(ctx context.Context, startTime, endTime time.Time, granularity string) ([]usagestats.SpendingTrendPoint, error) {
+	return nil, errors.New("not implemented")
 }
 
 type stubSettingRepo struct {

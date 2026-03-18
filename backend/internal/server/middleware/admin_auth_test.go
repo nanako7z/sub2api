@@ -19,7 +19,7 @@ func TestAdminAuthJWTValidatesTokenVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{JWT: config.JWTConfig{Secret: "test-secret", ExpireHour: 1}}
-	authService := service.NewAuthService(nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil)
+	authService := service.NewAuthService(nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	admin := &service.User{
 		ID:           1,
@@ -215,4 +215,8 @@ func (s *stubUserRepo) SetReferralCode(ctx context.Context, userID int64, code s
 
 func (s *stubUserRepo) SetReferrer(ctx context.Context, userID int64, referrerID int64) error {
 	panic("unexpected SetReferrer call")
+}
+
+func (s *stubUserRepo) SetPartnerID(ctx context.Context, userID int64, partnerID int64) error {
+	panic("unexpected SetPartnerID call")
 }

@@ -123,6 +123,9 @@ func (s *userRepoStub) SetReferralCode(context.Context, int64, string) error {
 func (s *userRepoStub) SetReferrer(context.Context, int64, int64) error {
 	panic("unexpected SetReferrer call")
 }
+func (s *userRepoStub) SetPartnerID(context.Context, int64, int64) error {
+	panic("unexpected SetPartnerID call")
+}
 
 type groupRepoStub struct {
 	affectedUserIDs []int64

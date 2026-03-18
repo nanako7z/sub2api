@@ -56,6 +56,7 @@ func (m *mockUserRepo) DeductBalanceSplit(_ context.Context, _ int64, _ float64,
 func (m *mockUserRepo) GetByReferralCode(context.Context, string) (*User, error) { return nil, ErrUserNotFound }
 func (m *mockUserRepo) SetReferralCode(context.Context, int64, string) error     { return nil }
 func (m *mockUserRepo) SetReferrer(context.Context, int64, int64) error          { return nil }
+func (m *mockUserRepo) SetPartnerID(context.Context, int64, int64) error         { return nil }
 
 // --- mock: APIKeyAuthCacheInvalidator ---
 

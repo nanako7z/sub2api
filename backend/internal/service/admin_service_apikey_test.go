@@ -85,6 +85,9 @@ func (s *userRepoStubForGroupUpdate) SetReferralCode(context.Context, int64, str
 func (s *userRepoStubForGroupUpdate) SetReferrer(context.Context, int64, int64) error {
 	panic("unexpected")
 }
+func (s *userRepoStubForGroupUpdate) SetPartnerID(context.Context, int64, int64) error {
+	panic("unexpected")
+}
 
 // apiKeyRepoStubForGroupUpdate implements APIKeyRepository for AdminUpdateAPIKeyGroupID tests.
 type apiKeyRepoStubForGroupUpdate struct {

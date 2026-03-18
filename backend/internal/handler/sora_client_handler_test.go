@@ -959,6 +959,7 @@ func (r *stubUserRepoForHandler) GetByReferralCode(context.Context, string) (*se
 }
 func (r *stubUserRepoForHandler) SetReferralCode(context.Context, int64, string) error { return nil }
 func (r *stubUserRepoForHandler) SetReferrer(context.Context, int64, int64) error      { return nil }
+func (r *stubUserRepoForHandler) SetPartnerID(context.Context, int64, int64) error     { return nil }
 
 // ==================== NewSoraClientHandler ====================
 
@@ -2218,7 +2219,7 @@ func (s *stubSoraClientForHandler) GetVideoTask(_ context.Context, _ *service.Ac
 func newMinimalGatewayService(accountRepo service.AccountRepository) *service.GatewayService {
 	return service.NewGatewayService(
 		accountRepo, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 }
 

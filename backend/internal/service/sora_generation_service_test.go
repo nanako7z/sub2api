@@ -177,6 +177,7 @@ func (r *stubUserRepoForQuota) GetByReferralCode(context.Context, string) (*User
 }
 func (r *stubUserRepoForQuota) SetReferralCode(context.Context, int64, string) error { return nil }
 func (r *stubUserRepoForQuota) SetReferrer(context.Context, int64, int64) error      { return nil }
+func (r *stubUserRepoForQuota) SetPartnerID(context.Context, int64, int64) error     { return nil }
 
 // ==================== 辅助函数：构造带 CDN 缓存的 SoraS3Storage ====================
 
