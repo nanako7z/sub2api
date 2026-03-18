@@ -229,6 +229,7 @@ func (s *APIKeyService) snapshotFromAPIKey(apiKey *APIKey) *APIKeyAuthSnapshot {
 			Status:      apiKey.User.Status,
 			Role:        apiKey.User.Role,
 			Balance:     apiKey.User.Balance,
+			GiftBalance: apiKey.User.GiftBalance,
 			Concurrency: apiKey.User.Concurrency,
 		},
 	}
@@ -287,6 +288,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			Status:      snapshot.User.Status,
 			Role:        snapshot.User.Role,
 			Balance:     snapshot.User.Balance,
+			GiftBalance: snapshot.User.GiftBalance,
 			Concurrency: snapshot.User.Concurrency,
 		},
 	}
