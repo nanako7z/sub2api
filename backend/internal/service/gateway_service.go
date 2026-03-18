@@ -7628,7 +7628,7 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 		}
 	}
 
-	finalizePostUsageBilling(p, deps)
+	finalizePostUsageBilling(p, deps, nil)
 }
 
 func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
@@ -7728,6 +7728,11 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		return true, nil
 	}
 
+	// 设置余额扣费优先级（gift_first / normal_first）
+	if cmd.BalanceCost > 0 && deps.settingService != nil {
+		cmd.BalancePriority = deps.settingService.GetBalanceConsumptionPriority(ctx)
+	}
+
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 
@@ -7747,11 +7752,11 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		}
 	}
 
-	finalizePostUsageBilling(p, deps)
+	finalizePostUsageBilling(p, deps, result)
 	return true, nil
 }
 
-func finalizePostUsageBilling(p *postUsageBillingParams, deps *billingDeps) {
+func finalizePostUsageBilling(p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {
 	if p == nil || p.Cost == nil || deps == nil {
 		return
 	}
@@ -7766,6 +7771,28 @@ func finalizePostUsageBilling(p *postUsageBillingParams, deps *billingDeps) {
 
 	if p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {
 		deps.billingCacheService.QueueUpdateAPIKeyRateLimitUsage(p.APIKey.ID, p.Cost.ActualCost)
+	}
+
+	// 记录推荐返佣（仅对普通余额消费部分）
+	if result != nil && result.NormalDeducted > 0 && p.User != nil && p.User.ReferrerID != nil && deps.referralService != nil {
+		referredUserID := p.User.ID
+		normalCost := result.NormalDeducted
+		go func() {
+			commCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			deps.referralService.RecordCommission(commCtx, referredUserID, normalCost)
+		}()
+	}
+
+	// 记录合作伙伴推广积分（仅对普通余额消费部分，1:1 比例）
+	if result != nil && result.NormalDeducted > 0 && p.User != nil && p.User.PartnerID != nil && deps.partnerService != nil {
+		referredUserID := p.User.ID
+		normalCost := result.NormalDeducted
+		go func() {
+			commCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			deps.partnerService.RecordCommission(commCtx, referredUserID, normalCost)
+		}()
 	}
 
 	deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)

@@ -113,9 +113,12 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.BalanceCost > 0 {
-		if err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost); err != nil {
+		normalDeducted, giftDeducted, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost, cmd.BalancePriority)
+		if err != nil {
 			return err
 		}
+		result.NormalDeducted = normalDeducted
+		result.GiftDeducted = giftDeducted
 	}
 
 	if cmd.APIKeyQuotaCost > 0 {
@@ -169,24 +172,48 @@ func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscrip
 	return service.ErrSubscriptionNotFound
 }
 
-func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) error {
-	res, err := tx.ExecContext(ctx, `
-		UPDATE users
-		SET balance = balance - $1,
-			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
-	`, amount, userID)
-	if err != nil {
-		return err
+func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64, priority string) (normalDeducted, giftDeducted float64, err error) {
+	var query string
+	if priority == service.BalancePriorityGiftFirst {
+		// 赠送余额优先扣除，RETURNING: normal_deducted, gift_deducted
+		query = `
+			WITH pre AS (
+				SELECT balance, gift_balance FROM users WHERE id = $2 AND deleted_at IS NULL FOR UPDATE
+			)
+			UPDATE users SET
+				gift_balance = gift_balance - LEAST((SELECT gift_balance FROM pre), $1),
+				balance = balance - GREATEST($1 - (SELECT gift_balance FROM pre), 0),
+				updated_at = NOW()
+			WHERE id = $2 AND deleted_at IS NULL
+			RETURNING
+				GREATEST($1 - (SELECT gift_balance FROM pre), 0),
+				LEAST((SELECT gift_balance FROM pre), $1)
+		`
+	} else {
+		// 普通余额优先扣除（默认），RETURNING: normal_deducted, gift_deducted
+		query = `
+			WITH pre AS (
+				SELECT balance, gift_balance FROM users WHERE id = $2 AND deleted_at IS NULL FOR UPDATE
+			)
+			UPDATE users SET
+				balance = balance - LEAST((SELECT balance FROM pre), $1),
+				gift_balance = gift_balance - GREATEST($1 - (SELECT balance FROM pre), 0),
+				updated_at = NOW()
+			WHERE id = $2 AND deleted_at IS NULL
+			RETURNING
+				LEAST((SELECT balance FROM pre), $1),
+				GREATEST($1 - (SELECT balance FROM pre), 0)
+		`
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
+
+	row := tx.QueryRowContext(ctx, query, amount, userID)
+	if scanErr := row.Scan(&normalDeducted, &giftDeducted); scanErr != nil {
+		if errors.Is(scanErr, sql.ErrNoRows) {
+			return 0, 0, service.ErrUserNotFound
+		}
+		return 0, 0, scanErr
 	}
-	if affected > 0 {
-		return nil
-	}
-	return service.ErrUserNotFound
+	return normalDeducted, giftDeducted, nil
 }
 
 func incrementUsageBillingAPIKeyQuota(ctx context.Context, tx *sql.Tx, apiKeyID int64, amount float64) (bool, error) {

@@ -35,6 +35,7 @@ type UsageBillingCommand struct {
 	MediaType           string
 
 	BalanceCost         float64
+	BalancePriority     string // BalancePriorityGiftFirst or BalancePriorityNormalFirst
 	SubscriptionCost    float64
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
@@ -103,6 +104,8 @@ func valueOrZero(v *int64) int64 {
 type UsageBillingApplyResult struct {
 	Applied              bool
 	APIKeyQuotaExhausted bool
+	NormalDeducted       float64
+	GiftDeducted         float64
 }
 
 type UsageBillingRepository interface {
