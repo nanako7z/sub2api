@@ -167,10 +167,6 @@ func (h *PartnerHandler) Create(c *gin.Context) {
 		return
 	}
 
-	var signupBonus float64
-	if req.SignupBonus != nil {
-		signupBonus = *req.SignupBonus
-	}
 	var maxPointsPerUser float64
 	if req.MaxPointsPerUser != nil {
 		maxPointsPerUser = *req.MaxPointsPerUser
@@ -182,7 +178,7 @@ func (h *PartnerHandler) Create(c *gin.Context) {
 		Phone:            req.Phone,
 		ReferralCode:     req.ReferralCode,
 		Notes:            req.Notes,
-		SignupBonus:      signupBonus,
+		SignupBonus:      req.SignupBonus,
 		MaxPointsPerUser: maxPointsPerUser,
 	}
 
