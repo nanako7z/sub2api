@@ -39,10 +39,10 @@ type CreatePartnerInput struct {
 	PartnerName      string
 	Email            *string
 	Phone            *string
-	ReferralCode     string   // 可选，为空则自动生成（带 P 前缀）
+	ReferralCode     string  // 可选，为空则自动生成（带 P 前缀）
 	Notes            *string
-	SignupBonus      *float64 // nil=使用全局默认值，非 nil=使用指定值（含 0）
-	MaxPointsPerUser float64  // 单个被推荐用户可获取的最大积分，0=无限制
+	SignupBonus      float64 // 注册赠送余额（创建时必填）
+	MaxPointsPerUser float64 // 单个被推荐用户可获取的最大积分，0=无限制
 }
 
 // UpdatePartnerInput 更新合作伙伴输入
@@ -81,14 +81,6 @@ func (s *PartnerService) Create(ctx context.Context, input *CreatePartnerInput) 
 		}
 	}
 
-	// 未显式指定 SignupBonus（nil）时，使用全局默认值；显式传 0 则为不赠送
-	var signupBonus float64
-	if input.SignupBonus != nil {
-		signupBonus = *input.SignupBonus
-	} else {
-		signupBonus = s.settingService.GetPartnerSignupBonus(ctx)
-	}
-
 	partner := &Partner{
 		PartnerName:      input.PartnerName,
 		Email:            input.Email,
@@ -96,7 +88,7 @@ func (s *PartnerService) Create(ctx context.Context, input *CreatePartnerInput) 
 		ReferralCode:     code,
 		Notes:            input.Notes,
 		Status:           StatusActive,
-		SignupBonus:      signupBonus,
+		SignupBonus:      input.SignupBonus,
 		MaxPointsPerUser: input.MaxPointsPerUser,
 	}
 

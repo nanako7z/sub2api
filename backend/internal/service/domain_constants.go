@@ -241,8 +241,7 @@ const (
 	// 合作伙伴计划设置
 	// =========================
 
-	SettingKeyPartnerEnabled     = "partner_enabled"      // 是否启用合作伙伴计划
-	SettingKeyPartnerSignupBonus = "partner_signup_bonus"  // 伙伴渠道注册赠送金额
+	SettingKeyPartnerEnabled = "partner_enabled" // 是否启用合作伙伴计划
 )
 
 // Balance consumption priority constants

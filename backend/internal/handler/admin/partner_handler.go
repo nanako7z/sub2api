@@ -89,8 +89,8 @@ type CreatePartnerRequest struct {
 	Phone            *string  `json:"phone"`
 	ReferralCode     string   `json:"referral_code"`       // 可选，为空则自动生成
 	Notes            *string  `json:"notes"`
-	SignupBonus      *float64 `json:"signup_bonus"`        // 该伙伴渠道注册赠送余额
-	MaxPointsPerUser *float64 `json:"max_points_per_user"` // 单用户积分上限，0=无限制
+	SignupBonus      float64  `json:"signup_bonus"`        // 该伙伴渠道注册赠送余额
+	MaxPointsPerUser float64  `json:"max_points_per_user"` // 单用户积分上限，0=无限制
 }
 
 // UpdatePartnerRequest represents update partner request
@@ -167,11 +167,6 @@ func (h *PartnerHandler) Create(c *gin.Context) {
 		return
 	}
 
-	var maxPointsPerUser float64
-	if req.MaxPointsPerUser != nil {
-		maxPointsPerUser = *req.MaxPointsPerUser
-	}
-
 	input := &service.CreatePartnerInput{
 		PartnerName:      req.PartnerName,
 		Email:            req.Email,
@@ -179,7 +174,7 @@ func (h *PartnerHandler) Create(c *gin.Context) {
 		ReferralCode:     req.ReferralCode,
 		Notes:            req.Notes,
 		SignupBonus:      req.SignupBonus,
-		MaxPointsPerUser: maxPointsPerUser,
+		MaxPointsPerUser: req.MaxPointsPerUser,
 	}
 
 	partner, err := h.partnerService.Create(c.Request.Context(), input)

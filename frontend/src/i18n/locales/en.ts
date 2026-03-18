@@ -4212,8 +4212,6 @@ export default {
         description: 'Configure partner referral rewards and commission rules',
         enablePartner: 'Enable Partner Plan',
         enablePartnerHint: 'Allow partners to refer new users via referral codes',
-        signupBonus: 'Partner Signup Bonus',
-        signupBonusHint: 'Bonus balance granted to users who register via a partner referral code (USD)'
       },
       site: {
         title: 'Site Settings',

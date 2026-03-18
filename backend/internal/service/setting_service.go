@@ -517,7 +517,6 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 
 	// 伙伴计划设置
 	updates[SettingKeyPartnerEnabled] = strconv.FormatBool(settings.PartnerEnabled)
-	updates[SettingKeyPartnerSignupBonus] = strconv.FormatFloat(settings.PartnerSignupBonus, 'f', 8, 64)
 
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
@@ -950,9 +949,6 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// 伙伴计划设置
 	result.PartnerEnabled = settings[SettingKeyPartnerEnabled] == "true"
-	if v, err := strconv.ParseFloat(settings[SettingKeyPartnerSignupBonus], 64); err == nil {
-		result.PartnerSignupBonus = v
-	}
 
 	return result
 }
@@ -2143,18 +2139,6 @@ func (s *SettingService) IsPartnerEnabled(ctx context.Context) bool {
 		return false
 	}
 	return value == "true"
-}
-
-// GetPartnerSignupBonus 获取伙伴渠道注册赠送金额
-func (s *SettingService) GetPartnerSignupBonus(ctx context.Context) float64 {
-	value, err := s.settingRepo.GetValue(ctx, SettingKeyPartnerSignupBonus)
-	if err != nil {
-		return 0
-	}
-	if v, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && v >= 0 {
-		return v
-	}
-	return 0
 }
 
 // GetBalanceConsumptionPriority 获取扣费优先级

@@ -387,10 +387,9 @@ func (h *AuthHandler) ValidatePromoCode(c *gin.Context) {
 	if partnerEnabled {
 		partner, partnerErr := h.partnerService.ValidatePartnerReferralCode(ctx, req.Code)
 		if partnerErr == nil && partner != nil {
-			signupBonus := h.settingSvc.GetPartnerSignupBonus(ctx)
 			response.Success(c, ValidatePromoCodeResponse{
 				Valid:       true,
-				BonusAmount: signupBonus,
+				BonusAmount: partner.SignupBonus,
 				Type:        "partner",
 			})
 			return

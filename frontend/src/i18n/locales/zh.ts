@@ -4376,8 +4376,6 @@ export default {
         description: '配置线下推广合作伙伴的积分和奖励规则',
         enablePartner: '启用伙伴计划',
         enablePartnerHint: '允许通过合作伙伴推荐码引导新用户注册',
-        signupBonus: '伙伴渠道注册赠送余额',
-        signupBonusHint: '通过伙伴推荐码注册的新用户将获得的赠送余额（单位：美元）'
       },
       site: {
         title: '站点设置',

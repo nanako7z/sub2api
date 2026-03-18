@@ -1830,24 +1830,7 @@
                 <Toggle v-model="form.partner_enabled" />
               </div>
 
-              <template v-if="form.partner_enabled">
-                <!-- Partner Signup Bonus -->
-                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
-                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ t('admin.settings.partner.signupBonus') }}
-                  </label>
-                  <input
-                    v-model.number="form.partner_signup_bonus"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input w-full sm:w-48"
-                  />
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.settings.partner.signupBonusHint') }}
-                  </p>
-                </div>
-              </template>
+              <template v-if="form.partner_enabled" />
             </div>
           </div>
         </div><!-- /Tab: Promotion -->
@@ -2033,7 +2016,6 @@ const form = reactive<SettingsForm>({
   balance_consumption_priority: 'normal_first' as string,
   // Partner system
   partner_enabled: false,
-  partner_signup_bonus: 0,
   // Cloudflare Turnstile
   turnstile_enabled: false,
   turnstile_site_key: '',
@@ -2334,8 +2316,7 @@ async function saveSettings() {
       referral_commission_rate: form.referral_commission_rate,
       referral_max_commission_per_user: form.referral_max_commission_per_user,
       balance_consumption_priority: form.balance_consumption_priority,
-      partner_enabled: form.partner_enabled,
-      partner_signup_bonus: form.partner_signup_bonus
+      partner_enabled: form.partner_enabled
     }
     const updated = await adminAPI.settings.updateSettings(payload)
     Object.assign(form, updated)

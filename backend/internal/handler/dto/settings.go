@@ -96,8 +96,7 @@ type SystemSettings struct {
 	BalanceConsumptionPriority   string  `json:"balance_consumption_priority"`
 
 	// 伙伴计划设置
-	PartnerEnabled     bool    `json:"partner_enabled"`
-	PartnerSignupBonus float64 `json:"partner_signup_bonus"`
+	PartnerEnabled bool `json:"partner_enabled"`
 }
 
 type DefaultSubscriptionSetting struct {

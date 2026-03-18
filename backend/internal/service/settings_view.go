@@ -84,8 +84,7 @@ type SystemSettings struct {
 	BalanceConsumptionPriority   string
 
 	// 伙伴计划设置
-	PartnerEnabled     bool
-	PartnerSignupBonus float64
+	PartnerEnabled bool
 }
 
 type DefaultSubscriptionSetting struct {

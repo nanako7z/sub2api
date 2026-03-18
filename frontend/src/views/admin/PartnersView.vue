@@ -211,7 +211,6 @@
           <div>
             <label class="input-label">
               {{ t('admin.partners.signupBonus') }}
-              <span class="ml-1 text-xs font-normal text-gray-400">({{ t('common.optional') }})</span>
             </label>
             <input
               v-model.number="createForm.signup_bonus"
@@ -219,14 +218,13 @@
               min="0"
               step="0.01"
               class="input"
-              :placeholder="t('admin.partners.signupBonusPlaceholder')"
+              required
             />
             <p class="mt-1 text-xs text-gray-400">{{ t('admin.partners.signupBonusHint') }}</p>
           </div>
           <div>
             <label class="input-label">
               {{ t('admin.partners.maxPointsPerUser') }}
-              <span class="ml-1 text-xs font-normal text-gray-400">({{ t('common.optional') }})</span>
             </label>
             <input
               v-model.number="createForm.max_points_per_user"
@@ -234,7 +232,6 @@
               min="0"
               step="0.01"
               class="input"
-              :placeholder="t('admin.partners.maxPointsPerUserPlaceholder')"
             />
             <p class="mt-1 text-xs text-gray-400">{{ t('admin.partners.maxPointsPerUserHint') }}</p>
           </div>
@@ -669,8 +666,8 @@ const handleCreate = async () => {
       phone: createForm.phone || undefined,
       referral_code: createForm.referral_code || undefined,
       notes: createForm.notes || undefined,
-      signup_bonus: createForm.signup_bonus || undefined,
-      max_points_per_user: createForm.max_points_per_user || undefined
+      signup_bonus: createForm.signup_bonus,
+      max_points_per_user: createForm.max_points_per_user
     })
     appStore.showSuccess(t('admin.partners.created'))
     showCreateDialog.value = false
@@ -701,8 +698,8 @@ const handleEdit = (partner: Partner) => {
   editForm.phone = partner.phone || ''
   editForm.status = partner.status
   editForm.notes = partner.notes || ''
-  editForm.signup_bonus = partner.signup_bonus || 0
-  editForm.max_points_per_user = partner.max_points_per_user || 0
+  editForm.signup_bonus = partner.signup_bonus ?? 0
+  editForm.max_points_per_user = partner.max_points_per_user ?? 0
   showEditDialog.value = true
 }
 
