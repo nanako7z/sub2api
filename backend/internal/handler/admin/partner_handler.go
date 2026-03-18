@@ -35,6 +35,8 @@ type PartnerResponse struct {
 	WithdrawnPoints    float64 `json:"withdrawn_points"`
 	Notes              *string `json:"notes"`
 	Status             string  `json:"status"`
+	SignupBonus        float64 `json:"signup_bonus"`
+	MaxPointsPerUser   float64 `json:"max_points_per_user"`
 	CreatedAt          string  `json:"created_at"`
 	UpdatedAt          string  `json:"updated_at"`
 	ReferredUsersCount int64   `json:"referred_users_count"`
@@ -61,6 +63,8 @@ func partnerToResponse(p *service.Partner) *PartnerResponse {
 		WithdrawnPoints:    p.WithdrawnPoints,
 		Notes:              p.Notes,
 		Status:             p.Status,
+		SignupBonus:        p.SignupBonus,
+		MaxPointsPerUser:   p.MaxPointsPerUser,
 		CreatedAt:          p.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:          p.UpdatedAt.Format(time.RFC3339),
 		ReferredUsersCount: p.ReferredUsersCount,
@@ -80,20 +84,24 @@ func commissionToResponse(c *service.PartnerCommission) *PartnerCommissionRespon
 
 // CreatePartnerRequest represents create partner request
 type CreatePartnerRequest struct {
-	PartnerName  string  `json:"partner_name" binding:"required"`
-	Email        *string `json:"email" binding:"omitempty,email"`
-	Phone        *string `json:"phone"`
-	ReferralCode string  `json:"referral_code"` // 可选，为空则自动生成
-	Notes        *string `json:"notes"`
+	PartnerName      string   `json:"partner_name" binding:"required"`
+	Email            *string  `json:"email" binding:"omitempty,email"`
+	Phone            *string  `json:"phone"`
+	ReferralCode     string   `json:"referral_code"`       // 可选，为空则自动生成
+	Notes            *string  `json:"notes"`
+	SignupBonus      *float64 `json:"signup_bonus"`        // 该伙伴渠道注册赠送余额
+	MaxPointsPerUser *float64 `json:"max_points_per_user"` // 单用户积分上限，0=无限制
 }
 
 // UpdatePartnerRequest represents update partner request
 type UpdatePartnerRequest struct {
-	PartnerName *string `json:"partner_name"`
-	Email       *string `json:"email" binding:"omitempty,email"`
-	Phone       *string `json:"phone"`
-	Notes       *string `json:"notes"`
-	Status      *string `json:"status" binding:"omitempty,oneof=active disabled"`
+	PartnerName      *string  `json:"partner_name"`
+	Email            *string  `json:"email" binding:"omitempty,email"`
+	Phone            *string  `json:"phone"`
+	Notes            *string  `json:"notes"`
+	Status           *string  `json:"status" binding:"omitempty,oneof=active disabled"`
+	SignupBonus      *float64 `json:"signup_bonus"`
+	MaxPointsPerUser *float64 `json:"max_points_per_user"`
 }
 
 // WithdrawPointsRequest represents withdraw points request
@@ -159,12 +167,23 @@ func (h *PartnerHandler) Create(c *gin.Context) {
 		return
 	}
 
+	var signupBonus float64
+	if req.SignupBonus != nil {
+		signupBonus = *req.SignupBonus
+	}
+	var maxPointsPerUser float64
+	if req.MaxPointsPerUser != nil {
+		maxPointsPerUser = *req.MaxPointsPerUser
+	}
+
 	input := &service.CreatePartnerInput{
-		PartnerName:  req.PartnerName,
-		Email:        req.Email,
-		Phone:        req.Phone,
-		ReferralCode: req.ReferralCode,
-		Notes:        req.Notes,
+		PartnerName:      req.PartnerName,
+		Email:            req.Email,
+		Phone:            req.Phone,
+		ReferralCode:     req.ReferralCode,
+		Notes:            req.Notes,
+		SignupBonus:      signupBonus,
+		MaxPointsPerUser: maxPointsPerUser,
 	}
 
 	partner, err := h.partnerService.Create(c.Request.Context(), input)
@@ -192,11 +211,13 @@ func (h *PartnerHandler) Update(c *gin.Context) {
 	}
 
 	input := &service.UpdatePartnerInput{
-		PartnerName: req.PartnerName,
-		Email:       req.Email,
-		Phone:       req.Phone,
-		Notes:       req.Notes,
-		Status:      req.Status,
+		PartnerName:      req.PartnerName,
+		Email:            req.Email,
+		Phone:            req.Phone,
+		Notes:            req.Notes,
+		Status:           req.Status,
+		SignupBonus:      req.SignupBonus,
+		MaxPointsPerUser: req.MaxPointsPerUser,
 	}
 
 	partner, err := h.partnerService.Update(c.Request.Context(), id, input)

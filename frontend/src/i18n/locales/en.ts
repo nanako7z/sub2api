@@ -3207,6 +3207,12 @@ export default {
       referralCode: 'Referral Code',
       referralCodePlaceholder: 'Enter code or leave empty to auto-generate',
       autoGenerate: 'Leave empty to auto-generate',
+      signupBonus: 'Signup Bonus',
+      signupBonusPlaceholder: '0 = no bonus',
+      signupBonusHint: 'Gift balance awarded to new users registering via this partner code',
+      maxPointsPerUser: 'Max Points Per User',
+      maxPointsPerUserPlaceholder: '0 = unlimited',
+      maxPointsPerUserHint: 'Max points earnable from a single referred user, 0 = unlimited',
       notes: 'Notes',
       notesPlaceholder: 'Optional notes',
       status: 'Status',
@@ -4981,6 +4987,7 @@ export default {
     date: 'Date',
     ruleSignupBonus: 'Your friend will receive ${amount} bonus balance upon registering with your referral code',
     ruleCommission: "You will earn {rate}% of your friend's spending as bonus balance commission",
+    ruleMaxCommission: 'Maximum total commission from a single referred friend is capped at ${amount}',
     ruleNormalBalanceOnly: 'Commission is only generated from regular balance (top-up balance) spending; bonus balance spending does not count'
   },
 

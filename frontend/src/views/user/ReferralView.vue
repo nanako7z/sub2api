@@ -126,6 +126,14 @@
                 {{ t('referral.ruleCommission', { rate: stats.commission_rate.toFixed(1) }) }}
               </p>
             </div>
+            <div v-if="stats.max_commission_per_user > 0" class="flex items-start gap-3">
+              <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                <svg class="h-3.5 w-3.5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+              </div>
+              <p class="text-sm text-gray-700 dark:text-gray-300">
+                {{ t('referral.ruleMaxCommission', { amount: stats.max_commission_per_user.toFixed(2) }) }}
+              </p>
+            </div>
             <div class="flex items-start gap-3">
               <div class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
                 <svg class="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
@@ -218,7 +226,8 @@ const stats = ref<ReferralStats>({
   total_referred: 0,
   total_commission: 0,
   signup_bonus: 0,
-  commission_rate: 0
+  commission_rate: 0,
+  max_commission_per_user: 0
 })
 
 const referredUsers = ref<ReferredUser[]>([])

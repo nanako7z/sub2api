@@ -15,6 +15,8 @@ export interface Partner {
   withdrawn_points: number
   notes: string
   status: string
+  signup_bonus: number
+  max_points_per_user: number
   created_at: string
   updated_at: string
   referred_users_count: number
@@ -36,6 +38,8 @@ export interface CreatePartnerRequest {
   phone?: string
   referral_code?: string
   notes?: string
+  signup_bonus?: number
+  max_points_per_user?: number
 }
 
 export interface UpdatePartnerRequest {
@@ -44,6 +48,8 @@ export interface UpdatePartnerRequest {
   phone?: string
   notes?: string
   status?: string
+  signup_bonus?: number
+  max_points_per_user?: number
 }
 
 export async function list(

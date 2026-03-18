@@ -13,6 +13,8 @@ type Partner struct {
 	WithdrawnPoints    float64
 	Notes              *string
 	Status             string
+	SignupBonus        float64 // 该伙伴渠道注册赠送余额
+	MaxPointsPerUser   float64 // 单个被推荐用户可获取的最大积分，0=无限制
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	ReferredUsersCount int64 // 已推广用户数（users.partner_id = id 的行数）

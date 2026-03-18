@@ -24,6 +24,7 @@ type PartnerRepository interface {
 	// 积分记录
 	CreateCommission(ctx context.Context, commission *PartnerCommission) error
 	CreateCommissionAndAddPoints(ctx context.Context, commission *PartnerCommission) error
+	CreateCommissionWithCapAndAddPoints(ctx context.Context, commission *PartnerCommission, maxPerUser float64) (float64, error)
 	ListCommissions(ctx context.Context, partnerID int64, params pagination.PaginationParams) ([]PartnerCommission, *pagination.PaginationResult, error)
 
 	// Dashboard analytics

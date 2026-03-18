@@ -3366,6 +3366,12 @@ export default {
       referralCode: '推荐码',
       referralCodePlaceholder: '输入推荐码或留空自动生成',
       autoGenerate: '留空自动生成',
+      signupBonus: '注册赠送余额',
+      signupBonusPlaceholder: '0 表示不赠送',
+      signupBonusHint: '通过该伙伴推荐码注册的新用户获得的赠送余额',
+      maxPointsPerUser: '单用户积分上限',
+      maxPointsPerUserPlaceholder: '0 表示无限制',
+      maxPointsPerUserHint: '从单个被推荐用户可获取的最大积分，0 表示无限制',
       notes: '备注',
       notesPlaceholder: '可选备注信息',
       status: '状态',
@@ -5171,6 +5177,7 @@ export default {
     date: '日期',
     ruleSignupBonus: '好友通过您的推荐码注册，将获得 ${amount} 赠送余额',
     ruleCommission: '好友每次消费时，您将获得消费金额 {rate}% 的赠送余额返佣',
+    ruleMaxCommission: '从单个好友可获取的最大返佣总额为 ${amount}',
     ruleNormalBalanceOnly: '仅好友使用普通余额（充值余额）消费时产生返佣，赠送余额消费不计入返佣'
   },
 

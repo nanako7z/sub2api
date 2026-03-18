@@ -262,11 +262,12 @@ func (s *ReferralService) GetStats(ctx context.Context, userID int64) (*Referral
 	}
 
 	return &ReferralStats{
-		ReferralCode:    code,
-		TotalReferred:   totalReferred,
-		TotalCommission: totalCommission,
-		SignupBonus:     s.settingService.GetReferralSignupBonus(ctx),
-		CommissionRate:  s.settingService.GetReferralCommissionRate(ctx),
+		ReferralCode:         code,
+		TotalReferred:        totalReferred,
+		TotalCommission:      totalCommission,
+		SignupBonus:          s.settingService.GetReferralSignupBonus(ctx),
+		CommissionRate:       s.settingService.GetReferralCommissionRate(ctx),
+		MaxCommissionPerUser: s.settingService.GetReferralMaxCommissionPerUser(ctx),
 	}, nil
 }
 

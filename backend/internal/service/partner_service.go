@@ -36,20 +36,24 @@ func NewPartnerService(
 
 // CreatePartnerInput 创建合作伙伴输入
 type CreatePartnerInput struct {
-	PartnerName  string
-	Email        *string
-	Phone        *string
-	ReferralCode string // 可选，为空则自动生成（带 P 前缀）
-	Notes        *string
+	PartnerName      string
+	Email            *string
+	Phone            *string
+	ReferralCode     string // 可选，为空则自动生成（带 P 前缀）
+	Notes            *string
+	SignupBonus      float64 // 该伙伴渠道注册赠送余额
+	MaxPointsPerUser float64 // 单个被推荐用户可获取的最大积分，0=无限制
 }
 
 // UpdatePartnerInput 更新合作伙伴输入
 type UpdatePartnerInput struct {
-	PartnerName *string
-	Email       *string
-	Phone       *string
-	Notes       *string
-	Status      *string
+	PartnerName      *string
+	Email            *string
+	Phone            *string
+	Notes            *string
+	Status           *string
+	SignupBonus      *float64
+	MaxPointsPerUser *float64
 }
 
 // Create 创建合作伙伴
@@ -78,12 +82,14 @@ func (s *PartnerService) Create(ctx context.Context, input *CreatePartnerInput) 
 	}
 
 	partner := &Partner{
-		PartnerName:  input.PartnerName,
-		Email:        input.Email,
-		Phone:        input.Phone,
-		ReferralCode: code,
-		Notes:        input.Notes,
-		Status:       StatusActive,
+		PartnerName:      input.PartnerName,
+		Email:            input.Email,
+		Phone:            input.Phone,
+		ReferralCode:     code,
+		Notes:            input.Notes,
+		Status:           StatusActive,
+		SignupBonus:      input.SignupBonus,
+		MaxPointsPerUser: input.MaxPointsPerUser,
 	}
 
 	if err := s.partnerRepo.Create(ctx, partner); err != nil {
@@ -113,6 +119,12 @@ func (s *PartnerService) Update(ctx context.Context, id int64, input *UpdatePart
 	}
 	if input.Status != nil {
 		partner.Status = *input.Status
+	}
+	if input.SignupBonus != nil {
+		partner.SignupBonus = *input.SignupBonus
+	}
+	if input.MaxPointsPerUser != nil {
+		partner.MaxPointsPerUser = *input.MaxPointsPerUser
 	}
 
 	// 验证至少一个联系方式
@@ -192,9 +204,15 @@ func (s *PartnerService) RecordCommission(ctx context.Context, referredUserID in
 		SourceCost:     normalBalanceCost,
 	}
 
-	// 原子化创建积分记录 + 增加待结算积分，在同一事务中完成
-	if err := s.partnerRepo.CreateCommissionAndAddPoints(ctx, commission); err != nil {
+	// 原子化创建积分记录 + 增加待结算积分 + cap 检查，在同一事务中完成
+	maxPerUser := partner.MaxPointsPerUser
+	actualPoints, err := s.partnerRepo.CreateCommissionWithCapAndAddPoints(ctx, commission, maxPerUser)
+	if err != nil {
 		slog.Error("failed to create partner commission and add points", "partner_id", partnerID, "points", points, "error", err)
+		return
+	}
+	if actualPoints <= 0 {
+		return // 已达上限
 	}
 }
 

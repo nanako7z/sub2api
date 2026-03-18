@@ -207,6 +207,38 @@
             :placeholder="t('admin.partners.referralCodePlaceholder')"
           />
         </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="input-label">
+              {{ t('admin.partners.signupBonus') }}
+              <span class="ml-1 text-xs font-normal text-gray-400">({{ t('common.optional') }})</span>
+            </label>
+            <input
+              v-model.number="createForm.signup_bonus"
+              type="number"
+              min="0"
+              step="0.01"
+              class="input"
+              :placeholder="t('admin.partners.signupBonusPlaceholder')"
+            />
+            <p class="mt-1 text-xs text-gray-400">{{ t('admin.partners.signupBonusHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">
+              {{ t('admin.partners.maxPointsPerUser') }}
+              <span class="ml-1 text-xs font-normal text-gray-400">({{ t('common.optional') }})</span>
+            </label>
+            <input
+              v-model.number="createForm.max_points_per_user"
+              type="number"
+              min="0"
+              step="0.01"
+              class="input"
+              :placeholder="t('admin.partners.maxPointsPerUserPlaceholder')"
+            />
+            <p class="mt-1 text-xs text-gray-400">{{ t('admin.partners.maxPointsPerUserHint') }}</p>
+          </div>
+        </div>
         <div>
           <label class="input-label">
             {{ t('admin.partners.notes') }}
@@ -268,6 +300,30 @@
         <div>
           <label class="input-label">{{ t('admin.partners.status') }}</label>
           <Select v-model="editForm.status" :options="statusOptions" />
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="input-label">{{ t('admin.partners.signupBonus') }}</label>
+            <input
+              v-model.number="editForm.signup_bonus"
+              type="number"
+              min="0"
+              step="0.01"
+              class="input"
+            />
+            <p class="mt-1 text-xs text-gray-400">{{ t('admin.partners.signupBonusHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.partners.maxPointsPerUser') }}</label>
+            <input
+              v-model.number="editForm.max_points_per_user"
+              type="number"
+              min="0"
+              step="0.01"
+              class="input"
+            />
+            <p class="mt-1 text-xs text-gray-400">{{ t('admin.partners.maxPointsPerUserHint') }}</p>
+          </div>
         </div>
         <div>
           <label class="input-label">
@@ -477,7 +533,9 @@ const createForm = reactive({
   email: '',
   phone: '',
   referral_code: '',
-  notes: ''
+  notes: '',
+  signup_bonus: 0,
+  max_points_per_user: 0
 })
 
 const editForm = reactive({
@@ -485,7 +543,9 @@ const editForm = reactive({
   email: '',
   phone: '',
   status: 'active' as string,
-  notes: ''
+  notes: '',
+  signup_bonus: 0,
+  max_points_per_user: 0
 })
 
 // Options
@@ -608,7 +668,9 @@ const handleCreate = async () => {
       email: createForm.email || undefined,
       phone: createForm.phone || undefined,
       referral_code: createForm.referral_code || undefined,
-      notes: createForm.notes || undefined
+      notes: createForm.notes || undefined,
+      signup_bonus: createForm.signup_bonus || undefined,
+      max_points_per_user: createForm.max_points_per_user || undefined
     })
     appStore.showSuccess(t('admin.partners.created'))
     showCreateDialog.value = false
@@ -627,6 +689,8 @@ const resetCreateForm = () => {
   createForm.phone = ''
   createForm.referral_code = ''
   createForm.notes = ''
+  createForm.signup_bonus = 0
+  createForm.max_points_per_user = 0
 }
 
 // Edit
@@ -637,6 +701,8 @@ const handleEdit = (partner: Partner) => {
   editForm.phone = partner.phone || ''
   editForm.status = partner.status
   editForm.notes = partner.notes || ''
+  editForm.signup_bonus = partner.signup_bonus || 0
+  editForm.max_points_per_user = partner.max_points_per_user || 0
   showEditDialog.value = true
 }
 
@@ -655,7 +721,9 @@ const handleUpdate = async () => {
       email: editForm.email || undefined,
       phone: editForm.phone || undefined,
       status: editForm.status,
-      notes: editForm.notes
+      notes: editForm.notes,
+      signup_bonus: editForm.signup_bonus,
+      max_points_per_user: editForm.max_points_per_user
     })
     appStore.showSuccess(t('admin.partners.updated'))
     closeEditDialog()

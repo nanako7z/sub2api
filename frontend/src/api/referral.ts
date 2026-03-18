@@ -11,6 +11,7 @@ export interface ReferralStats {
   total_commission: number
   signup_bonus: number
   commission_rate: number
+  max_commission_per_user: number
 }
 
 export interface ReferredUser {

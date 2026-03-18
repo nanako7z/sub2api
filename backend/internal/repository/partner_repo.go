@@ -22,8 +22,8 @@ func NewPartnerRepository(sqlDB *sql.DB) service.PartnerRepository {
 
 func (r *partnerRepository) Create(ctx context.Context, partner *service.Partner) error {
 	query := `
-		INSERT INTO partners (partner_name, email, phone, referral_code, notes, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+		INSERT INTO partners (partner_name, email, phone, referral_code, notes, status, signup_bonus, max_points_per_user, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
 		RETURNING id, created_at, updated_at`
 	return r.sql.QueryRowContext(ctx, query,
 		partner.PartnerName,
@@ -32,16 +32,19 @@ func (r *partnerRepository) Create(ctx context.Context, partner *service.Partner
 		partner.ReferralCode,
 		partner.Notes,
 		partner.Status,
+		partner.SignupBonus,
+		partner.MaxPointsPerUser,
 	).Scan(&partner.ID, &partner.CreatedAt, &partner.UpdatedAt)
 }
 
 func (r *partnerRepository) GetByID(ctx context.Context, id int64) (*service.Partner, error) {
-	query := `SELECT id, partner_name, email, phone, referral_code, pending_points, withdrawn_points, notes, status, created_at, updated_at
+	query := `SELECT id, partner_name, email, phone, referral_code, pending_points, withdrawn_points, notes, status, signup_bonus, max_points_per_user, created_at, updated_at
 		FROM partners WHERE id = $1`
 	p := &service.Partner{}
 	err := r.sql.QueryRowContext(ctx, query, id).Scan(
 		&p.ID, &p.PartnerName, &p.Email, &p.Phone, &p.ReferralCode,
 		&p.PendingPoints, &p.WithdrawnPoints, &p.Notes, &p.Status,
+		&p.SignupBonus, &p.MaxPointsPerUser,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -54,12 +57,13 @@ func (r *partnerRepository) GetByID(ctx context.Context, id int64) (*service.Par
 }
 
 func (r *partnerRepository) GetByReferralCode(ctx context.Context, code string) (*service.Partner, error) {
-	query := `SELECT id, partner_name, email, phone, referral_code, pending_points, withdrawn_points, notes, status, created_at, updated_at
+	query := `SELECT id, partner_name, email, phone, referral_code, pending_points, withdrawn_points, notes, status, signup_bonus, max_points_per_user, created_at, updated_at
 		FROM partners WHERE UPPER(referral_code) = UPPER($1)`
 	p := &service.Partner{}
 	err := r.sql.QueryRowContext(ctx, query, code).Scan(
 		&p.ID, &p.PartnerName, &p.Email, &p.Phone, &p.ReferralCode,
 		&p.PendingPoints, &p.WithdrawnPoints, &p.Notes, &p.Status,
+		&p.SignupBonus, &p.MaxPointsPerUser,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -72,7 +76,7 @@ func (r *partnerRepository) GetByReferralCode(ctx context.Context, code string) 
 }
 
 func (r *partnerRepository) Update(ctx context.Context, partner *service.Partner) error {
-	query := `UPDATE partners SET partner_name = $2, email = $3, phone = $4, notes = $5, status = $6, updated_at = NOW()
+	query := `UPDATE partners SET partner_name = $2, email = $3, phone = $4, notes = $5, status = $6, signup_bonus = $7, max_points_per_user = $8, updated_at = NOW()
 		WHERE id = $1
 		RETURNING updated_at`
 	err := r.sql.QueryRowContext(ctx, query,
@@ -82,6 +86,8 @@ func (r *partnerRepository) Update(ctx context.Context, partner *service.Partner
 		partner.Phone,
 		partner.Notes,
 		partner.Status,
+		partner.SignupBonus,
+		partner.MaxPointsPerUser,
 	).Scan(&partner.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return fmt.Errorf("partner not found")
@@ -172,7 +178,7 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 
 	// List
 	listQuery := fmt.Sprintf(
-		`SELECT p.id, p.partner_name, p.email, p.phone, p.referral_code, p.pending_points, p.withdrawn_points, p.notes, p.status, p.created_at, p.updated_at,
+		`SELECT p.id, p.partner_name, p.email, p.phone, p.referral_code, p.pending_points, p.withdrawn_points, p.notes, p.status, p.signup_bonus, p.max_points_per_user, p.created_at, p.updated_at,
 		       (SELECT COUNT(*) FROM users u WHERE u.partner_id = p.id) AS referred_users_count
 		FROM partners p %s ORDER BY p.created_at DESC LIMIT $%d OFFSET $%d`,
 		where, argIdx, argIdx+1,
@@ -191,6 +197,7 @@ func (r *partnerRepository) List(ctx context.Context, params pagination.Paginati
 		if err := rows.Scan(
 			&p.ID, &p.PartnerName, &p.Email, &p.Phone, &p.ReferralCode,
 			&p.PendingPoints, &p.WithdrawnPoints, &p.Notes, &p.Status,
+			&p.SignupBonus, &p.MaxPointsPerUser,
 			&p.CreatedAt, &p.UpdatedAt, &p.ReferredUsersCount,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan partner: %w", err)
@@ -301,6 +308,77 @@ func (r *partnerRepository) CreateCommissionAndAddPoints(ctx context.Context, co
 		return fmt.Errorf("commit tx: %w", err)
 	}
 	return nil
+}
+
+// CreateCommissionWithCapAndAddPoints 原子化创建积分记录并增加伙伴待结算积分，同时检查单用户积分上限。
+// maxPerUser <= 0 表示无上限。返回实际入账积分（可能被 cap 截断或为 0）。
+func (r *partnerRepository) CreateCommissionWithCapAndAddPoints(ctx context.Context, commission *service.PartnerCommission, maxPerUser float64) (float64, error) {
+	tx, err := r.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	actualPoints := commission.Points
+
+	if maxPerUser > 0 {
+		// 查询该伙伴从该用户已累计的积分
+		var existing float64
+		err := tx.QueryRowContext(ctx,
+			`SELECT COALESCE(SUM(points), 0) FROM partner_commissions WHERE partner_id = $1 AND referred_user_id = $2`,
+			commission.PartnerID, commission.ReferredUserID,
+		).Scan(&existing)
+		if err != nil {
+			return 0, fmt.Errorf("get existing points: %w", err)
+		}
+
+		remaining := maxPerUser - existing
+		if remaining <= 0 {
+			return 0, nil // 已达上限
+		}
+		if actualPoints > remaining {
+			actualPoints = remaining
+		}
+	}
+
+	// 插入积分记录
+	now := time.Now()
+	commission.CreatedAt = now
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO partner_commissions (partner_id, referred_user_id, points, source_cost, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`,
+		commission.PartnerID,
+		commission.ReferredUserID,
+		actualPoints,
+		commission.SourceCost,
+		now,
+	).Scan(&commission.ID)
+	if err != nil {
+		return 0, fmt.Errorf("insert partner commission: %w", err)
+	}
+
+	// 增加伙伴待结算积分
+	result, err := tx.ExecContext(ctx,
+		`UPDATE partners SET pending_points = pending_points + $2, updated_at = NOW() WHERE id = $1`,
+		commission.PartnerID, actualPoints,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("add pending points: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("get rows affected: %w", err)
+	}
+	if affected == 0 {
+		return 0, fmt.Errorf("partner not found")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit tx: %w", err)
+	}
+	commission.Points = actualPoints
+	return actualPoints, nil
 }
 
 func (r *partnerRepository) ListCommissions(ctx context.Context, partnerID int64, params pagination.PaginationParams) ([]service.PartnerCommission, *pagination.PaginationResult, error) {

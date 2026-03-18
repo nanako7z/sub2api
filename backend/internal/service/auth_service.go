@@ -253,8 +253,8 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 				if err := s.userRepo.SetPartnerID(ctx, user.ID, partner.ID); err != nil {
 					logger.LegacyPrintf("service.auth", "[Auth] Failed to set partner for user %d: %v", user.ID, err)
 				} else {
-					// 发放伙伴渠道独立注册赠送余额
-					partnerSignupBonus := s.settingService.GetPartnerSignupBonus(ctx)
+					// 发放伙伴渠道独立注册赠送余额（使用该伙伴自身的设置）
+					partnerSignupBonus := partner.SignupBonus
 					if partnerSignupBonus > 0 {
 						if err := s.userRepo.UpdateGiftBalance(ctx, user.ID, partnerSignupBonus); err != nil {
 							logger.LegacyPrintf("service.auth", "[Auth] Failed to give partner signup bonus to user %d: %v", user.ID, err)
