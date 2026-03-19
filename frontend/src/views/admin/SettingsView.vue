@@ -1692,6 +1692,32 @@
 
         <!-- Tab: Promotion (Referral + Partner) -->
         <div v-show="activeTab === 'promotion'" class="space-y-6">
+          <!-- Billing Priority Settings -->
+          <div class="card">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t('admin.settings.billing.title') }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.billing.description') }}
+              </p>
+            </div>
+            <div class="space-y-4 p-6">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.billing.balancePriority') }}
+                </label>
+                <select v-model="form.balance_consumption_priority" class="input w-full sm:w-64">
+                  <option value="normal_first">{{ t('admin.settings.billing.normalFirst') }}</option>
+                  <option value="gift_first">{{ t('admin.settings.billing.giftFirst') }}</option>
+                </select>
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.billing.balancePriorityHint') }}
+                </p>
+              </div>
+            </div>
+          </div>
+
           <!-- Referral Settings -->
           <div class="card">
             <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -1789,19 +1815,6 @@
                   </p>
                 </div>
 
-                <!-- Balance Consumption Priority -->
-                <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
-                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ t('admin.settings.referral.balancePriority') }}
-                  </label>
-                  <select v-model="form.balance_consumption_priority" class="input w-full sm:w-64">
-                    <option value="normal_first">{{ t('admin.settings.referral.normalFirst') }}</option>
-                    <option value="gift_first">{{ t('admin.settings.referral.giftFirst') }}</option>
-                  </select>
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.settings.referral.balancePriorityHint') }}
-                  </p>
-                </div>
               </template>
             </div>
           </div>

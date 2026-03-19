@@ -4202,10 +4202,14 @@ export default {
         commissionRateHint: 'Percentage of referred user spending that the referrer earns as commission',
         maxCommission: 'Max Commission Per User',
         maxCommissionHint: 'Maximum total commission from a single referred user, 0 = unlimited (in USD)',
+      },
+      billing: {
+        title: 'Billing Settings',
+        description: 'Configure balance consumption rules for user spending',
         balancePriority: 'Balance Consumption Priority',
         balancePriorityHint: 'Which balance type to consume first when a user makes a request',
         normalFirst: 'Normal Balance First',
-        giftFirst: 'Gift Balance First'
+        giftFirst: 'Gift Balance First',
       },
       partner: {
         title: 'Partner Plan Settings',

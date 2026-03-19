@@ -4366,10 +4366,14 @@ export default {
         commissionRateHint: '被推荐用户每次消费时，推荐人获得的返佣百分比',
         maxCommission: '单用户最大返佣总额',
         maxCommissionHint: '单个被推荐用户累计返佣上限，0 表示无限制（单位：美元）',
+      },
+      billing: {
+        title: '扣费设置',
+        description: '配置用户消费时的余额扣费规则',
         balancePriority: '扣费优先级',
         balancePriorityHint: '用户消费时优先使用哪种余额',
         normalFirst: '优先普通余额',
-        giftFirst: '优先赠送余额'
+        giftFirst: '优先赠送余额',
       },
       partner: {
         title: '伙伴计划设置',
