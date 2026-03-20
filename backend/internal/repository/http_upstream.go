@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"compress/flate"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +23,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 )
 
 // 默认配置常量
@@ -145,6 +149,9 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		return nil, err
 	}
 
+	// 手动设置 Accept-Encoding 时 Go 不自动解压，需要在此统一处理
+	decompressResponse(resp)
+
 	// 包装响应体，在关闭时自动减少计数并更新时间戳
 	// 这确保了流式响应（如 SSE）在完全读取前不会被淘汰
 	resp.Body = wrapTrackedBody(resp.Body, func() {
@@ -219,6 +226,9 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 
 	slog.Debug("tls_fingerprint_request_success", "account_id", accountID, "status", resp.StatusCode)
+
+	// 手动设置 Accept-Encoding 时 Go 不自动解压，需要在此统一处理
+	decompressResponse(resp)
 
 	// 包装响应体，在关闭时自动减少计数并更新时间戳
 	resp.Body = wrapTrackedBody(resp.Body, func() {
@@ -887,4 +897,63 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 		return body
 	}
 	return &trackedBody{ReadCloser: body, onClose: onClose}
+}
+
+// decompressResponse 根据 Content-Encoding 解压响应体并清除该头。
+// 当请求手动设置了 Accept-Encoding 时（如 TLS 指纹伪装场景），Go 的
+// http.Transport 不会自动解压响应体，需要手动处理。
+// 如果 Content-Encoding 为空（Go 已自动解压或上游未压缩），直接返回原始响应。
+func decompressResponse(resp *http.Response) {
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	encoding := strings.ToLower(resp.Header.Get("Content-Encoding"))
+	if encoding == "" {
+		return
+	}
+
+	var decompressed io.ReadCloser
+	var err error
+	switch encoding {
+	case "gzip":
+		decompressed, err = gzip.NewReader(resp.Body)
+	case "br":
+		decompressed = io.NopCloser(brotli.NewReader(resp.Body))
+	case "deflate":
+		decompressed = flate.NewReader(resp.Body)
+	case "zstd":
+		var dec *zstd.Decoder
+		dec, err = zstd.NewReader(resp.Body)
+		if err == nil {
+			decompressed = io.NopCloser(dec)
+		}
+	default:
+		return
+	}
+	if err != nil {
+		// 解压器创建失败，保留原始 body，调用方会读到乱码但不会 panic
+		slog.Warn("decompress_response_failed", "encoding", encoding, "error", err)
+		return
+	}
+
+	// 用 decompressedBody 包装：Close 时同时关闭解压器和原始 body
+	resp.Body = &decompressedBody{reader: decompressed, original: resp.Body}
+	resp.Header.Del("Content-Encoding")
+	resp.Header.Del("Content-Length") // 解压后长度已变化
+	resp.ContentLength = -1
+}
+
+// decompressedBody 包装解压后的 reader，Close 时同时关闭解压器和原始 body。
+type decompressedBody struct {
+	reader   io.ReadCloser // 解压 reader
+	original io.ReadCloser // 原始响应体（需要关闭以释放连接）
+}
+
+func (d *decompressedBody) Read(p []byte) (int, error) {
+	return d.reader.Read(p)
+}
+
+func (d *decompressedBody) Close() error {
+	_ = d.reader.Close()
+	return d.original.Close()
 }
