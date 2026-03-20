@@ -1221,8 +1221,103 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 	return min
 }
 
+// handleConcurrencyError handles concurrency-related errors with proper 429 response
+func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error",
+		fmt.Sprintf("Concurrency limit exceeded for %s, please retry later", slotType), streamStarted)
+}
 
-// checkClaudeCodeVersion 检查 Claude Code 客户端版本是否满足最低要求
+func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
+	statusCode := failoverErr.StatusCode
+	responseBody := failoverErr.ResponseBody
+
+	// 先检查透传规则
+	if h.errorPassthroughService != nil && len(responseBody) > 0 {
+		if rule := h.errorPassthroughService.MatchRule(platform, statusCode, responseBody); rule != nil {
+			// 确定响应状态码
+			respCode := statusCode
+			if !rule.PassthroughCode && rule.ResponseCode != nil {
+				respCode = *rule.ResponseCode
+			}
+
+			// 确定响应消息
+			msg := service.ExtractUpstreamErrorMessage(responseBody)
+			if !rule.PassthroughBody && rule.CustomMessage != nil {
+				msg = *rule.CustomMessage
+			}
+
+			if rule.SkipMonitoring {
+				c.Set(service.OpsSkipPassthroughKey, true)
+			}
+
+			h.handleStreamingAwareError(c, respCode, "upstream_error", msg, streamStarted)
+			return
+		}
+	}
+
+	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
+	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
+	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
+
+	// 使用默认的错误映射
+	status, errType, errMsg := h.mapUpstreamError(statusCode)
+	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
+}
+
+// handleFailoverExhaustedSimple 简化版本，用于没有响应体的情况
+func (h *GatewayHandler) handleFailoverExhaustedSimple(c *gin.Context, statusCode int, streamStarted bool) {
+	status, errType, errMsg := h.mapUpstreamError(statusCode)
+	service.SetOpsUpstreamError(c, statusCode, errMsg, "")
+	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
+}
+
+func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) {
+	switch statusCode {
+	case 401:
+		return http.StatusBadGateway, "upstream_error", "Upstream authentication failed, please contact administrator"
+	case 403:
+		return http.StatusBadGateway, "upstream_error", "Upstream access forbidden, please contact administrator"
+	case 429:
+		return http.StatusTooManyRequests, "rate_limit_error", "Upstream rate limit exceeded, please retry later"
+	case 529:
+		return http.StatusServiceUnavailable, "overloaded_error", "Upstream service overloaded, please retry later"
+	case 500, 502, 503, 504:
+		return http.StatusBadGateway, "upstream_error", "Upstream service temporarily unavailable"
+	default:
+		return http.StatusBadGateway, "upstream_error", "Upstream request failed"
+	}
+}
+
+// handleStreamingAwareError handles errors that may occur after streaming has started
+func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	if streamStarted {
+		// Stream already started, send error as SSE event then close
+		flusher, ok := c.Writer.(http.Flusher)
+		if ok {
+			// SSE 错误事件固定 schema，使用 Quote 直拼可避免额外 Marshal 分配。
+			errorEvent := `data: {"type":"error","error":{"type":` + strconv.Quote(errType) + `,"message":` + strconv.Quote(message) + `}}` + "\n\n"
+			if _, err := fmt.Fprint(c.Writer, errorEvent); err != nil {
+				_ = c.Error(err)
+			}
+			flusher.Flush()
+		}
+		return
+	}
+
+	// Normal case: return JSON response with proper status code
+	h.errorResponse(c, status, errType, message)
+}
+
+// ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
+func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool) bool {
+	if c == nil || c.Writer == nil || c.Writer.Written() {
+		return false
+	}
+	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed", streamStarted)
+	return true
+}
+
+// checkClaudeCodeVersion 检查 Claude Code 客户端版本是否满足版本要求
 // 仅对已识别的 Claude Code 客户端执行，count_tokens 路径除外
 func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {
 	ctx := c.Request.Context()
@@ -1235,8 +1330,8 @@ func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {
 		return true
 	}
 
-	minVersion := h.settingService.GetMinClaudeCodeVersion(ctx)
-	if minVersion == "" {
+	minVersion, maxVersion := h.settingService.GetClaudeCodeVersionBounds(ctx)
+	if minVersion == "" && maxVersion == "" {
 		return true // 未设置，不检查
 	}
 
@@ -1247,10 +1342,19 @@ func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {
 		return false
 	}
 
-	if service.CompareVersions(clientVersion, minVersion) < 0 {
+	if minVersion != "" && service.CompareVersions(clientVersion, minVersion) < 0 {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error",
 			fmt.Sprintf("Your Claude Code version (%s) is below the minimum required version (%s). Please update: npm update -g @anthropic-ai/claude-code",
 				clientVersion, minVersion))
+		return false
+	}
+
+	if maxVersion != "" && service.CompareVersions(clientVersion, maxVersion) > 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error",
+			fmt.Sprintf("Your Claude Code version (%s) exceeds the maximum allowed version (%s). "+
+				"Please downgrade: npm install -g @anthropic-ai/claude-code@%s && "+
+				"set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 to prevent auto-upgrade",
+				clientVersion, maxVersion, maxVersion))
 		return false
 	}
 

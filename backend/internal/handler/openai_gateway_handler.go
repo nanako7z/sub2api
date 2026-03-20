@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,16 @@ type OpenAIGatewayHandler struct {
 	concurrencyHelper  *ConcurrencyHelper
 	maxAccountSwitches int
 	cfg                *config.Config
+}
+
+func resolveOpenAIForwardDefaultMappedModel(apiKey *service.APIKey, fallbackModel string) string {
+	if fallbackModel = strings.TrimSpace(fallbackModel); fallbackModel != "" {
+		return fallbackModel
+	}
+	if apiKey == nil || apiKey.Group == nil {
+		return ""
+	}
+	return strings.TrimSpace(apiKey.Group.DefaultMappedModel)
 }
 
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
@@ -241,7 +252,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, lastFailoverErr, "openai", streamStarted)
+				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 			} else {
 				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 			}
@@ -315,7 +326,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {
-					h.handleFailoverExhausted(c, failoverErr, "openai", streamStarted)
+					h.handleFailoverExhausted(c, failoverErr, streamStarted)
 					return
 				}
 				switchCount++
@@ -658,9 +669,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
 
-		// 仅在调度时实际触发了降级（原模型无可用账号、改用默认模型重试成功）时，
-		// 才将降级模型传给 Forward 层做模型替换；否则保持用户请求的原始模型。
-		defaultMappedModel := c.GetString("openai_messages_fallback_model")
+		// Forward 层需要始终拿到 group 默认映射模型，这样未命中账号级映射的
+		// Claude 兼容模型才不会在后续 Codex 规范化中意外退化到 gpt-5.1。
+		defaultMappedModel := resolveOpenAIForwardDefaultMappedModel(apiKey, c.GetString("openai_messages_fallback_model"))
 		result, err := h.gatewayService.ForwardAsAnthropic(c.Request.Context(), c, account, body, promptCacheKey, defaultMappedModel)
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -1378,6 +1389,123 @@ func getContextInt64(c *gin.Context, key string) (int64, bool) {
 	}
 }
 
+func (h *OpenAIGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+	if task == nil {
+		return
+	}
+	if h.usageRecordWorkerPool != nil {
+		h.usageRecordWorkerPool.Submit(task)
+		return
+	}
+	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.L().With(
+				zap.String("component", "handler.openai_gateway.responses"),
+				zap.Any("panic", recovered),
+			).Error("openai.usage_record_task_panic_recovered")
+		}
+	}()
+	task(ctx)
+}
+
+// handleConcurrencyError handles concurrency-related errors with proper 429 response
+func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error",
+		fmt.Sprintf("Concurrency limit exceeded for %s, please retry later", slotType), streamStarted)
+}
+
+func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
+	statusCode := failoverErr.StatusCode
+	responseBody := failoverErr.ResponseBody
+
+	// 先检查透传规则
+	if h.errorPassthroughService != nil && len(responseBody) > 0 {
+		if rule := h.errorPassthroughService.MatchRule("openai", statusCode, responseBody); rule != nil {
+			// 确定响应状态码
+			respCode := statusCode
+			if !rule.PassthroughCode && rule.ResponseCode != nil {
+				respCode = *rule.ResponseCode
+			}
+
+			// 确定响应消息
+			msg := service.ExtractUpstreamErrorMessage(responseBody)
+			if !rule.PassthroughBody && rule.CustomMessage != nil {
+				msg = *rule.CustomMessage
+			}
+
+			if rule.SkipMonitoring {
+				c.Set(service.OpsSkipPassthroughKey, true)
+			}
+
+			h.handleStreamingAwareError(c, respCode, "upstream_error", msg, streamStarted)
+			return
+		}
+	}
+
+	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
+	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
+	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
+
+	// 使用默认的错误映射
+	status, errType, errMsg := h.mapUpstreamError(statusCode)
+	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
+}
+
+// handleFailoverExhaustedSimple 简化版本，用于没有响应体的情况
+func (h *OpenAIGatewayHandler) handleFailoverExhaustedSimple(c *gin.Context, statusCode int, streamStarted bool) {
+	status, errType, errMsg := h.mapUpstreamError(statusCode)
+	service.SetOpsUpstreamError(c, statusCode, errMsg, "")
+	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
+}
+
+func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, string) {
+	switch statusCode {
+	case 401:
+		return http.StatusBadGateway, "upstream_error", "Upstream authentication failed, please contact administrator"
+	case 403:
+		return http.StatusBadGateway, "upstream_error", "Upstream access forbidden, please contact administrator"
+	case 429:
+		return http.StatusTooManyRequests, "rate_limit_error", "Upstream rate limit exceeded, please retry later"
+	case 529:
+		return http.StatusServiceUnavailable, "upstream_error", "Upstream service overloaded, please retry later"
+	case 500, 502, 503, 504:
+		return http.StatusBadGateway, "upstream_error", "Upstream service temporarily unavailable"
+	default:
+		return http.StatusBadGateway, "upstream_error", "Upstream request failed"
+	}
+}
+
+// handleStreamingAwareError handles errors that may occur after streaming has started
+func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	if streamStarted {
+		// Stream already started, send error as SSE event then close
+		flusher, ok := c.Writer.(http.Flusher)
+		if ok {
+			// SSE 错误事件固定 schema，使用 Quote 直拼可避免额外 Marshal 分配。
+			errorEvent := "event: error\ndata: " + `{"error":{"type":` + strconv.Quote(errType) + `,"message":` + strconv.Quote(message) + `}}` + "\n\n"
+			if _, err := fmt.Fprint(c.Writer, errorEvent); err != nil {
+				_ = c.Error(err)
+			}
+			flusher.Flush()
+		}
+		return
+	}
+
+	// Normal case: return JSON response with proper status code
+	h.errorResponse(c, status, errType, message)
+}
+
+// ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
+func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool) bool {
+	if c == nil || c.Writer == nil || c.Writer.Written() {
+		return false
+	}
+	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed", streamStarted)
+	return true
+}
 
 func shouldLogOpenAIForwardFailureAsWarn(c *gin.Context, wroteFallback bool) bool {
 	if wroteFallback {

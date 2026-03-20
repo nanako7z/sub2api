@@ -139,14 +139,16 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 		return nil
 	}
 	out := &AdminGroup{
-		Group:                groupFromServiceBase(g),
-		ModelRouting:         g.ModelRouting,
-		ModelRoutingEnabled:  g.ModelRoutingEnabled,
-		MCPXMLInject:         g.MCPXMLInject,
-		DefaultMappedModel:   g.DefaultMappedModel,
-		SupportedModelScopes: g.SupportedModelScopes,
-		AccountCount:         g.AccountCount,
-		SortOrder:            g.SortOrder,
+		Group:                   groupFromServiceBase(g),
+		ModelRouting:            g.ModelRouting,
+		ModelRoutingEnabled:     g.ModelRoutingEnabled,
+		MCPXMLInject:            g.MCPXMLInject,
+		DefaultMappedModel:      g.DefaultMappedModel,
+		SupportedModelScopes:    g.SupportedModelScopes,
+		AccountCount:            g.AccountCount,
+		ActiveAccountCount:      g.ActiveAccountCount,
+		RateLimitedAccountCount: g.RateLimitedAccountCount,
+		SortOrder:               g.SortOrder,
 	}
 	if len(g.AccountGroups) > 0 {
 		out.AccountGroups = make([]AccountGroup, 0, len(g.AccountGroups))
@@ -278,11 +280,17 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		if limit := a.GetQuotaDailyLimit(); limit > 0 {
 			out.QuotaDailyLimit = &limit
 			used := a.GetQuotaDailyUsed()
+			if a.IsDailyQuotaPeriodExpired() {
+				used = 0
+			}
 			out.QuotaDailyUsed = &used
 		}
 		if limit := a.GetQuotaWeeklyLimit(); limit > 0 {
 			out.QuotaWeeklyLimit = &limit
 			used := a.GetQuotaWeeklyUsed()
+			if a.IsWeeklyQuotaPeriodExpired() {
+				used = 0
+			}
 			out.QuotaWeeklyUsed = &used
 		}
 		// 固定时间重置配置
@@ -525,6 +533,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		AccountID:             l.AccountID,
 		RequestID:             l.RequestID,
 		Model:                 l.Model,
+		UpstreamModel:         l.UpstreamModel,
 		ServiceTier:           l.ServiceTier,
 		ReasoningEffort:       l.ReasoningEffort,
 		InboundEndpoint:       l.InboundEndpoint,

@@ -52,6 +52,7 @@ const (
 	defaultUserGroupRateCacheTTL = 30 * time.Second
 	defaultModelsListCacheTTL    = 15 * time.Second
 	postUsageBillingTimeout      = 15 * time.Second
+	debugGatewayBodyEnv          = "SUB2API_DEBUG_GATEWAY_BODY"
 )
 
 const (
@@ -439,7 +440,6 @@ func isClaudeCodeCredentialScopeError(msg string) bool {
 // Some upstream APIs return non-standard "data:" without space (should be "data: ").
 var (
 	sseDataRe            = regexp.MustCompile(`^data:\s*`)
-	sessionIDRegex       = regexp.MustCompile(`session_([a-f0-9-]{36})`)
 	claudeCliUserAgentRe = regexp.MustCompile(`^claude-cli/\d+\.\d+\.\d+`)
 
 	// claudeCodePromptPrefixes 用于检测 Claude Code 系统提示词的前缀列表
@@ -611,6 +611,7 @@ type ForwardResult struct {
 	RequestID        string
 	Usage            ClaudeUsage
 	Model            string
+	UpstreamModel    string // Actual upstream model after mapping (empty = no mapping)
 	Stream           bool
 	Duration         time.Duration
 	FirstTokenMs     *int // 首字时间（流式请求）
@@ -770,8 +771,8 @@ func (s *GatewayService) GenerateSessionHash(parsed *ParsedRequest) string {
 
 	// 1. 最高优先级：从 metadata.user_id 提取 session_xxx
 	if parsed.MetadataUserID != "" {
-		if match := sessionIDRegex.FindStringSubmatch(parsed.MetadataUserID); len(match) > 1 {
-			return match[1]
+		if uid := ParseMetadataUserID(parsed.MetadataUserID); uid != nil && uid.SessionID != "" {
+			return uid.SessionID
 		}
 	}
 
@@ -1059,20 +1060,30 @@ func (s *GatewayService) hashContent(content string) string {
 	return strconv.FormatUint(h, 36)
 }
 
+type anthropicCacheControlPayload struct {
+	Type string `json:"type"`
+}
+
+type anthropicSystemTextBlockPayload struct {
+	Type         string                        `json:"type"`
+	Text         string                        `json:"text"`
+	CacheControl *anthropicCacheControlPayload `json:"cache_control,omitempty"`
+}
+
+type anthropicMetadataPayload struct {
+	UserID string `json:"user_id"`
+}
+
 // replaceModelInBody 替换请求体中的model字段
-// 使用 json.RawMessage 保留其他字段的原始字节，避免 thinking 块等内容被修改
+// 优先使用定点修改，尽量保持客户端原始字段顺序。
 func (s *GatewayService) replaceModelInBody(body []byte, newModel string) []byte {
-	var req map[string]json.RawMessage
-	if err := json.Unmarshal(body, &req); err != nil {
+	if len(body) == 0 {
 		return body
 	}
-	// 只序列化 model 字段
-	modelBytes, err := json.Marshal(newModel)
-	if err != nil {
+	if current := gjson.GetBytes(body, "model"); current.Exists() && current.String() == newModel {
 		return body
 	}
-	req["model"] = modelBytes
-	newBody, err := json.Marshal(req)
+	newBody, err := sjson.SetBytes(body, "model", newModel)
 	if err != nil {
 		return body
 	}
@@ -1103,24 +1114,146 @@ func sanitizeSystemText(text string) string {
 	return text
 }
 
-func stripCacheControlFromSystemBlocks(system any) bool {
-	blocks, ok := system.([]any)
-	if !ok {
-		return false
+func marshalAnthropicSystemTextBlock(text string, includeCacheControl bool) ([]byte, error) {
+	block := anthropicSystemTextBlockPayload{
+		Type: "text",
+		Text: text,
 	}
-	changed := false
-	for _, item := range blocks {
-		block, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if _, exists := block["cache_control"]; !exists {
-			continue
-		}
-		delete(block, "cache_control")
-		changed = true
+	if includeCacheControl {
+		block.CacheControl = &anthropicCacheControlPayload{Type: "ephemeral"}
 	}
-	return changed
+	return json.Marshal(block)
+}
+
+func marshalAnthropicMetadata(userID string) ([]byte, error) {
+	return json.Marshal(anthropicMetadataPayload{UserID: userID})
+}
+
+func buildJSONArrayRaw(items [][]byte) []byte {
+	if len(items) == 0 {
+		return []byte("[]")
+	}
+
+	total := 2
+	for _, item := range items {
+		total += len(item)
+	}
+	total += len(items) - 1
+
+	buf := make([]byte, 0, total)
+	buf = append(buf, '[')
+	for i, item := range items {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, item...)
+	}
+	buf = append(buf, ']')
+	return buf
+}
+
+func setJSONValueBytes(body []byte, path string, value any) ([]byte, bool) {
+	next, err := sjson.SetBytes(body, path, value)
+	if err != nil {
+		return body, false
+	}
+	return next, true
+}
+
+func setJSONRawBytes(body []byte, path string, raw []byte) ([]byte, bool) {
+	next, err := sjson.SetRawBytes(body, path, raw)
+	if err != nil {
+		return body, false
+	}
+	return next, true
+}
+
+func deleteJSONPathBytes(body []byte, path string) ([]byte, bool) {
+	next, err := sjson.DeleteBytes(body, path)
+	if err != nil {
+		return body, false
+	}
+	return next, true
+}
+
+func normalizeClaudeOAuthSystemBody(body []byte, opts claudeOAuthNormalizeOptions) ([]byte, bool) {
+	sys := gjson.GetBytes(body, "system")
+	if !sys.Exists() {
+		return body, false
+	}
+
+	out := body
+	modified := false
+
+	switch {
+	case sys.Type == gjson.String:
+		sanitized := sanitizeSystemText(sys.String())
+		if sanitized != sys.String() {
+			if next, ok := setJSONValueBytes(out, "system", sanitized); ok {
+				out = next
+				modified = true
+			}
+		}
+	case sys.IsArray():
+		index := 0
+		sys.ForEach(func(_, item gjson.Result) bool {
+			if item.Get("type").String() == "text" {
+				textResult := item.Get("text")
+				if textResult.Exists() && textResult.Type == gjson.String {
+					text := textResult.String()
+					sanitized := sanitizeSystemText(text)
+					if sanitized != text {
+						if next, ok := setJSONValueBytes(out, fmt.Sprintf("system.%d.text", index), sanitized); ok {
+							out = next
+							modified = true
+						}
+					}
+				}
+			}
+
+			if opts.stripSystemCacheControl && item.Get("cache_control").Exists() {
+				if next, ok := deleteJSONPathBytes(out, fmt.Sprintf("system.%d.cache_control", index)); ok {
+					out = next
+					modified = true
+				}
+			}
+
+			index++
+			return true
+		})
+	}
+
+	return out, modified
+}
+
+func ensureClaudeOAuthMetadataUserID(body []byte, userID string) ([]byte, bool) {
+	if strings.TrimSpace(userID) == "" {
+		return body, false
+	}
+
+	metadata := gjson.GetBytes(body, "metadata")
+	if !metadata.Exists() || metadata.Type == gjson.Null {
+		raw, err := marshalAnthropicMetadata(userID)
+		if err != nil {
+			return body, false
+		}
+		return setJSONRawBytes(body, "metadata", raw)
+	}
+
+	trimmedRaw := strings.TrimSpace(metadata.Raw)
+	if strings.HasPrefix(trimmedRaw, "{") {
+		existing := metadata.Get("user_id")
+		if existing.Exists() && existing.Type == gjson.String && existing.String() != "" {
+			return body, false
+		}
+		return setJSONValueBytes(body, "metadata.user_id", userID)
+	}
+
+	raw, err := marshalAnthropicMetadata(userID)
+	if err != nil {
+		return body, false
+	}
+	return setJSONRawBytes(body, "metadata", raw)
 }
 
 func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAuthNormalizeOptions) ([]byte, string) {
@@ -1128,96 +1261,59 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 		return body, modelID
 	}
 
-	// 解析为 map[string]any 用于修改字段
-	var req map[string]any
-	if err := json.Unmarshal(body, &req); err != nil {
-		return body, modelID
-	}
-
+	out := body
 	modified := false
 
-	if system, ok := req["system"]; ok {
-		switch v := system.(type) {
-		case string:
-			sanitized := sanitizeSystemText(v)
-			if sanitized != v {
-				req["system"] = sanitized
-				modified = true
-			}
-		case []any:
-			for _, item := range v {
-				block, ok := item.(map[string]any)
-				if !ok {
-					continue
-				}
-				if blockType, _ := block["type"].(string); blockType != "text" {
-					continue
-				}
-				text, ok := block["text"].(string)
-				if !ok || text == "" {
-					continue
-				}
-				sanitized := sanitizeSystemText(text)
-				if sanitized != text {
-					block["text"] = sanitized
-					modified = true
-				}
-			}
-		}
+	if next, changed := normalizeClaudeOAuthSystemBody(out, opts); changed {
+		out = next
+		modified = true
 	}
 
-	if rawModel, ok := req["model"].(string); ok {
-		normalized := claude.NormalizeModelID(rawModel)
-		if normalized != rawModel {
-			req["model"] = normalized
+	rawModel := gjson.GetBytes(out, "model")
+	if rawModel.Exists() && rawModel.Type == gjson.String {
+		normalized := claude.NormalizeModelID(rawModel.String())
+		if normalized != rawModel.String() {
+			if next, ok := setJSONValueBytes(out, "model", normalized); ok {
+				out = next
+				modified = true
+			}
 			modelID = normalized
-			modified = true
 		}
 	}
 
 	// 确保 tools 字段存在（即使为空数组）
-	if _, exists := req["tools"]; !exists {
-		req["tools"] = []any{}
-		modified = true
-	}
-
-	if opts.stripSystemCacheControl {
-		if system, ok := req["system"]; ok {
-			_ = stripCacheControlFromSystemBlocks(system)
+	if !gjson.GetBytes(out, "tools").Exists() {
+		if next, ok := setJSONRawBytes(out, "tools", []byte("[]")); ok {
+			out = next
 			modified = true
 		}
 	}
 
 	if opts.injectMetadata && opts.metadataUserID != "" {
-		metadata, ok := req["metadata"].(map[string]any)
-		if !ok {
-			metadata = map[string]any{}
-			req["metadata"] = metadata
-		}
-		if existing, ok := metadata["user_id"].(string); !ok || existing == "" {
-			metadata["user_id"] = opts.metadataUserID
+		if next, changed := ensureClaudeOAuthMetadataUserID(out, opts.metadataUserID); changed {
+			out = next
 			modified = true
 		}
 	}
 
-	if _, hasTemp := req["temperature"]; hasTemp {
-		delete(req, "temperature")
-		modified = true
+	if gjson.GetBytes(out, "temperature").Exists() {
+		if next, ok := deleteJSONPathBytes(out, "temperature"); ok {
+			out = next
+			modified = true
+		}
 	}
-	if _, hasChoice := req["tool_choice"]; hasChoice {
-		delete(req, "tool_choice")
-		modified = true
+	if gjson.GetBytes(out, "tool_choice").Exists() {
+		if next, ok := deleteJSONPathBytes(out, "tool_choice"); ok {
+			out = next
+			modified = true
+		}
 	}
 
 	if !modified {
 		return body, modelID
 	}
 
-	newBody, err := json.Marshal(req)
-	if err != nil {
-		return body, modelID
-	}
-	return newBody, modelID
+	return out, modelID
 }
 
 func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
@@ -1245,13 +1341,13 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		sessionID = generateSessionUUID(seed)
 	}
 
-	// Prefer the newer format that includes account_uuid (if present),
-	// otherwise fall back to the legacy Claude Code format.
-	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
-	if accountUUID != "" {
-		return fmt.Sprintf("user_%s_account_%s_session_%s", userID, accountUUID, sessionID)
+	// 根据指纹 UA 版本选择输出格式
+	var uaVersion string
+	if fp != nil {
+		uaVersion = ExtractCLIVersion(fp.UserAgent)
 	}
-	return fmt.Sprintf("user_%s_account__session_%s", userID, sessionID)
+	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
+	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
 
 // GenerateSessionUUID creates a deterministic UUID4 from a seed string.
@@ -3895,6 +3991,8 @@ func hasClaudeCodePrefix(text string) bool {
 	return false
 }
 
+// injectClaudeCodePrompt 在 system 开头注入 Claude Code 提示词
+// 处理 null、字符串、数组三种格式
 // matchesFilterPrefix 检查文本是否匹配任一过滤前缀
 func matchesFilterPrefix(text string) bool {
 	for _, prefix := range systemBlockFilterPrefixes {
@@ -3949,28 +4047,26 @@ func filterSystemBlocksByPrefix(body []byte) []byte {
 	return body
 }
 
-// injectClaudeCodePrompt 在 system 开头注入 Claude Code 提示词
-// 处理 null、字符串、数组三种格式
 func injectClaudeCodePrompt(body []byte, system any) []byte {
-	claudeCodeBlock := map[string]any{
-		"type":          "text",
-		"text":          claudeCodeSystemPrompt,
-		"cache_control": map[string]string{"type": "ephemeral"},
+	claudeCodeBlock, err := marshalAnthropicSystemTextBlock(claudeCodeSystemPrompt, true)
+	if err != nil {
+		logger.LegacyPrintf("service.gateway", "Warning: failed to build Claude Code prompt block: %v", err)
+		return body
 	}
 	// Opencode plugin applies an extra safeguard: it not only prepends the Claude Code
 	// banner, it also prefixes the next system instruction with the same banner plus
 	// a blank line. This helps when upstream concatenates system instructions.
 	claudeCodePrefix := strings.TrimSpace(claudeCodeSystemPrompt)
 
-	var newSystem []any
+	var items [][]byte
 
 	switch v := system.(type) {
 	case nil:
-		newSystem = []any{claudeCodeBlock}
+		items = [][]byte{claudeCodeBlock}
 	case string:
 		// Be tolerant of older/newer clients that may differ only by trailing whitespace/newlines.
 		if strings.TrimSpace(v) == "" || strings.TrimSpace(v) == strings.TrimSpace(claudeCodeSystemPrompt) {
-			newSystem = []any{claudeCodeBlock}
+			items = [][]byte{claudeCodeBlock}
 		} else {
 			// Mirror opencode behavior: keep the banner as a separate system entry,
 			// but also prefix the next system text with the banner.
@@ -3978,18 +4074,54 @@ func injectClaudeCodePrompt(body []byte, system any) []byte {
 			if !strings.HasPrefix(v, claudeCodePrefix) {
 				merged = claudeCodePrefix + "\n\n" + v
 			}
-			newSystem = []any{claudeCodeBlock, map[string]any{"type": "text", "text": merged}}
+			nextBlock, buildErr := marshalAnthropicSystemTextBlock(merged, false)
+			if buildErr != nil {
+				logger.LegacyPrintf("service.gateway", "Warning: failed to build prefixed Claude Code system block: %v", buildErr)
+				return body
+			}
+			items = [][]byte{claudeCodeBlock, nextBlock}
 		}
 	case []any:
-		newSystem = make([]any, 0, len(v)+1)
-		newSystem = append(newSystem, claudeCodeBlock)
+		items = make([][]byte, 0, len(v)+1)
+		items = append(items, claudeCodeBlock)
 		prefixedNext := false
-		for _, item := range v {
-			if m, ok := item.(map[string]any); ok {
+		systemResult := gjson.GetBytes(body, "system")
+		if systemResult.IsArray() {
+			systemResult.ForEach(func(_, item gjson.Result) bool {
+				textResult := item.Get("text")
+				if textResult.Exists() && textResult.Type == gjson.String &&
+					strings.TrimSpace(textResult.String()) == strings.TrimSpace(claudeCodeSystemPrompt) {
+					return true
+				}
+
+				raw := []byte(item.Raw)
+				// Prefix the first subsequent text system block once.
+				if !prefixedNext && item.Get("type").String() == "text" && textResult.Exists() && textResult.Type == gjson.String {
+					text := textResult.String()
+					if strings.TrimSpace(text) != "" && !strings.HasPrefix(text, claudeCodePrefix) {
+						next, setErr := sjson.SetBytes(raw, "text", claudeCodePrefix+"\n\n"+text)
+						if setErr == nil {
+							raw = next
+							prefixedNext = true
+						}
+					}
+				}
+				items = append(items, raw)
+				return true
+			})
+		} else {
+			for _, item := range v {
+				m, ok := item.(map[string]any)
+				if !ok {
+					raw, marshalErr := json.Marshal(item)
+					if marshalErr == nil {
+						items = append(items, raw)
+					}
+					continue
+				}
 				if text, ok := m["text"].(string); ok && strings.TrimSpace(text) == strings.TrimSpace(claudeCodeSystemPrompt) {
 					continue
 				}
-				// Prefix the first subsequent text system block once.
 				if !prefixedNext {
 					if blockType, _ := m["type"].(string); blockType == "text" {
 						if text, ok := m["text"].(string); ok && strings.TrimSpace(text) != "" && !strings.HasPrefix(text, claudeCodePrefix) {
@@ -3998,16 +4130,19 @@ func injectClaudeCodePrompt(body []byte, system any) []byte {
 						}
 					}
 				}
+				raw, marshalErr := json.Marshal(m)
+				if marshalErr == nil {
+					items = append(items, raw)
+				}
 			}
-			newSystem = append(newSystem, item)
 		}
 	default:
-		newSystem = []any{claudeCodeBlock}
+		items = [][]byte{claudeCodeBlock}
 	}
 
-	result, err := sjson.SetBytes(body, "system", newSystem)
-	if err != nil {
-		logger.LegacyPrintf("service.gateway", "Warning: failed to inject Claude Code prompt: %v", err)
+	result, ok := setJSONRawBytes(body, "system", buildJSONArrayRaw(items))
+	if !ok {
+		logger.LegacyPrintf("service.gateway", "Warning: failed to inject Claude Code prompt")
 		return body
 	}
 	return result
@@ -4121,55 +4256,6 @@ func injectAutoCacheControl(body []byte, model string) []byte {
 	return result
 }
 
-// enforceCacheControlLimit 强制执行 cache_control 块数量限制（最多 4 个）
-// 超限时按前缀缓存层级的反序移除：messages（尾→头）→ system（尾→头）→ tools（尾→头）
-// 保留层级靠前的断点（tools > system > messages 早期），因为它们保护更稳定的前缀
-func enforceCacheControlLimit(body []byte) []byte {
-	var data map[string]any
-	if err := json.Unmarshal(body, &data); err != nil {
-		return body
-	}
-
-	// 清理 thinking 块中的非法 cache_control（thinking 块不支持该字段）
-	thinkingCleaned := removeCacheControlFromThinkingBlocks(data)
-
-	// 计算当前 cache_control 块数量
-	count := countCacheControlBlocks(data)
-	if count <= maxCacheControlBlocks {
-		// 即使不需要裁剪，如果清理了 thinking 块的 cache_control 也要序列化返回
-		if thinkingCleaned {
-			if result, err := json.Marshal(data); err == nil {
-				return result
-			}
-		}
-		return body
-	}
-
-	// 超限：按前缀层级反序移除，保护稳定前缀
-	// messages（最后变化最频繁）→ system → tools（最前端最稳定，最后移除）
-	for count > maxCacheControlBlocks {
-		if removeCacheControlFromMessages(data) {
-			count--
-			continue
-		}
-		if removeCacheControlFromSystem(data) {
-			count--
-			continue
-		}
-		if removeCacheControlFromTools(data) {
-			count--
-			continue
-		}
-		break
-	}
-
-	result, err := json.Marshal(data)
-	if err != nil {
-		return body
-	}
-	return result
-}
-
 // countCacheControlBlocks 统计 tools、system 和 messages 中的 cache_control 块数量
 // 注意：thinking 块不支持 cache_control，统计时跳过
 func countCacheControlBlocks(data map[string]any) int {
@@ -4225,129 +4311,133 @@ func countCacheControlBlocks(data map[string]any) int {
 	return count
 }
 
-// removeCacheControlFromMessages 从 messages 中移除一个 cache_control（从尾部开始）
-// 从尾部移除可保留早期稳定消息的缓存断点，符合前缀缓存的最佳实践。
-// 返回 true 表示成功移除，false 表示没有可移除的
-// 注意：跳过 thinking 块（它不支持 cache_control）
-func removeCacheControlFromMessages(data map[string]any) bool {
-	messages, ok := data["messages"].([]any)
-	if !ok {
-		return false
-	}
-
-	for i := len(messages) - 1; i >= 0; i-- {
-		msgMap, ok := messages[i].(map[string]any)
-		if !ok {
-			continue
-		}
-		content, ok := msgMap["content"].([]any)
-		if !ok {
-			continue
-		}
-		for j := len(content) - 1; j >= 0; j-- {
-			if m, ok := content[j].(map[string]any); ok {
-				// thinking 块不支持 cache_control，跳过
-				if blockType, _ := m["type"].(string); blockType == "thinking" {
-					continue
-				}
-				if _, has := m["cache_control"]; has {
-					delete(m, "cache_control")
-					return true
-				}
-			}
-		}
-	}
-	return false
+type cacheControlPath struct {
+	path string
+	log  string
 }
 
-// removeCacheControlFromSystem 从 system 中移除一个 cache_control（从尾部开始，保护注入的 prompt）
-// 返回 true 表示成功移除，false 表示没有可移除的
-// 注意：跳过 thinking 块（它不支持 cache_control）
-func removeCacheControlFromSystem(data map[string]any) bool {
-	system, ok := data["system"].([]any)
-	if !ok {
-		return false
-	}
-
-	// 从尾部开始移除，保护开头注入的 Claude Code prompt
-	for i := len(system) - 1; i >= 0; i-- {
-		if m, ok := system[i].(map[string]any); ok {
-			// thinking 块不支持 cache_control，跳过
-			if blockType, _ := m["type"].(string); blockType == "thinking" {
-				continue
-			}
-			if _, has := m["cache_control"]; has {
-				delete(m, "cache_control")
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// removeCacheControlFromTools 从 tools 中移除一个 cache_control（从尾部开始）
-// tools 在缓存前缀最前端，移除会导致整个缓存层级失效，因此作为最后手段
-// 返回 true 表示成功移除，false 表示没有可移除的
-func removeCacheControlFromTools(data map[string]any) bool {
-	tools, ok := data["tools"].([]any)
-	if !ok {
-		return false
-	}
-
-	for i := len(tools) - 1; i >= 0; i-- {
-		if m, ok := tools[i].(map[string]any); ok {
-			if _, has := m["cache_control"]; has {
-				delete(m, "cache_control")
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// removeCacheControlFromThinkingBlocks 强制清理所有 thinking 块中的非法 cache_control
-// thinking 块不支持 cache_control 字段，这个函数确保所有 thinking 块都不含该字段
-// 返回 true 表示有内容被清理
-func removeCacheControlFromThinkingBlocks(data map[string]any) bool {
-	cleaned := false
-
-	// 清理 system 中的 thinking 块
-	if system, ok := data["system"].([]any); ok {
-		for _, item := range system {
-			if m, ok := item.(map[string]any); ok {
-				if blockType, _ := m["type"].(string); blockType == "thinking" {
-					if _, has := m["cache_control"]; has {
-						delete(m, "cache_control")
-						cleaned = true
-						logger.LegacyPrintf("service.gateway", "[Warning] Removed illegal cache_control from thinking block in system")
-					}
+func collectCacheControlPaths(body []byte) (invalidThinking []cacheControlPath, messagePaths []string, systemPaths []string) {
+	system := gjson.GetBytes(body, "system")
+	if system.IsArray() {
+		sysIndex := 0
+		system.ForEach(func(_, item gjson.Result) bool {
+			if item.Get("cache_control").Exists() {
+				path := fmt.Sprintf("system.%d.cache_control", sysIndex)
+				if item.Get("type").String() == "thinking" {
+					invalidThinking = append(invalidThinking, cacheControlPath{
+						path: path,
+						log:  "[Warning] Removed illegal cache_control from thinking block in system",
+					})
+				} else {
+					systemPaths = append(systemPaths, path)
 				}
 			}
-		}
+			sysIndex++
+			return true
+		})
 	}
 
-	// 清理 messages 中的 thinking 块
-	if messages, ok := data["messages"].([]any); ok {
-		for msgIdx, msg := range messages {
-			if msgMap, ok := msg.(map[string]any); ok {
-				if content, ok := msgMap["content"].([]any); ok {
-					for contentIdx, item := range content {
-						if m, ok := item.(map[string]any); ok {
-							if blockType, _ := m["type"].(string); blockType == "thinking" {
-								if _, has := m["cache_control"]; has {
-									delete(m, "cache_control")
-									cleaned = true
-									logger.LegacyPrintf("service.gateway", "[Warning] Removed illegal cache_control from thinking block in messages[%d].content[%d]", msgIdx, contentIdx)
-								}
-							}
+	messages := gjson.GetBytes(body, "messages")
+	if messages.IsArray() {
+		msgIndex := 0
+		messages.ForEach(func(_, msg gjson.Result) bool {
+			content := msg.Get("content")
+			if content.IsArray() {
+				contentIndex := 0
+				content.ForEach(func(_, item gjson.Result) bool {
+					if item.Get("cache_control").Exists() {
+						path := fmt.Sprintf("messages.%d.content.%d.cache_control", msgIndex, contentIndex)
+						if item.Get("type").String() == "thinking" {
+							invalidThinking = append(invalidThinking, cacheControlPath{
+								path: path,
+								log:  fmt.Sprintf("[Warning] Removed illegal cache_control from thinking block in messages[%d].content[%d]", msgIndex, contentIndex),
+							})
+						} else {
+							messagePaths = append(messagePaths, path)
 						}
 					}
-				}
+					contentIndex++
+					return true
+				})
 			}
-		}
+			msgIndex++
+			return true
+		})
 	}
 
-	return cleaned
+	return invalidThinking, messagePaths, systemPaths
+}
+
+// enforceCacheControlLimit 强制执行 cache_control 块数量限制（最多 4 个）
+// 超限时按前缀缓存层级的反序移除：messages（尾→头）→ system（尾→头）→ tools（尾→头）
+// 保留层级靠前的断点（tools > system > messages 早期），因为它们保护更稳定的前缀
+func enforceCacheControlLimit(body []byte) []byte {
+	if len(body) == 0 {
+		return body
+	}
+
+	invalidThinking, messagePaths, systemPaths := collectCacheControlPaths(body)
+	out := body
+	modified := false
+
+	// 先清理 thinking 块中的非法 cache_control（thinking 块不支持该字段）
+	for _, item := range invalidThinking {
+		if !gjson.GetBytes(out, item.path).Exists() {
+			continue
+		}
+		next, ok := deleteJSONPathBytes(out, item.path)
+		if !ok {
+			continue
+		}
+		out = next
+		modified = true
+		logger.LegacyPrintf("service.gateway", "%s", item.log)
+	}
+
+	count := len(messagePaths) + len(systemPaths)
+	if count <= maxCacheControlBlocks {
+		if modified {
+			return out
+		}
+		return body
+	}
+
+	// 超限：优先从 messages 中移除，再从 system 中移除
+	remaining := count - maxCacheControlBlocks
+	for _, path := range messagePaths {
+		if remaining <= 0 {
+			break
+		}
+		if !gjson.GetBytes(out, path).Exists() {
+			continue
+		}
+		next, ok := deleteJSONPathBytes(out, path)
+		if !ok {
+			continue
+		}
+		out = next
+		modified = true
+		remaining--
+	}
+
+	for i := len(systemPaths) - 1; i >= 0 && remaining > 0; i-- {
+		path := systemPaths[i]
+		if !gjson.GetBytes(out, path).Exists() {
+			continue
+		}
+		next, ok := deleteJSONPathBytes(out, path)
+		if !ok {
+			continue
+		}
+		out = next
+		modified = true
+		remaining--
+	}
+
+	if modified {
+		return out
+	}
+	return body
 }
 
 // Forward 转发请求到Claude API
@@ -4367,7 +4457,13 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				passthroughModel = mappedModel
 			}
 		}
-		return s.forwardAnthropicAPIKeyPassthrough(ctx, c, account, passthroughBody, passthroughModel, parsed.Stream, startTime)
+		return s.forwardAnthropicAPIKeyPassthroughWithInput(ctx, c, account, anthropicPassthroughForwardInput{
+			Body:          passthroughBody,
+			RequestModel:  passthroughModel,
+			OriginalModel: parsed.Model,
+			RequestStream: parsed.Stream,
+			StartTime:     startTime,
+		})
 	}
 
 	if account != nil && account.IsBedrock() {
@@ -4392,6 +4488,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	reqModel := parsed.Model
 	reqStream := parsed.Stream
 	originalModel := reqModel
+
+	// === DEBUG: 打印客户端原始请求 body ===
+	debugLogRequestBody("CLIENT_ORIGINAL", body)
 
 	isClaudeCode := isClaudeCodeRequest(ctx, c, parsed)
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
@@ -4430,6 +4529,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// 自动注入 cache_control：仅当客户端完全没有设置任何断点时，
 	// 在 system 最后一个块上添加 ephemeral 标记以利用上游前缀缓存
 	body = injectAutoCacheControl(body, reqModel)
+
 
 	// 强制执行 cache_control 块数量限制（最多 4 个）
 	body = enforceCacheControlLimit(body)
@@ -4898,11 +4998,20 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		RequestID:        resp.Header.Get("x-request-id"),
 		Usage:            *usage,
 		Model:            originalModel, // 使用原始模型用于计费和日志
+		UpstreamModel:    mappedModel,
 		Stream:           reqStream,
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
 		ClientDisconnect: clientDisconnect,
 	}, nil
+}
+
+type anthropicPassthroughForwardInput struct {
+	Body          []byte
+	RequestModel  string
+	OriginalModel string
+	RequestStream bool
+	StartTime     time.Time
 }
 
 func (s *GatewayService) forwardAnthropicAPIKeyPassthrough(
@@ -4911,8 +5020,24 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthrough(
 	account *Account,
 	body []byte,
 	reqModel string,
+	originalModel string,
 	reqStream bool,
 	startTime time.Time,
+) (*ForwardResult, error) {
+	return s.forwardAnthropicAPIKeyPassthroughWithInput(ctx, c, account, anthropicPassthroughForwardInput{
+		Body:          body,
+		RequestModel:  reqModel,
+		OriginalModel: originalModel,
+		RequestStream: reqStream,
+		StartTime:     startTime,
+	})
+}
+
+func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	input anthropicPassthroughForwardInput,
 ) (*ForwardResult, error) {
 	token, tokenType, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -4928,19 +5053,19 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthrough(
 	}
 
 	logger.LegacyPrintf("service.gateway", "[Anthropic 自动透传] 命中 API Key 透传分支: account=%d name=%s model=%s stream=%v",
-		account.ID, account.Name, reqModel, reqStream)
+		account.ID, account.Name, input.RequestModel, input.RequestStream)
 
 	if c != nil {
 		c.Set("anthropic_passthrough", true)
 	}
 	// 重试间复用同一请求体，避免每次 string(body) 产生额外分配。
-	setOpsUpstreamRequestBody(c, body)
+	setOpsUpstreamRequestBody(c, input.Body)
 
 	var resp *http.Response
 	retryStart := time.Now()
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
-		upstreamReq, err := s.buildUpstreamRequestAnthropicAPIKeyPassthrough(upstreamCtx, c, account, body, token)
+		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, input.RequestStream)
+		upstreamReq, err := s.buildUpstreamRequestAnthropicAPIKeyPassthrough(upstreamCtx, c, account, input.Body, token)
 		releaseUpstreamCtx()
 		if err != nil {
 			return nil, err
@@ -5098,8 +5223,8 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthrough(
 	var usage *ClaudeUsage
 	var firstTokenMs *int
 	var clientDisconnect bool
-	if reqStream {
-		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, startTime, reqModel)
+	if input.RequestStream {
+		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
 		if err != nil {
 			return nil, err
 		}
@@ -5119,9 +5244,10 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthrough(
 	return &ForwardResult{
 		RequestID:        resp.Header.Get("x-request-id"),
 		Usage:            *usage,
-		Model:            reqModel,
-		Stream:           reqStream,
-		Duration:         time.Since(startTime),
+		Model:            input.OriginalModel,
+		UpstreamModel:    input.RequestModel,
+		Stream:           input.RequestStream,
+		Duration:         time.Since(input.StartTime),
 		FirstTokenMs:     firstTokenMs,
 		ClientDisconnect: clientDisconnect,
 	}, nil
@@ -5626,6 +5752,7 @@ func (s *GatewayService) forwardBedrock(
 		RequestID:        resp.Header.Get("x-amzn-requestid"),
 		Usage:            *usage,
 		Model:            reqModel,
+		UpstreamModel:    mappedModel,
 		Stream:           reqStream,
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
@@ -5918,12 +6045,15 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
 			accountUUID := account.GetExtraString("account_uuid")
 			if accountUUID != "" && fp.ClientID != "" {
-				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID); err == nil && len(newBody) > 0 {
+				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
 					body = newBody
 				}
 			}
 		}
 	}
+
+	// === DEBUG: 打印转发给上游的 body（metadata 已重写） ===
+	debugLogRequestBody("UPSTREAM_FORWARD", body)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
@@ -6453,9 +6583,11 @@ func (s *GatewayService) isThinkingBlockSignatureError(respBody []byte) bool {
 		return true
 	}
 
-	// 检测空消息内容错误（可能是过滤 thinking blocks 后导致的）
+	// 检测空消息内容错误（可能是过滤 thinking blocks 后导致的，或客户端发送了空 text block）
 	// 例如: "all messages must have non-empty content"
-	if strings.Contains(msg, "non-empty content") || strings.Contains(msg, "empty content") {
+	//       "messages: text content blocks must be non-empty"
+	if strings.Contains(msg, "non-empty content") || strings.Contains(msg, "empty content") ||
+		strings.Contains(msg, "content blocks must be non-empty") {
 		logger.LegacyPrintf("service.gateway", "[SignatureCheck] Detected empty content error")
 		return true
 	}
@@ -7989,6 +8121,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		AccountID:             account.ID,
 		RequestID:             requestID,
 		Model:                 result.Model,
+		UpstreamModel:         optionalNonEqualStringPtr(result.UpstreamModel, result.Model),
 		ReasoningEffort:       result.ReasoningEffort,
 		InboundEndpoint:       optionalTrimmedStringPtr(input.InboundEndpoint),
 		UpstreamEndpoint:      optionalTrimmedStringPtr(input.UpstreamEndpoint),
@@ -8185,6 +8318,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		AccountID:             account.ID,
 		RequestID:             requestID,
 		Model:                 result.Model,
+		UpstreamModel:         optionalNonEqualStringPtr(result.UpstreamModel, result.Model),
 		ReasoningEffort:       result.ReasoningEffort,
 		InboundEndpoint:       optionalTrimmedStringPtr(input.InboundEndpoint),
 		UpstreamEndpoint:      optionalTrimmedStringPtr(input.UpstreamEndpoint),
@@ -8636,7 +8770,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
 			if accountUUID != "" && fp.ClientID != "" {
-				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID); err == nil && len(newBody) > 0 {
+				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
 					body = newBody
 				}
 			}
@@ -8884,4 +9018,44 @@ func reconcileCachedTokens(usage map[string]any) bool {
 	}
 	usage["cache_read_input_tokens"] = cached
 	return true
+}
+
+func debugGatewayBodyLoggingEnabled() bool {
+	raw := strings.TrimSpace(os.Getenv(debugGatewayBodyEnv))
+	if raw == "" {
+		return false
+	}
+
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+// debugLogRequestBody 打印请求 body 用于调试 metadata.user_id 重写。
+// 默认关闭，仅在设置环境变量时启用：
+//
+//	SUB2API_DEBUG_GATEWAY_BODY=1
+func debugLogRequestBody(tag string, body []byte) {
+	if !debugGatewayBodyLoggingEnabled() {
+		return
+	}
+
+	if len(body) == 0 {
+		logger.LegacyPrintf("service.gateway", "[DEBUG_%s] body is empty", tag)
+		return
+	}
+
+	// 提取 metadata 字段完整打印
+	metadataResult := gjson.GetBytes(body, "metadata")
+	if metadataResult.Exists() {
+		logger.LegacyPrintf("service.gateway", "[DEBUG_%s] metadata = %s", tag, metadataResult.Raw)
+	} else {
+		logger.LegacyPrintf("service.gateway", "[DEBUG_%s] metadata field not found", tag)
+	}
+
+	// 全量打印 body
+	logger.LegacyPrintf("service.gateway", "[DEBUG_%s] body (%d bytes) = %s", tag, len(body), string(body))
 }
