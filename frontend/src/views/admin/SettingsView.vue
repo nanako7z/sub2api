@@ -1942,7 +1942,6 @@
                 <Toggle v-model="form.partner_enabled" />
               </div>
 
-              <template v-if="form.partner_enabled" />
             </div>
           </div>
         </div><!-- /Tab: Promotion -->

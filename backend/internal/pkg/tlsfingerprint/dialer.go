@@ -45,7 +45,7 @@ type SOCKS5ProxyDialer struct {
 	proxyURL *url.URL
 }
 
-// Default TLS fingerprint values captured from Claude Code v2.1.79 (Bun runtime + BoringSSL)
+// Default TLS fingerprint values captured from Claude Code v2.1.80 (Bun runtime + BoringSSL)
 // Captured by intercepting a live ClientHello from Claude Code connecting to a local TLS server.
 // Extension order: ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
 //   ec_point_formats(0x000b) → session_ticket(0x0023) → alpn(0x0010) → status_request(0x0005) →
@@ -424,7 +424,7 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 	// Check if GREASE is enabled
 	enableGREASE := profile != nil && profile.EnableGREASE
 
-	// Claude Code v2.1.79 (Bun/BoringSSL) extension order captured from live ClientHello:
+	// Claude Code v2.1.80 (Bun/BoringSSL) extension order captured from live ClientHello:
 	// ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
 	// ec_point_formats(0x000b) → session_ticket(0x0023) → alpn(0x0010) →
 	// status_request(0x0005) → signature_algorithms(0x000d) → sct(0x0012) →
@@ -432,24 +432,26 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 	extensions := []utls.TLSExtension{
 		// ECH outer ClientHello placeholder (BoringSSL sends this even without ECH config)
 		&utls.GREASEEncryptedClientHelloExtension{},
-		&utls.ExtendedMasterSecretExtension{},
-		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},
-		&utls.SupportedCurvesExtension{Curves: curves},
-		&utls.SupportedPointsExtension{SupportedPoints: pointFormats},
-		&utls.SessionTicketExtension{},
-		&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},
-		&utls.StatusRequestExtension{},
-		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: defaultSignatureAlgorithms},
-		&utls.SCTExtension{},
+		// SNI — HelloCustom 模式下必须显式添加，utls 从 Config.ServerName 填充
+		&utls.SNIExtension{},
+		&utls.ExtendedMasterSecretExtension{},                                    // 0x0017
+		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient}, // 0xff01
+		&utls.SupportedCurvesExtension{Curves: curves},                           // 0x000a
+		&utls.SupportedPointsExtension{SupportedPoints: pointFormats},            // 0x000b
+		&utls.SessionTicketExtension{},                                           // 0x0023
+		&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},                  // 0x0010
+		&utls.StatusRequestExtension{},                                           // 0x0005
+		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: defaultSignatureAlgorithms}, // 0x000d
+		&utls.SCTExtension{},                                                     // 0x0012
 		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
 			{Group: utls.X25519},
-		}},
-		&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
+		}}, // 0x0033
+		&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}}, // 0x002d
 		&utls.SupportedVersionsExtension{Versions: []uint16{
 			utls.VersionTLS13,
 			utls.VersionTLS12,
-		}},
-		&utls.UtlsPaddingExtension{GetPaddingLen: utls.BoringPaddingStyle},
+		}}, // 0x002b
+		&utls.UtlsPaddingExtension{GetPaddingLen: utls.BoringPaddingStyle}, // 0x0015
 	}
 	_ = enableGREASE // Bun/BoringSSL does not use GREASE
 

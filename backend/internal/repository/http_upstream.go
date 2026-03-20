@@ -13,12 +13,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"crypto/tls"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
+	"golang.org/x/net/http2"
 )
 
 // 默认配置常量
@@ -816,8 +819,8 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		MaxConnsPerHost:       settings.maxConnsPerHost,
 		IdleConnTimeout:       settings.idleConnTimeout,
 		ResponseHeaderTimeout: settings.responseHeaderTimeout,
-		// 禁用默认的 TLS，我们使用自定义的 DialTLSContext
-		ForceAttemptHTTP2: false,
+		// 需要设置 TLSClientConfig 以便 http2.ConfigureTransports 识别
+		TLSClientConfig: &tls.Config{},
 	}
 
 	// 根据代理类型选择合适的 TLS 指纹 Dialer
@@ -846,6 +849,14 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 				return nil, err
 			}
 		}
+	}
+
+	// 配置 HTTP/2 支持：当使用自定义 DialTLSContext 时，Go 的 net/http 不会
+	// 自动启用 HTTP/2，需要手动通过 http2.ConfigureTransports 注册。
+	// 这使得当 ALPN 协商到 h2 时，连接会被 http2 Transport 接管处理。
+	if _, err := http2.ConfigureTransports(transport); err != nil {
+		slog.Warn("tls_fingerprint_http2_configure_failed", "error", err)
+		// HTTP/2 配置失败不是致命错误，回退到 HTTP/1.1
 	}
 
 	return transport, nil

@@ -485,6 +485,7 @@ var allowedHeaders = map[string]bool{
 	"sec-fetch-mode":                            true,
 	"user-agent":                                true,
 	"content-type":                              true,
+	"accept-encoding":                           true,
 }
 
 // GatewayCache 定义网关服务的缓存操作接口。

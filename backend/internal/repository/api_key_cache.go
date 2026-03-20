@@ -15,7 +15,7 @@ import (
 const (
 	apiKeyRateLimitKeyPrefix   = "apikey:ratelimit:"
 	apiKeyRateLimitDuration    = 24 * time.Hour
-	apiKeyAuthCachePrefix      = "apikey:auth:"
+	apiKeyAuthCachePrefix      = "apikey:auth:v2:"
 	authCacheInvalidateChannel = "auth:cache:invalidate"
 )
 
