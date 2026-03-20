@@ -7863,6 +7863,7 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	// 设置余额扣费优先级（gift_first / normal_first）
 	if cmd.BalanceCost > 0 && deps.settingService != nil {
 		cmd.BalancePriority = deps.settingService.GetBalanceConsumptionPriority(ctx)
+		cmd.RequestFingerprint = "" // 强制重算指纹，使其包含 BalancePriority
 	}
 
 	billingCtx, cancel := detachedBillingContext(ctx)

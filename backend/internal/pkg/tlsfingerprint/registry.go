@@ -67,8 +67,8 @@ func NewRegistryFromConfig(cfg *config.TLSFingerprintConfig) *Registry {
 // registerBuiltinProfile adds the default Claude CLI profile to the registry.
 func (r *Registry) registerBuiltinProfile() {
 	defaultProfile := &Profile{
-		Name:         "Claude CLI 2.x (Node.js 20.x + OpenSSL 3.x)",
-		EnableGREASE: false, // Node.js does not use GREASE
+		Name:         "Claude Code v2.1.79 (Bun runtime + BoringSSL)",
+		EnableGREASE: false, // Bun/BoringSSL does not use GREASE
 		// Empty slices will cause dialer to use built-in defaults
 		CipherSuites: nil,
 		Curves:       nil,
