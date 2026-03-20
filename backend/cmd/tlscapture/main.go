@@ -14,8 +14,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/hex"
 	"encoding/pem"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -32,16 +32,24 @@ import (
 
 // ========== Configuration ==========
 
-const (
-	listenAddr = "0.0.0.0:443"
-	remoteHost = "192.168.50.102:22"
-	remoteUser = "nanako"
-	remotePass = "djl0629@nA"
-	localIP    = "192.168.16.107" // This machine's IP reachable from remote
-
-	hostsMarker = "# tlscapture-temp"
-	hostsEntry  = localIP + " api.anthropic.com " + hostsMarker
+// Command-line flags (override via env: CAPTURE_REMOTE_HOST, CAPTURE_REMOTE_USER,
+// CAPTURE_REMOTE_PASS, CAPTURE_LOCAL_IP)
+var (
+	flagRemoteHost = flag.String("remote", envOrDefault("CAPTURE_REMOTE_HOST", "192.168.50.102:22"), "Remote SSH host:port")
+	flagRemoteUser = flag.String("user", envOrDefault("CAPTURE_REMOTE_USER", ""), "Remote SSH username")
+	flagRemotePass = flag.String("pass", envOrDefault("CAPTURE_REMOTE_PASS", ""), "Remote SSH password")
+	flagLocalIP    = flag.String("local-ip", envOrDefault("CAPTURE_LOCAL_IP", ""), "This machine's IP reachable from remote")
+	flagListenAddr = flag.String("listen", "0.0.0.0:443", "Capture server listen address")
 )
+
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+const hostsMarker = "# tlscapture-temp"
 
 // ========== TLS ClientHello Capture ==========
 
@@ -109,7 +117,7 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: "api.anthropic.com"},
 		DNSNames:     []string{"api.anthropic.com", "localhost"},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP(localIP)},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP(*flagLocalIP)},
 		NotBefore:    time.Now().Add(-1 * time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -217,18 +225,18 @@ func startCaptureServer() (*http.Server, error) {
 	})
 
 	srv := &http.Server{
-		Addr:      listenAddr,
+		Addr:      *flagListenAddr,
 		Handler:   mux,
 		TLSConfig: tlsConfig,
 	}
 
-	ln, err := tls.Listen("tcp", listenAddr, tlsConfig)
+	ln, err := tls.Listen("tcp", *flagListenAddr, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("listen: %w", err)
 	}
 
 	go func() {
-		log.Printf("TLS capture server listening on %s", listenAddr)
+		log.Printf("TLS capture server listening on %s", *flagListenAddr)
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("Server error: %v", err)
 		}
@@ -241,15 +249,15 @@ func startCaptureServer() (*http.Server, error) {
 
 func sshConnect() (*ssh.Client, error) {
 	config := &ssh.ClientConfig{
-		User: remoteUser,
+		User: *flagRemoteUser,
 		Auth: []ssh.AuthMethod{
-			ssh.Password(remotePass),
+			ssh.Password(*flagRemotePass),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}
 
-	client, err := ssh.Dial("tcp", remoteHost, config)
+	client, err := ssh.Dial("tcp", *flagRemoteHost, config)
 	if err != nil {
 		return nil, fmt.Errorf("SSH dial: %w", err)
 	}
@@ -279,7 +287,7 @@ func sshRunSudo(client *ssh.Client, cmd string) (string, error) {
 
 	// Pipe password to sudo -S via bash -c with double quotes
 	// to avoid single-quote nesting issues
-	sess.Stdin = strings.NewReader(remotePass + "\n")
+	sess.Stdin = strings.NewReader(*flagRemotePass + "\n")
 	fullCmd := fmt.Sprintf(`sudo -S bash -c "%s"`, strings.ReplaceAll(cmd, `"`, `\"`))
 	out, err := sess.CombinedOutput(fullCmd)
 	// Filter out the sudo password prompt from output
@@ -295,8 +303,8 @@ func sshRunSudo(client *ssh.Client, cmd string) (string, error) {
 }
 
 // addHostsEntry appends the hijack entry to /etc/hosts on the remote machine.
-func addHostsEntry(client *ssh.Client) error {
-	cmd := fmt.Sprintf(`echo "%s" >> /etc/hosts`, hostsEntry)
+func addHostsEntry(client *ssh.Client, entry string) error {
+	cmd := fmt.Sprintf(`echo "%s" >> /etc/hosts`, entry)
 	out, err := sshRunSudo(client, cmd)
 	if err != nil {
 		return fmt.Errorf("add hosts entry: %v\n%s", err, out)
@@ -317,7 +325,7 @@ func removeHostsEntry(client *ssh.Client) error {
 
 // verifyHostsEntry checks that api.anthropic.com resolves to our IP.
 func verifyHostsEntry(client *ssh.Client) bool {
-	out, err := sshRun(client, fmt.Sprintf(`getent hosts api.anthropic.com | grep -q '%s' && echo OK || echo FAIL`, localIP))
+	out, err := sshRun(client, fmt.Sprintf(`getent hosts api.anthropic.com | grep -q '%s' && echo OK || echo FAIL`, *flagLocalIP))
 	return err == nil && strings.TrimSpace(out) == "OK"
 }
 
@@ -388,9 +396,9 @@ func printComparison() {
 	// ---- ALPN ----
 	fmt.Println("┌─── ALPN ───────────────────────────────────────────────────┐")
 	fmt.Printf("│ 真实: %v\n", fp.ALPNProtocols)
-	fmt.Printf("│ 伪装: [h2 http/1.1]\n")
+	fmt.Printf("│ 伪装: [http/1.1]\n")
 	alpnMatch := "✅ 完全一致"
-	if len(fp.ALPNProtocols) != 2 || (len(fp.ALPNProtocols) >= 2 && (fp.ALPNProtocols[0] != "h2" || fp.ALPNProtocols[1] != "http/1.1")) {
+	if len(fp.ALPNProtocols) != 1 || (len(fp.ALPNProtocols) >= 1 && fp.ALPNProtocols[0] != "http/1.1") {
 		alpnMatch = "❌ 不一致"
 	}
 	fmt.Printf("│ 匹配: %s\n", alpnMatch)
@@ -509,14 +517,25 @@ func formatPointFormatsDecimal(vals []uint8) string {
 // ========== Main ==========
 
 func main() {
+	flag.Parse()
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
+
+	// Validate required flags
+	if *flagRemoteUser == "" || *flagRemotePass == "" || *flagLocalIP == "" {
+		fmt.Fprintln(os.Stderr, "Usage: tlscapture -user USER -pass PASS -local-ip IP [-remote HOST:PORT] [-listen ADDR]")
+		fmt.Fprintln(os.Stderr, "  Or set env: CAPTURE_REMOTE_USER, CAPTURE_REMOTE_PASS, CAPTURE_LOCAL_IP")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	hostsEntry := *flagLocalIP + " api.anthropic.com " + hostsMarker
 
 	// Handle Ctrl+C for cleanup
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 
-	// Step 1: Start TLS capture server on port 443
-	log.Println("[1/5] 启动 TLS 捕获服务器 (port 443)...")
+	// Step 1: Start TLS capture server
+	log.Printf("[1/5] 启动 TLS 捕获服务器 (%s)...", *flagListenAddr)
 	srv, err := startCaptureServer()
 	if err != nil {
 		log.Fatalf("Failed to start capture server: %v", err)
@@ -538,7 +557,7 @@ func main() {
 	}
 
 	// Step 3: Hijack /etc/hosts
-	log.Println("[3/5] 劫持 /etc/hosts: api.anthropic.com ->", localIP)
+	log.Println("[3/5] 劫持 /etc/hosts: api.anthropic.com ->", *flagLocalIP)
 
 	// Ensure cleanup on exit (idempotent via sync.Once)
 	var hostsCleanupOnce sync.Once
@@ -559,13 +578,13 @@ func main() {
 	removeHostsEntry(client)
 
 	// Add the hijack entry
-	if err := addHostsEntry(client); err != nil {
+	if err := addHostsEntry(client, hostsEntry); err != nil {
 		log.Fatalf("劫持 /etc/hosts 失败: %v", err)
 	}
 
 	// Verify
 	if verifyHostsEntry(client) {
-		log.Println("  ✅ hosts 劫持生效: api.anthropic.com ->", localIP)
+		log.Println("  ✅ hosts 劫持生效: api.anthropic.com ->", *flagLocalIP)
 	} else {
 		log.Println("  ⚠️ hosts 劫持可能未生效，继续尝试...")
 	}
@@ -619,13 +638,12 @@ func main() {
 	// Print comparison
 	printComparison()
 
-	// Keep hex dump available
+	// Print detailed cipher suite list
 	if capturedFP != nil {
 		captureMu.Lock()
 		raw := capturedFP
 		captureMu.Unlock()
 		realSuites := filterGREASE(raw.CipherSuites)
-		_ = hex.EncodeToString(nil) // just to use the import
 		fmt.Printf("\n完整 CipherSuites (非 GREASE, 共 %d 个):\n", len(realSuites))
 		for i, s := range realSuites {
 			fmt.Printf("  [%2d] 0x%04x (%d)\n", i, s, s)

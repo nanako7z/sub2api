@@ -36,17 +36,15 @@
 
 ## 配置
 
-编辑 `main.go` 顶部常量：
+通过命令行参数或环境变量传入凭据（不硬编码在代码中）：
 
-```go
-const (
-    listenAddr = "0.0.0.0:443"
-    remoteHost = "192.168.50.102:22"  // 远程机器 SSH
-    remoteUser = "nanako"
-    remotePass = "djl0629@nA"
-    localIP    = "192.168.16.107"     // 本机可达 IP
-)
-```
+| 参数 | 环境变量 | 说明 |
+|------|---------|------|
+| `-user` | `CAPTURE_REMOTE_USER` | SSH 用户名（必填） |
+| `-pass` | `CAPTURE_REMOTE_PASS` | SSH 密码（必填） |
+| `-local-ip` | `CAPTURE_LOCAL_IP` | 本机可达 IP（必填） |
+| `-remote` | `CAPTURE_REMOTE_HOST` | 远程 SSH 地址（默认 `192.168.50.102:22`） |
+| `-listen` | — | 捕获服务器监听地址（默认 `0.0.0.0:443`） |
 
 ## 运行
 
@@ -60,6 +58,9 @@ New-NetFirewallRule -DisplayName "TLS Capture 443" -Direction Inbound -LocalPort
 
 ```bash
 cd backend
+go run ./cmd/tlscapture/ -user nanako -pass 'PASSWORD' -local-ip 192.168.16.107
+# 或使用环境变量
+export CAPTURE_REMOTE_USER=nanako CAPTURE_REMOTE_PASS='PASSWORD' CAPTURE_LOCAL_IP=192.168.16.107
 go run ./cmd/tlscapture/
 ```
 

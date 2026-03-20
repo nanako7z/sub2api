@@ -485,7 +485,7 @@ var allowedHeaders = map[string]bool{
 	"sec-fetch-mode":                            true,
 	"user-agent":                                true,
 	"content-type":                              true,
-	"accept-encoding":                           true,
+	"accept-encoding":                           true, // 透传客户端压缩偏好；Go transport 自动解压 gzip，br/zstd 由客户端自行处理
 }
 
 // GatewayCache 定义网关服务的缓存操作接口。
