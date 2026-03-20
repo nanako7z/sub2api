@@ -1342,11 +1342,8 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		sessionID = generateSessionUUID(seed)
 	}
 
-	// 根据指纹 UA 版本选择输出格式
-	var uaVersion string
-	if fp != nil {
-		uaVersion = ExtractCLIVersion(fp.UserAgent)
-	}
+	// 使用统一 UA 版本选择输出格式（与发给上游的 UA 一致）
+	uaVersion := ExtractCLIVersion(claude.DefaultHeaders["User-Agent"])
 	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
 	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
@@ -6033,22 +6030,15 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		clientHeaders = c.Request.Header
 	}
 
-	// OAuth账号：应用统一指纹
-	var fingerprint *Fingerprint
+	// OAuth账号：重写 metadata.user_id（替换 device_id/account_uuid/session_id）
 	if account.IsOAuth() && s.identityService != nil {
-		// 1. 获取或创建指纹（包含随机生成的ClientID）
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err != nil {
 			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
-			// 失败时降级为透传原始headers
 		} else {
-			fingerprint = fp
-
-			// 2. 重写metadata.user_id（需要指纹中的ClientID和账号的account_uuid）
-			// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
 			accountUUID := account.GetExtraString("account_uuid")
 			if accountUUID != "" && fp.ClientID != "" {
-				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
 					body = newBody
 				}
 			}
@@ -6083,11 +6073,6 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		applyClaudeCodeMimicHeaders(req, reqStream)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
-
-		// 应用 per-account 指纹覆盖（UA/X-Stainless-OS 等按账号特征化）
-		if fingerprint != nil {
-			s.identityService.ApplyFingerprint(req, fingerprint)
-		}
 
 		// Beta：完整 8-token DefaultBetaHeader + 客户端额外 token，经动态策略过滤
 		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
@@ -8717,7 +8702,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
 			if accountUUID != "" && fp.ClientID != "" {
-				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
 					body = newBody
 				}
 			}
@@ -8746,14 +8731,6 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		applyClaudeCodeMimicHeaders(req, false)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
-
-		// 应用 per-account 指纹覆盖
-		if account.IsOAuth() && s.identityService != nil {
-			fp, _ := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
-			if fp != nil {
-				s.identityService.ApplyFingerprint(req, fp)
-			}
-		}
 
 		// count_tokens beta：claude-code + oauth + interleaved-thinking + token-counting
 		requiredBetas := []string{claude.BetaClaudeCode, claude.BetaOAuth, claude.BetaInterleavedThinking, claude.BetaTokenCounting}

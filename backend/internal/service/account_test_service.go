@@ -304,16 +304,13 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 
-	// OAuth 账号：应用 per-account identity 指纹并重写 metadata.user_id
-	// 与网关转发路径 (gateway_service.go buildUpstreamRequest) 行为一致
-	var fingerprint *Fingerprint
+	// OAuth 账号：重写 metadata.user_id（与网关转发路径一致）
 	if account.IsOAuth() && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
 		if err == nil {
-			fingerprint = fp
 			accountUUID := account.GetExtraString("account_uuid")
 			if accountUUID != "" && fp.ClientID != "" {
-				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, payloadBytes, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, payloadBytes, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
 					payloadBytes = newBody
 				}
 			}
@@ -341,11 +338,6 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		applyClaudeCodeMimicHeaders(req, true)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
-
-		// 应用 per-account 指纹覆盖（UA/X-Stainless-OS 等按账号特征化）
-		if fingerprint != nil {
-			s.identityService.ApplyFingerprint(req, fingerprint)
-		}
 
 		// Beta：DefaultBetaHeader 经动态策略过滤
 		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
