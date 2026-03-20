@@ -69,6 +69,8 @@ type AccountTestService struct {
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
+	identityService           *IdentityService
+	settingService            *SettingService
 	soraTestGuardMu           sync.Mutex
 	soraTestLastRun           map[int64]time.Time
 	soraTestCooldown          time.Duration
@@ -83,6 +85,8 @@ func NewAccountTestService(
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
+	identityService *IdentityService,
+	settingService *SettingService,
 ) *AccountTestService {
 	return &AccountTestService{
 		accountRepo:               accountRepo,
@@ -90,9 +94,38 @@ func NewAccountTestService(
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
+		identityService:           identityService,
+		settingService:            settingService,
 		soraTestLastRun:           make(map[int64]time.Time),
 		soraTestCooldown:          defaultSoraTestCooldown,
 	}
+}
+
+// getBetaPolicyFilterSet 获取 beta 策略过滤集，与 GatewayService.getBetaPolicyFilterSet 逻辑一致
+func (s *AccountTestService) getBetaPolicyFilterSet(ctx context.Context, account *Account) map[string]struct{} {
+	if s.settingService == nil {
+		return nil
+	}
+	settings, err := s.settingService.GetBetaPolicySettings(ctx)
+	if err != nil || settings == nil {
+		return nil
+	}
+	isOAuth := account.IsOAuth()
+	isBedrock := account.IsBedrock()
+	var filterSet map[string]struct{}
+	for _, rule := range settings.Rules {
+		if rule.Action != BetaPolicyActionFilter {
+			continue
+		}
+		if !betaPolicyScopeMatches(rule.Scope, isOAuth, isBedrock) {
+			continue
+		}
+		if filterSet == nil {
+			filterSet = make(map[string]struct{})
+		}
+		filterSet[rule.BetaToken] = struct{}{}
+	}
+	return filterSet
 }
 
 func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error) {
@@ -271,27 +304,60 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 
+	// OAuth 账号：应用 per-account identity 指纹并重写 metadata.user_id
+	// 与网关转发路径 (gateway_service.go buildUpstreamRequest) 行为一致
+	var fingerprint *Fingerprint
+	if account.IsOAuth() && s.identityService != nil {
+		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
+		if err == nil {
+			fingerprint = fp
+			accountUUID := account.GetExtraString("account_uuid")
+			if accountUUID != "" && fp.ClientID != "" {
+				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, payloadBytes, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+					payloadBytes = newBody
+				}
+			}
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create request")
 	}
 
-	// Set common headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	// Apply Claude Code client headers
-	for key, value := range claude.DefaultHeaders {
-		req.Header.Set(key, value)
-	}
-
-	// Set authentication header
+	// 设置认证头
 	if useBearer {
-		req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
-		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
 		req.Header.Set("x-api-key", authToken)
+	}
+
+	// 构建 beta 策略过滤集（与网关路径一致）
+	policyFilterSet := s.getBetaPolicyFilterSet(ctx, account)
+	effectiveDropSet := mergeDropSets(policyFilterSet)
+
+	if useBearer {
+		// OAuth 账号：完整 Claude Code 伪装头（与 applyClaudeCodeMimicHeaders 一致）
+		applyClaudeCodeMimicHeaders(req, true)
+		req.Header.Set("content-type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+
+		// 应用 per-account 指纹覆盖（UA/X-Stainless-OS 等按账号特征化）
+		if fingerprint != nil {
+			s.identityService.ApplyFingerprint(req, fingerprint)
+		}
+
+		// Beta：DefaultBetaHeader 经动态策略过滤
+		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
+		req.Header.Set("anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, "", effectiveDropSet))
+	} else {
+		// API Key 账号：最小伪装头 + 策略过滤
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		for key, value := range claude.DefaultHeaders {
+			req.Header.Set(key, value)
+		}
+		req.Header.Set("anthropic-beta", stripBetaTokensWithSet(claude.APIKeyBetaHeader, effectiveDropSet))
 	}
 
 	// Get proxy URL
