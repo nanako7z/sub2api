@@ -30,16 +30,15 @@ func (s *IdentityCacheSuite) TestGetFingerprint_Missing() {
 }
 
 func (s *IdentityCacheSuite) TestSetAndGetFingerprint() {
-	fp := &service.Fingerprint{ClientID: "c1", UserAgent: "ua"}
+	fp := &service.Fingerprint{ClientID: "c1"}
 	require.NoError(s.T(), s.cache.SetFingerprint(s.ctx, 1, fp), "SetFingerprint")
 	gotFP, err := s.cache.GetFingerprint(s.ctx, 1)
 	require.NoError(s.T(), err, "GetFingerprint")
 	require.Equal(s.T(), "c1", gotFP.ClientID)
-	require.Equal(s.T(), "ua", gotFP.UserAgent)
 }
 
 func (s *IdentityCacheSuite) TestFingerprint_TTL() {
-	fp := &service.Fingerprint{ClientID: "c1", UserAgent: "ua"}
+	fp := &service.Fingerprint{ClientID: "c1"}
 	require.NoError(s.T(), s.cache.SetFingerprint(s.ctx, 2, fp))
 
 	fpKey := fmt.Sprintf("%s%d", fingerprintKeyPrefix, 2)

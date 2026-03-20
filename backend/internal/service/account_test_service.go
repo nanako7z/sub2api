@@ -195,9 +195,8 @@ func createTestPayload(modelID string) (map[string]any, error) {
 		"metadata": map[string]string{
 			"user_id": sessionID,
 		},
-		"max_tokens":  1024,
-		"temperature": 1,
-		"stream":      true,
+		"max_tokens": 1024,
+		"stream":     true,
 	}, nil
 }
 

@@ -925,7 +925,7 @@ func decompressResponse(resp *http.Response) {
 		var dec *zstd.Decoder
 		dec, err = zstd.NewReader(resp.Body)
 		if err == nil {
-			decompressed = io.NopCloser(dec)
+			decompressed = &zstdCloser{dec} // 包装为 io.ReadCloser，Close() 释放内部 goroutine
 		}
 	default:
 		return
@@ -957,3 +957,12 @@ func (d *decompressedBody) Close() error {
 	_ = d.reader.Close()
 	return d.original.Close()
 }
+
+// zstdCloser 包装 *zstd.Decoder，使其满足 io.ReadCloser 接口。
+// *zstd.Decoder.Close() 无返回值，不直接实现 io.ReadCloser。
+type zstdCloser struct {
+	dec *zstd.Decoder
+}
+
+func (z *zstdCloser) Read(p []byte) (int, error) { return z.dec.Read(p) }
+func (z *zstdCloser) Close() error               { z.dec.Close(); return nil }

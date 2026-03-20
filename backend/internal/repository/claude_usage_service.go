@@ -59,12 +59,7 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 	req.Header.Set("Authorization", "Bearer "+opts.AccessToken)
 	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
 
-	// 设置 User-Agent（优先使用缓存的 Fingerprint，否则使用默认值）
-	userAgent := defaultUsageUserAgent
-	if opts.Fingerprint != nil && opts.Fingerprint.UserAgent != "" {
-		userAgent = opts.Fingerprint.UserAgent
-	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", defaultUsageUserAgent)
 
 	var resp *http.Response
 
