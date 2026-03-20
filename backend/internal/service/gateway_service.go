@@ -1297,16 +1297,13 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 		}
 	}
 
-	if gjson.GetBytes(out, "temperature").Exists() {
-		if next, ok := deleteJSONPathBytes(out, "temperature"); ok {
-			out = next
-			modified = true
-		}
-	}
-	if gjson.GetBytes(out, "tool_choice").Exists() {
-		if next, ok := deleteJSONPathBytes(out, "tool_choice"); ok {
-			out = next
-			modified = true
+	// 删除 Claude Code 从不发送的字段，避免暴露非原生客户端特征
+	for _, field := range []string{"temperature", "tool_choice", "top_p", "top_k", "stop_sequences"} {
+		if gjson.GetBytes(out, field).Exists() {
+			if next, ok := deleteJSONPathBytes(out, field); ok {
+				out = next
+				modified = true
+			}
 		}
 	}
 
