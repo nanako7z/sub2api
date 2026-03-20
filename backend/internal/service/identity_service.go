@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -23,17 +22,6 @@ var (
 	// 匹配 User-Agent 版本号: xxx/x.y.z
 	userAgentVersionRegex = regexp.MustCompile(`/(\d+)\.(\d+)\.(\d+)`)
 )
-
-// 默认指纹值（当客户端未提供时使用）
-var defaultFingerprint = Fingerprint{
-	UserAgent:               "claude-cli/2.1.79 (external, sdk-cli)",
-	StainlessLang:           "js",
-	StainlessPackageVersion: "0.74.0",
-	StainlessOS:             "Linux",
-	StainlessArch:           "x64",
-	StainlessRuntime:        "node",
-	StainlessRuntimeVersion: "v24.3.0",
-}
 
 // Fingerprint represents account fingerprint data
 type Fingerprint struct {
@@ -63,32 +51,25 @@ type IdentityCache interface {
 
 // IdentityService 管理OAuth账号的请求身份指纹
 type IdentityService struct {
-	cache IdentityCache
+	cache       IdentityCache
+	accountRepo AccountRepository
 }
 
 // NewIdentityService 创建新的IdentityService
-func NewIdentityService(cache IdentityCache) *IdentityService {
-	return &IdentityService{cache: cache}
+func NewIdentityService(cache IdentityCache, accountRepo AccountRepository) *IdentityService {
+	return &IdentityService{cache: cache, accountRepo: accountRepo}
 }
 
 // GetOrCreateFingerprint 获取或创建账号的指纹
-// 如果缓存存在，检测user-agent版本，新版本则更新
-// 如果缓存不存在，生成随机ClientID并从请求头创建指纹，然后缓存
-func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID int64, headers http.Header) (*Fingerprint, error) {
-	// 尝试从缓存获取指纹
+// ClientID 持久化到数据库（extra.client_id），Redis 仅作缓存。
+// 确保 Redis 重启或缓存过期后 ClientID 不会变化。
+func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID int64) (*Fingerprint, error) {
+	// 1. 尝试从 Redis 缓存获取
 	cached, err := s.cache.GetFingerprint(ctx, accountID)
 	if err == nil && cached != nil {
 		needWrite := false
 
-		// 检查客户端的user-agent是否是更新版本
-		clientUA := headers.Get("User-Agent")
-		if clientUA != "" && isNewerVersion(clientUA, cached.UserAgent) {
-			// 版本升级：merge 语义 — 仅更新请求中实际携带的字段，保留缓存值
-			// 避免缺失的头被硬编码默认值覆盖（如新 CLI 版本 + 旧 SDK 默认值的不一致）
-			mergeHeadersIntoFingerprint(cached, headers)
-			needWrite = true
-			logger.LegacyPrintf("service.identity", "Updated fingerprint for account %d: %s (merge update)", accountID, clientUA)
-		} else if time.Since(time.Unix(cached.UpdatedAt, 0)) > 24*time.Hour {
+		if time.Since(time.Unix(cached.UpdatedAt, 0)) > 24*time.Hour {
 			// 距上次写入超过24小时，续期TTL
 			needWrite = true
 		}
@@ -102,107 +83,33 @@ func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID 
 		return cached, nil
 	}
 
-	// 缓存不存在或解析失败，创建新指纹
-	fp := s.createFingerprintFromHeaders(headers)
+	// 2. Redis miss，尝试从数据库 extra.client_id 恢复
+	fp := &Fingerprint{UpdatedAt: time.Now().Unix()}
+	if s.accountRepo != nil {
+		if account, err := s.accountRepo.GetByID(ctx, accountID); err == nil {
+			fp.ClientID = account.GetExtraString("client_id")
+		}
+	}
 
-	// 生成随机ClientID
-	fp.ClientID = generateClientID()
-	fp.UpdatedAt = time.Now().Unix()
+	// 3. 数据库也没有，生成新的并持久化到数据库
+	if fp.ClientID == "" {
+		fp.ClientID = generateClientID()
+		if s.accountRepo != nil {
+			if err := s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{"client_id": fp.ClientID}); err != nil {
+				logger.LegacyPrintf("service.identity", "Warning: failed to persist client_id for account %d: %v", accountID, err)
+			}
+		}
+		logger.LegacyPrintf("service.identity", "Created new client_id for account %d: %s", accountID, fp.ClientID)
+	} else {
+		logger.LegacyPrintf("service.identity", "Restored client_id for account %d from database", accountID)
+	}
 
-	// 保存到缓存（7天TTL，每24小时自动续期）
+	// 4. 写入 Redis 缓存
 	if err := s.cache.SetFingerprint(ctx, accountID, fp); err != nil {
 		logger.LegacyPrintf("service.identity", "Warning: failed to cache fingerprint for account %d: %v", accountID, err)
 	}
 
-	logger.LegacyPrintf("service.identity", "Created new fingerprint for account %d with client_id: %s", accountID, fp.ClientID)
 	return fp, nil
-}
-
-// createFingerprintFromHeaders 从请求头创建指纹
-func (s *IdentityService) createFingerprintFromHeaders(headers http.Header) *Fingerprint {
-	fp := &Fingerprint{}
-
-	// 获取User-Agent
-	if ua := headers.Get("User-Agent"); ua != "" {
-		fp.UserAgent = ua
-	} else {
-		fp.UserAgent = defaultFingerprint.UserAgent
-	}
-
-	// 获取x-stainless-*头，如果没有则使用默认值
-	fp.StainlessLang = getHeaderOrDefault(headers, "X-Stainless-Lang", defaultFingerprint.StainlessLang)
-	fp.StainlessPackageVersion = getHeaderOrDefault(headers, "X-Stainless-Package-Version", defaultFingerprint.StainlessPackageVersion)
-	fp.StainlessOS = getHeaderOrDefault(headers, "X-Stainless-OS", defaultFingerprint.StainlessOS)
-	fp.StainlessArch = getHeaderOrDefault(headers, "X-Stainless-Arch", defaultFingerprint.StainlessArch)
-	fp.StainlessRuntime = getHeaderOrDefault(headers, "X-Stainless-Runtime", defaultFingerprint.StainlessRuntime)
-	fp.StainlessRuntimeVersion = getHeaderOrDefault(headers, "X-Stainless-Runtime-Version", defaultFingerprint.StainlessRuntimeVersion)
-
-	return fp
-}
-
-// mergeHeadersIntoFingerprint 将请求头中实际存在的字段合并到现有指纹中（用于版本升级场景）
-// 关键语义：请求中有的字段 → 用新值覆盖；缺失的头 → 保留缓存中的已有值
-// 与 createFingerprintFromHeaders 的区别：后者用于首次创建，缺失头回退到 defaultFingerprint；
-// 本函数用于升级更新，缺失头保留缓存值，避免将已知的真实值退化为硬编码默认值
-func mergeHeadersIntoFingerprint(fp *Fingerprint, headers http.Header) {
-	// User-Agent：版本升级的触发条件，一定存在
-	if ua := headers.Get("User-Agent"); ua != "" {
-		fp.UserAgent = ua
-	}
-	// X-Stainless-* 头：仅在请求中实际携带时才更新，否则保留缓存值
-	mergeHeader(headers, "X-Stainless-Lang", &fp.StainlessLang)
-	mergeHeader(headers, "X-Stainless-Package-Version", &fp.StainlessPackageVersion)
-	mergeHeader(headers, "X-Stainless-OS", &fp.StainlessOS)
-	mergeHeader(headers, "X-Stainless-Arch", &fp.StainlessArch)
-	mergeHeader(headers, "X-Stainless-Runtime", &fp.StainlessRuntime)
-	mergeHeader(headers, "X-Stainless-Runtime-Version", &fp.StainlessRuntimeVersion)
-}
-
-// mergeHeader 如果请求头中存在该字段则更新目标值，否则保留原值
-func mergeHeader(headers http.Header, key string, target *string) {
-	if v := headers.Get(key); v != "" {
-		*target = v
-	}
-}
-
-// getHeaderOrDefault 获取header值，如果不存在则返回默认值
-func getHeaderOrDefault(headers http.Header, key, defaultValue string) string {
-	if v := headers.Get(key); v != "" {
-		return v
-	}
-	return defaultValue
-}
-
-// ApplyFingerprint 将指纹应用到请求头（覆盖原有的x-stainless-*头）
-func (s *IdentityService) ApplyFingerprint(req *http.Request, fp *Fingerprint) {
-	if fp == nil {
-		return
-	}
-
-	// 设置user-agent
-	if fp.UserAgent != "" {
-		req.Header.Set("user-agent", fp.UserAgent)
-	}
-
-	// 设置x-stainless-*头
-	if fp.StainlessLang != "" {
-		req.Header.Set("X-Stainless-Lang", fp.StainlessLang)
-	}
-	if fp.StainlessPackageVersion != "" {
-		req.Header.Set("X-Stainless-Package-Version", fp.StainlessPackageVersion)
-	}
-	if fp.StainlessOS != "" {
-		req.Header.Set("X-Stainless-OS", fp.StainlessOS)
-	}
-	if fp.StainlessArch != "" {
-		req.Header.Set("X-Stainless-Arch", fp.StainlessArch)
-	}
-	if fp.StainlessRuntime != "" {
-		req.Header.Set("X-Stainless-Runtime", fp.StainlessRuntime)
-	}
-	if fp.StainlessRuntimeVersion != "" {
-		req.Header.Set("X-Stainless-Runtime-Version", fp.StainlessRuntimeVersion)
-	}
 }
 
 // RewriteUserID 重写body中的metadata.user_id

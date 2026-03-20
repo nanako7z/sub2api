@@ -4501,7 +4501,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 这样注入的 cache_control 不会被 strip 删除，确保稳定前缀可被上游缓存。
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
 		if s.identityService != nil {
-			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
+			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 			if err == nil && fp != nil {
 				if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
 					normalizeOpts.injectMetadata = true
@@ -6032,7 +6032,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// OAuth账号：重写 metadata.user_id（替换 device_id/account_uuid/session_id）
 	if account.IsOAuth() && s.identityService != nil {
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
+		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err != nil {
 			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
 		} else {
@@ -8698,7 +8698,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// OAuth 账号：应用统一指纹和重写 userID
 	// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
 	if account.IsOAuth() && s.identityService != nil {
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
+		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
 			if accountUUID != "" && fp.ClientID != "" {

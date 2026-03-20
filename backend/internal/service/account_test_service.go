@@ -306,7 +306,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 
 	// OAuth 账号：重写 metadata.user_id（与网关转发路径一致）
 	if account.IsOAuth() && s.identityService != nil {
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
+		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
 			if accountUUID != "" && fp.ClientID != "" {
