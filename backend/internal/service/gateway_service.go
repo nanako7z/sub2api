@@ -4175,8 +4175,9 @@ func minCacheTokensByModel(model string) int {
 //  3. 前缀 token 数（tools + system 文本）估算达到最小缓存阈值
 //
 // token 估算说明：len(bytes)/3 对 ASCII 和 CJK 均合理——
-//   ASCII: ~4 bytes/token，保守估算约 3 bytes/token（轻微高估，使注入更积极）
-//   CJK: 1 char = 3 bytes UTF-8 ≈ 1 token，故 byteLen/3 ≈ rune count ≈ token count
+//
+//	ASCII: ~4 bytes/token，保守估算约 3 bytes/token（轻微高估，使注入更积极）
+//	CJK: 1 char = 3 bytes UTF-8 ≈ 1 token，故 byteLen/3 ≈ rune count ≈ token count
 func injectAutoCacheControl(body []byte, model string) []byte {
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -4490,9 +4491,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	debugLogRequestBody("CLIENT_ORIGINAL", body)
 
 	isClaudeCode := isClaudeCodeRequest(ctx, c, parsed)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
-	// 所有 OAuth 账号强制伪装请求头（UA/beta），包括 Claude Code 客户端
-	shouldMimicHeaders := account.IsOAuth()
+	shouldMimicClaudeCode := account.IsAnthropicClaudeMimicAccount() && !isClaudeCode
+	// Anthropic OAuth/API Key 账号强制伪装请求头（UA/beta），包括 Claude Code 客户端
+	shouldMimicHeaders := account.IsAnthropicClaudeMimicAccount()
 
 	if shouldMimicClaudeCode {
 		// 先 normalize（sanitize text、model 等），不 strip system 的 cache_control。
@@ -4519,16 +4520,15 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 	}
 
-	// OAuth/SetupToken 账号：移除黑名单前缀匹配的 system 元素（如客户端注入的计费元数据）
+	// Claude mimic 账号：移除黑名单前缀匹配的 system 元素（如客户端注入的计费元数据）
 	// 放在 inject/normalize 之后，确保不会被覆盖
-	if account.IsOAuth() {
+	if account.IsAnthropicClaudeMimicAccount() {
 		body = filterSystemBlocksByPrefix(body)
 	}
 
 	// 自动注入 cache_control：仅当客户端完全没有设置任何断点时，
 	// 在 system 最后一个块上添加 ephemeral 标记以利用上游前缀缓存
 	body = injectAutoCacheControl(body, reqModel)
-
 
 	// 强制执行 cache_control 块数量限制（最多 4 个）
 	body = enforceCacheControlLimit(body)
@@ -5269,21 +5269,26 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 		targetURL = validatedURL + "/v1/messages?beta=true"
 	}
 
+	clientHeaders := http.Header{}
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+
+	if s.identityService != nil {
+		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
+		if err != nil {
+			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
+		} else if fp.ClientID != "" {
+			accountUUID := account.GetExtraString("account_uuid")
+			if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
+				body = newBody
+			}
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
-	}
-
-	if c != nil && c.Request != nil {
-		for key, values := range c.Request.Header {
-			lowerKey := strings.ToLower(strings.TrimSpace(key))
-			if !allowedHeaders[lowerKey] {
-				continue
-			}
-			for _, v := range values {
-				req.Header.Add(key, v)
-			}
-		}
 	}
 
 	// 覆盖入站鉴权残留，并注入上游认证
@@ -5293,12 +5298,13 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	req.Header.Del("cookie")
 	req.Header.Set("x-api-key", token)
 
-	if req.Header.Get("content-type") == "" {
-		req.Header.Set("content-type", "application/json")
-	}
-	if req.Header.Get("anthropic-version") == "" {
-		req.Header.Set("anthropic-version", "2023-06-01")
-	}
+	effectiveDropSet := mergeDropSets(s.getBetaPolicyFilterSet(ctx, c, account))
+	incomingBeta := clientHeaders.Get("anthropic-beta")
+	applyClaudeCodeMimicHeaders(req, gjson.GetBytes(body, "stream").Bool())
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	requiredBetas := requiredAnthropicMimicBetas(account, false)
+	req.Header.Set("anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, effectiveDropSet))
 
 	return req, nil
 }
@@ -6029,14 +6035,14 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		clientHeaders = c.Request.Header
 	}
 
-	// OAuth账号：重写 metadata.user_id（替换 device_id/account_uuid/session_id）
-	if account.IsOAuth() && s.identityService != nil {
+	// Claude mimic 账号：重写 metadata.user_id（替换 device_id/account_uuid/session_id）
+	if account.IsAnthropicClaudeMimicAccount() && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err != nil {
 			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
 		} else {
 			accountUUID := account.GetExtraString("account_uuid")
-			if accountUUID != "" && fp.ClientID != "" {
+			if fp.ClientID != "" {
 				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
 					body = newBody
 				}
@@ -6064,7 +6070,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	effectiveDropSet := mergeDropSets(policyFilterSet)
 
 	if mimicClaudeCode {
-		// ── OAuth 账号：从零构建请求头，不透传任何客户端 header ──
+		// ── Claude mimic 账号：从零构建请求头，不透传任何客户端 header ──
 		// 读取客户端 beta（在跳过透传前从原始请求获取，用于合并额外 token）
 		incomingBeta := clientHeaders.Get("anthropic-beta")
 
@@ -6074,10 +6080,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		req.Header.Set("anthropic-version", "2023-06-01")
 
 		// Beta：完整 8-token DefaultBetaHeader + 客户端额外 token，经动态策略过滤
-		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
+		requiredBetas := requiredAnthropicMimicBetas(account, false)
 		req.Header.Set("anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, effectiveDropSet))
 	} else {
-		// ── 非 OAuth（API key）：白名单透传 + 按需补齐 ──
+		// ── 非 mimic 账号：白名单透传 + 按需补齐 ──
 		for key, values := range clientHeaders {
 			lowerKey := strings.ToLower(key)
 			if allowedHeaders[lowerKey] {
@@ -6118,7 +6124,6 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	return req, nil
 }
 
-
 func requestNeedsBetaFeatures(body []byte) bool {
 	tools := gjson.GetBytes(body, "tools")
 	if tools.Exists() && tools.IsArray() && len(tools.Array()) > 0 {
@@ -6129,6 +6134,27 @@ func requestNeedsBetaFeatures(body []byte) bool {
 		return true
 	}
 	return false
+}
+
+func requiredAnthropicMimicBetas(account *Account, isCountTokens bool) []string {
+	if account != nil && account.IsAnthropicAPIKey() {
+		if isCountTokens {
+			return []string{claude.BetaClaudeCode, claude.BetaInterleavedThinking, claude.BetaTokenCounting}
+		}
+		return []string{
+			claude.BetaClaudeCode,
+			claude.BetaContext1M,
+			claude.BetaInterleavedThinking,
+			claude.BetaContextManagement,
+			claude.BetaPromptCachingScope,
+			claude.BetaAdvancedToolUse,
+			claude.BetaEffort,
+		}
+	}
+	if isCountTokens {
+		return []string{claude.BetaClaudeCode, claude.BetaOAuth, claude.BetaInterleavedThinking, claude.BetaTokenCounting}
+	}
+	return strings.Split(claude.DefaultBetaHeader, ",")
 }
 
 func defaultAPIKeyBetaHeader(body []byte) string {
@@ -8353,11 +8379,20 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	reqModel := parsed.Model
 
 	isClaudeCode := isClaudeCodeRequest(ctx, c, parsed)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
-	shouldMimicHeaders := account.IsOAuth()
+	shouldMimicClaudeCode := account.IsAnthropicClaudeMimicAccount() && !isClaudeCode
+	shouldMimicHeaders := account.IsAnthropicClaudeMimicAccount()
 
 	if shouldMimicClaudeCode {
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
+		if s.identityService != nil {
+			fp, fpErr := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
+			if fpErr == nil && fp != nil {
+				if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
+					normalizeOpts.injectMetadata = true
+					normalizeOpts.metadataUserID = metadataUserID
+				}
+			}
+		}
 		body, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
 	}
 
@@ -8641,21 +8676,24 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 		targetURL = validatedURL + "/v1/messages/count_tokens?beta=true"
 	}
 
+	clientHeaders := http.Header{}
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+
+	if s.identityService != nil {
+		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
+		if err == nil && fp.ClientID != "" {
+			accountUUID := account.GetExtraString("account_uuid")
+			if newBody, rewriteErr := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); rewriteErr == nil && len(newBody) > 0 {
+				body = newBody
+			}
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
-	}
-
-	if c != nil && c.Request != nil {
-		for key, values := range c.Request.Header {
-			lowerKey := strings.ToLower(strings.TrimSpace(key))
-			if !allowedHeaders[lowerKey] {
-				continue
-			}
-			for _, v := range values {
-				req.Header.Add(key, v)
-			}
-		}
 	}
 
 	req.Header.Del("authorization")
@@ -8664,12 +8702,13 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	req.Header.Del("cookie")
 	req.Header.Set("x-api-key", token)
 
-	if req.Header.Get("content-type") == "" {
-		req.Header.Set("content-type", "application/json")
-	}
-	if req.Header.Get("anthropic-version") == "" {
-		req.Header.Set("anthropic-version", "2023-06-01")
-	}
+	ctEffectiveDropSet := mergeDropSets(s.getBetaPolicyFilterSet(ctx, c, account))
+	incomingBeta := clientHeaders.Get("anthropic-beta")
+	applyClaudeCodeMimicHeaders(req, false)
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	requiredBetas := requiredAnthropicMimicBetas(account, true)
+	req.Header.Set("anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, ctEffectiveDropSet))
 
 	return req, nil
 }
@@ -8694,13 +8733,13 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		clientHeaders = c.Request.Header
 	}
 
-	// OAuth 账号：应用统一指纹和重写 userID
+	// Claude mimic 账号：应用统一指纹和重写 userID
 	// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-	if account.IsOAuth() && s.identityService != nil {
+	if account.IsAnthropicClaudeMimicAccount() && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
-			if accountUUID != "" && fp.ClientID != "" {
+			if fp.ClientID != "" {
 				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
 					body = newBody
 				}
@@ -8724,7 +8763,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	ctEffectiveDropSet := mergeDropSets(s.getBetaPolicyFilterSet(ctx, c, account))
 
 	if mimicClaudeCode {
-		// ── OAuth 账号：从零构建请求头，不透传任何客户端 header ──
+		// ── Claude mimic 账号：从零构建请求头，不透传任何客户端 header ──
 		incomingBeta := clientHeaders.Get("anthropic-beta")
 
 		applyClaudeCodeMimicHeaders(req, false)
@@ -8732,10 +8771,10 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		req.Header.Set("anthropic-version", "2023-06-01")
 
 		// count_tokens beta：claude-code + oauth + interleaved-thinking + token-counting
-		requiredBetas := []string{claude.BetaClaudeCode, claude.BetaOAuth, claude.BetaInterleavedThinking, claude.BetaTokenCounting}
+		requiredBetas := requiredAnthropicMimicBetas(account, true)
 		req.Header.Set("anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, incomingBeta, ctEffectiveDropSet))
 	} else {
-		// ── 非 OAuth（API key）：白名单透传 + 按需补齐 ──
+		// ── 非 mimic 账号：白名单透传 + 按需补齐 ──
 		for key, values := range clientHeaders {
 			lowerKey := strings.ToLower(key)
 			if allowedHeaders[lowerKey] {

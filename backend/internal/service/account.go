@@ -1146,10 +1146,21 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 	return a.Platform == PlatformAnthropic && (a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken)
 }
 
+// IsAnthropicAPIKey 判断是否为 Anthropic API Key 账号。
+func (a *Account) IsAnthropicAPIKey() bool {
+	return a.Platform == PlatformAnthropic && a.Type == AccountTypeAPIKey
+}
+
+// IsAnthropicClaudeMimicAccount 判断账号是否应启用 Claude Code 风格伪装。
+// 当前包括 Anthropic OAuth 和 aloudata 定制分支中的 Anthropic API Key。
+func (a *Account) IsAnthropicClaudeMimicAccount() bool {
+	return a.Platform == PlatformAnthropic && (a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey)
+}
+
 // IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装
-// 所有 Anthropic OAuth/SetupToken 账号强制开启，模拟 Claude Code 客户端的 TLS 握手特征
+// 所有 Anthropic OAuth/SetupToken/API Key 账号强制开启，模拟 Claude Code 客户端的 TLS 握手特征
 func (a *Account) IsTLSFingerprintEnabled() bool {
-	return a.IsAnthropicOAuthOrSetupToken()
+	return a.IsAnthropicOAuthOrSetupToken() || a.IsAnthropicAPIKey()
 }
 
 // GetUserMsgQueueMode 获取用户消息队列模式
@@ -1173,11 +1184,11 @@ func (a *Account) GetUserMsgQueueMode() string {
 }
 
 // IsSessionIDMaskingEnabled 检查是否启用会话ID伪装
-// 仅适用于 Anthropic OAuth/SetupToken 类型账号
+// 适用于 Anthropic OAuth/SetupToken/API Key 类型账号
 // 启用后将在一段时间内（15分钟）固定 metadata.user_id 中的 session ID，
 // 使上游认为请求来自同一个会话
 func (a *Account) IsSessionIDMaskingEnabled() bool {
-	if !a.IsAnthropicOAuthOrSetupToken() {
+	if !(a.IsAnthropicOAuthOrSetupToken() || a.IsAnthropicAPIKey()) {
 		return false
 	}
 	if a.Extra == nil {

@@ -251,11 +251,6 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		if mode := a.GetUserMsgQueueMode(); mode != "" {
 			out.UserMsgQueueMode = &mode
 		}
-		// 会话ID伪装开关
-		if a.IsSessionIDMaskingEnabled() {
-			enabled := true
-			out.EnableSessionIDMasking = &enabled
-		}
 		// 缓存 TTL 强制替换
 		if a.IsCacheTTLOverrideEnabled() {
 			enabled := true
@@ -263,6 +258,12 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 			target := a.GetCacheTTLOverrideTarget()
 			out.CacheTTLOverrideTarget = &target
 		}
+	}
+
+	// 会话ID伪装开关（Anthropic OAuth/SetupToken/API Key）
+	if a.IsSessionIDMaskingEnabled() {
+		enabled := true
+		out.EnableSessionIDMasking = &enabled
 	}
 
 	// 提取账号配额限制（apikey / bedrock 类型有效）

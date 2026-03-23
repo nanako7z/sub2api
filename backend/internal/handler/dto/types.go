@@ -188,7 +188,7 @@ type Account struct {
 	RPMStickyBuffer  *int    `json:"rpm_sticky_buffer,omitempty"`
 	UserMsgQueueMode *string `json:"user_msg_queue_mode,omitempty"`
 
-	// 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
+	// 会话ID伪装（Anthropic OAuth/SetupToken/API Key 账号有效）
 	// 启用后将在15分钟内固定 metadata.user_id 中的 session ID
 	// 从 extra 字段提取，方便前端显示和编辑
 	EnableSessionIDMasking *bool `json:"session_id_masking_enabled,omitempty"`

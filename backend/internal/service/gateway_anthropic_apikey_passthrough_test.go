@@ -21,10 +21,11 @@ import (
 )
 
 type anthropicHTTPUpstreamRecorder struct {
-	lastReq  *http.Request
-	lastBody []byte
-	resp     *http.Response
-	err      error
+	lastReq                  *http.Request
+	lastBody                 []byte
+	lastEnableTLSFingerprint bool
+	resp                     *http.Response
+	err                      error
 }
 
 func newAnthropicAPIKeyAccountForTest() *Account {
@@ -61,7 +62,17 @@ func (u *anthropicHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, a
 }
 
 func (u *anthropicHTTPUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, enableTLSFingerprint bool) (*http.Response, error) {
+	u.lastEnableTLSFingerprint = enableTLSFingerprint
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
+}
+
+type identityCacheWithFingerprintStub struct {
+	identityCacheStub
+	fp *Fingerprint
+}
+
+func (s *identityCacheWithFingerprintStub) GetFingerprint(_ context.Context, _ int64) (*Fingerprint, error) {
+	return s.fp, nil
 }
 
 type streamReadCloser struct {
@@ -109,7 +120,13 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 	c.Request.Header.Set("Cookie", "secret=1")
 	c.Request.Header.Set("Anthropic-Beta", "interleaved-thinking-2025-05-14")
 
-	body := []byte(`{"model":"claude-3-7-sonnet-20250219","stream":true,"system":[{"type":"text","text":"x-anthropic-billing-header keep"}],"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+	originalUserID := FormatMetadataUserID(
+		"raw-client-id",
+		"",
+		"123e4567-e89b-12d3-a456-426614174000",
+		"2.1.78",
+	)
+	body := []byte(`{"model":"claude-3-7-sonnet-20250219","stream":true,"metadata":{"user_id":` + strconvQuote(originalUserID) + `},"system":[{"type":"text","text":"x-anthropic-billing-header keep"}],"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
 	parsed := &ParsedRequest{
 		Body:   body,
 		Model:  "claude-3-7-sonnet-20250219",
@@ -145,6 +162,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 		cfg:                  cfg,
 		responseHeaderFilter: compileResponseHeaderFilter(cfg),
 		httpUpstream:         upstream,
+		identityService:      NewIdentityService(&identityCacheWithFingerprintStub{fp: &Fingerprint{ClientID: "persisted-client-id"}, identityCacheStub: identityCacheStub{maskedSessionID: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"}}, nil),
 		rateLimitService:     &RateLimitService{},
 		deferredService:      &DeferredService{},
 		billingCacheService:  nil,
@@ -162,7 +180,8 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 			"model_mapping": map[string]any{"claude-3-7-sonnet-20250219": "claude-3-haiku-20240307"},
 		},
 		Extra: map[string]any{
-			"anthropic_passthrough": true,
+			"anthropic_passthrough":      true,
+			"session_id_masking_enabled": true,
 		},
 		Status:      StatusActive,
 		Schedulable: true,
@@ -180,8 +199,13 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 	require.Empty(t, upstream.lastReq.Header.Get("x-goog-api-key"))
 	require.Empty(t, upstream.lastReq.Header.Get("cookie"))
 	require.Equal(t, "2023-06-01", upstream.lastReq.Header.Get("anthropic-version"))
-	require.Equal(t, "interleaved-thinking-2025-05-14", upstream.lastReq.Header.Get("anthropic-beta"))
-	require.Empty(t, upstream.lastReq.Header.Get("x-stainless-lang"), "API Key 透传不应注入 OAuth 指纹头")
+	require.NotContains(t, upstream.lastReq.Header.Get("anthropic-beta"), claude.BetaOAuth)
+	require.Contains(t, upstream.lastReq.Header.Get("anthropic-beta"), claude.BetaClaudeCode)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], upstream.lastReq.Header.Get("user-agent"))
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Lang"], upstream.lastReq.Header.Get("x-stainless-lang"))
+	require.True(t, upstream.lastEnableTLSFingerprint, "Anthropic API Key passthrough should force TLS fingerprint")
+	require.Equal(t, "persisted-client-id", ParseMetadataUserID(gjson.GetBytes(upstream.lastBody, "metadata.user_id").String()).DeviceID)
+	require.Contains(t, gjson.GetBytes(upstream.lastBody, "metadata.user_id").String(), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
 
 	require.Contains(t, rec.Body.String(), `"cached_tokens":7`)
 	require.NotContains(t, rec.Body.String(), `"cache_read_input_tokens":7`, "透传输出不应被网关改写")
@@ -232,6 +256,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 		cfg:                  cfg,
 		responseHeaderFilter: compileResponseHeaderFilter(cfg),
 		httpUpstream:         upstream,
+		identityService:      NewIdentityService(&identityCacheWithFingerprintStub{fp: &Fingerprint{ClientID: "persisted-client-id"}}, nil),
 		rateLimitService:     &RateLimitService{},
 	}
 
@@ -260,9 +285,80 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 	require.Equal(t, "upstream-anthropic-key", upstream.lastReq.Header.Get("x-api-key"))
 	require.Empty(t, upstream.lastReq.Header.Get("authorization"))
 	require.Empty(t, upstream.lastReq.Header.Get("cookie"))
+	require.NotContains(t, upstream.lastReq.Header.Get("anthropic-beta"), claude.BetaOAuth)
+	require.Contains(t, upstream.lastReq.Header.Get("anthropic-beta"), claude.BetaTokenCounting)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], upstream.lastReq.Header.Get("user-agent"))
+	require.True(t, upstream.lastEnableTLSFingerprint, "Anthropic API Key count_tokens passthrough should force TLS fingerprint")
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, upstreamRespBody, rec.Body.String())
 	require.Empty(t, rec.Header().Get("Set-Cookie"))
+}
+
+func TestAnthropicAPIKeyMimicAccountFlags(t *testing.T) {
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"session_id_masking_enabled": true,
+		},
+	}
+
+	require.True(t, account.IsAnthropicAPIKey())
+	require.True(t, account.IsAnthropicClaudeMimicAccount())
+	require.True(t, account.IsTLSFingerprintEnabled())
+	require.True(t, account.IsSessionIDMaskingEnabled())
+}
+
+func TestGatewayService_BuildUpstreamRequest_AnthropicAPIKeyMimicsHeadersAndMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("Anthropic-Beta", "custom-beta")
+
+	account := &Account{
+		ID:       501,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://api.anthropic.com",
+		},
+		Extra: map[string]any{
+			"session_id_masking_enabled": true,
+		},
+	}
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled: false,
+				},
+			},
+		},
+		identityService: NewIdentityService(&identityCacheWithFingerprintStub{
+			fp: &Fingerprint{ClientID: "apik-client-id"},
+			identityCacheStub: identityCacheStub{
+				maskedSessionID: "99999999-8888-4777-8666-555555555555",
+			},
+		}, nil),
+	}
+
+	body := []byte(`{"model":"claude-3-7-sonnet-20250219","stream":true,"metadata":{"user_id":"{\"device_id\":\"orig\",\"account_uuid\":\"\",\"session_id\":\"123e4567-e89b-12d3-a456-426614174000\"}"}}`)
+	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "api-key", "apikey", "claude-3-7-sonnet-20250219", true, true)
+	require.NoError(t, err)
+	require.Equal(t, "api-key", req.Header.Get("x-api-key"))
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], req.Header.Get("User-Agent"))
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Lang"], req.Header.Get("X-Stainless-Lang"))
+	require.NotContains(t, req.Header.Get("anthropic-beta"), claude.BetaOAuth)
+	require.Contains(t, req.Header.Get("anthropic-beta"), claude.BetaClaudeCode)
+
+	reqBody, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	parsed := ParseMetadataUserID(gjson.GetBytes(reqBody, "metadata.user_id").String())
+	require.NotNil(t, parsed)
+	require.Equal(t, "apik-client-id", parsed.DeviceID)
+	require.Equal(t, "99999999-8888-4777-8666-555555555555", parsed.SessionID)
 }
 
 // TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases 覆盖透传模式下模型映射的各种边界情况

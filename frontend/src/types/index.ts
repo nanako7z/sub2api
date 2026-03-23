@@ -723,7 +723,7 @@ export interface Account {
   rpm_sticky_buffer?: number | null
   user_msg_queue_mode?: string | null  // "serialize" | "throttle" | null
 
-  // 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
+  // 会话ID伪装（Anthropic OAuth/SetupToken/API Key 账号有效）
   // 启用后将在15分钟内固定 metadata.user_id 中的 session ID
   session_id_masking_enabled?: boolean | null
 

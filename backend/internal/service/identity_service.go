@@ -112,7 +112,7 @@ func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID 
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
 func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
-	if len(body) == 0 || accountUUID == "" || cachedClientID == "" {
+	if len(body) == 0 || cachedClientID == "" {
 		return body, nil
 	}
 

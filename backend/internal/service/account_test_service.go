@@ -303,12 +303,12 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 
-	// OAuth 账号：重写 metadata.user_id（与网关转发路径一致）
-	if account.IsOAuth() && s.identityService != nil {
+	// Claude mimic 账号：重写 metadata.user_id（与网关转发路径一致）
+	if account.IsAnthropicClaudeMimicAccount() && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
-			if accountUUID != "" && fp.ClientID != "" {
+			if fp.ClientID != "" {
 				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, payloadBytes, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
 					payloadBytes = newBody
 				}
@@ -332,14 +332,14 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	policyFilterSet := s.getBetaPolicyFilterSet(ctx, account)
 	effectiveDropSet := mergeDropSets(policyFilterSet)
 
-	if useBearer {
-		// OAuth 账号：完整 Claude Code 伪装头（与 applyClaudeCodeMimicHeaders 一致）
+	if account.IsAnthropicClaudeMimicAccount() {
+		// Claude mimic 账号：完整 Claude Code 伪装头（与网关转发路径一致）
 		applyClaudeCodeMimicHeaders(req, true)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
 
-		// Beta：DefaultBetaHeader 经动态策略过滤
-		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
+		// Beta：按账号类型选择 mimic betas，经动态策略过滤。
+		requiredBetas := requiredAnthropicMimicBetas(account, false)
 		req.Header.Set("anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, "", effectiveDropSet))
 	} else {
 		// API Key 账号：最小伪装头 + 策略过滤
