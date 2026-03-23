@@ -2213,7 +2213,7 @@
       </div>
 
       <div
-        v-else-if="supportsAnthropicSessionMasking"
+        v-else-if="form.platform === 'anthropic' && accountCategory === 'oauth-based'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -2369,6 +2369,39 @@
               ]"
             />
           </button>
+        </div>
+        <div class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/40 dark:bg-blue-950/20">
+          <p class="text-sm font-medium text-blue-900 dark:text-blue-200">
+            {{ t('admin.accounts.anthropic.apiKeyMimicNotice.title') }}
+          </p>
+          <p class="mt-1 text-xs text-blue-700 dark:text-blue-300">
+            {{ t('admin.accounts.anthropic.apiKeyMimicNotice.desc') }}
+          </p>
+        </div>
+        <div class="mt-3 rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.sessionIdMasking.label') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.quotaControl.sessionIdMasking.hint') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="sessionIdMaskingEnabled = !sessionIdMaskingEnabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                sessionIdMaskingEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  sessionIdMaskingEnabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -3093,9 +3126,6 @@ const umqModeOptions = computed(() => [
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
-const supportsAnthropicSessionMasking = computed(() =>
-  form.platform === 'anthropic' && (accountCategory.value === 'oauth-based' || accountCategory.value === 'apikey')
-)
 
 // Gemini tier selection (used as fallback when auto-detection is unavailable/fails)
 const geminiTierGoogleOne = ref<'google_one_free' | 'google_ai_pro' | 'google_ai_ultra'>('google_one_free')

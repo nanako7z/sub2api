@@ -2369,7 +2369,11 @@ export default {
       anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',
         apiKeyPassthroughDesc:
-          '仅对 Anthropic API Key 生效。开启后，messages/count_tokens 请求将透传上游并仅替换认证，保留计费/并发/审计及必要安全过滤；关闭即可回滚到现有兼容链路。'
+          '仅对 Anthropic API Key 生效。开启后，messages/count_tokens 请求将透传上游并仅替换认证，保留计费/并发/审计及必要安全过滤；关闭即可回滚到现有兼容链路。',
+        apiKeyMimicNotice: {
+          title: 'Claude Console API 账号默认伪装已启用',
+          desc: '该类型账号会默认启用 device_id、请求头和 TLS 指纹伪装；只有会话 ID 伪装可单独开关。API beta 头不会携带 oauth token。'
+        }
       },
       modelRestriction: '模型限制（可选）',
       modelWhitelist: '模型白名单',

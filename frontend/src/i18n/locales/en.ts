@@ -2221,7 +2221,11 @@ export default {
       anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
         apiKeyPassthroughDesc:
-          'Only applies to Anthropic API Key accounts. When enabled, messages/count_tokens are forwarded in passthrough mode with auth replacement only, while billing/concurrency/audit and safety filtering are preserved. Disable to roll back immediately.'
+          'Only applies to Anthropic API Key accounts. When enabled, messages/count_tokens are forwarded in passthrough mode with auth replacement only, while billing/concurrency/audit and safety filtering are preserved. Disable to roll back immediately.',
+        apiKeyMimicNotice: {
+          title: 'Claude Console API mimic is enabled by default',
+          desc: 'This account type always mimics device_id, request headers, and TLS fingerprint. Only session ID masking is configurable. The API beta header does not include the oauth token.'
+        }
       },
       modelRestriction: 'Model Restriction (Optional)',
       modelWhitelist: 'Model Whitelist',
