@@ -63,7 +63,7 @@ func (u *httpUpstreamSequenceRecorder) DoWithTLS(req *http.Request, proxyURL str
 
 func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsFallbackServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer wsFallbackServer.Close()
@@ -121,7 +121,7 @@ func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t 
 
 func TestOpenAIGatewayService_Forward_HTTPIngressStaysHTTPWhenWSEnabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsFallbackServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer wsFallbackServer.Close()
@@ -187,7 +187,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressStaysHTTPWhenWSEnabled(t *testi
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentOnce(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsFallbackServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer wsFallbackServer.Close()
@@ -273,7 +273,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 
 func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedContentOnce(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsFallbackServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer wsFallbackServer.Close()
@@ -357,7 +357,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 
 func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	wsFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsFallbackServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer wsFallbackServer.Close()
@@ -413,7 +413,7 @@ func TestOpenAIGatewayService_Forward_RemovePreviousResponseIDWhenWSDisabled(t *
 
 func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	ws426Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ws426Server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUpgradeRequired)
 		_, _ = w.Write([]byte(`upgrade required`))
 	}))
@@ -476,7 +476,7 @@ func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
 
 func TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
 	defer wsServer.Close()
@@ -625,7 +625,7 @@ func TestNewOpenAIGatewayService_InitializesOpenAIWSResolver(t *testing.T) {
 
 func TestOpenAIGatewayService_Forward_WSv2FallbackWhenResponseAlreadyWrittenReturnsWSError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	ws426Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ws426Server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUpgradeRequired)
 		_, _ = w.Write([]byte(`upgrade required`))
 	}))
@@ -687,7 +687,7 @@ func TestOpenAIGatewayService_Forward_WSv2StreamEarlyCloseFallbackHTTP(t *testin
 	gin.SetMode(gin.TestMode)
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			t.Errorf("upgrade websocket failed: %v", err)
@@ -781,7 +781,7 @@ func TestOpenAIGatewayService_Forward_WSv2RetryFiveTimesThenFallbackHTTP(t *test
 
 	var wsAttempts atomic.Int32
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -863,7 +863,7 @@ func TestOpenAIGatewayService_Forward_WSv2PolicyViolationFastFallbackHTTP(t *tes
 
 	var wsAttempts atomic.Int32
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -944,7 +944,7 @@ func TestOpenAIGatewayService_Forward_WSv2ConnectionLimitReachedRetryThenFallbac
 
 	var wsAttempts atomic.Int32
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1030,7 +1030,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundRecoversByDrop
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt := wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1147,7 +1147,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryF
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1245,7 +1245,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryW
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1342,7 +1342,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundOnlyRecoversOn
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1440,7 +1440,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversOnce(t 
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt := wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1560,7 +1560,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentSkipsRecoveryWi
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1659,7 +1659,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversSingleO
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt := wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -1777,7 +1777,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentKeepsPreviousRe
 	var wsRequestPayloads [][]byte
 	var wsRequestMu sync.Mutex
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wsServer := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt := wsAttempts.Add(1)
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {

@@ -17,7 +17,7 @@ import (
 
 func TestSoraMediaStorage_StoreFromURLs(t *testing.T) {
 	tmpDir := t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("data"))
@@ -47,7 +47,7 @@ func TestSoraMediaStorage_StoreFromURLs(t *testing.T) {
 
 func TestSoraMediaStorage_FallbackToUpstream(t *testing.T) {
 	tmpDir := t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -71,7 +71,7 @@ func TestSoraMediaStorage_FallbackToUpstream(t *testing.T) {
 
 func TestSoraMediaStorage_MaxDownloadBytes(t *testing.T) {
 	tmpDir := t.TempDir()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("too-large"))

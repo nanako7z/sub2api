@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -700,5 +702,23 @@ func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject
 		c.Next()
 	})
 	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
-	return httptest.NewServer(router)
+	return newLoopbackTestServer(t, router)
+}
+
+func newLoopbackTestServer(t *testing.T, h http.Handler) *httptest.Server {
+	t.Helper()
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("skip test: loopback listen is not permitted in this environment: %v", err)
+		}
+		require.NoError(t, err)
+	}
+
+	srv := httptest.NewUnstartedServer(h)
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv
 }

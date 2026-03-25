@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -27,13 +26,12 @@ func (s *openaiOAuthClientNoopStub) RefreshTokenWithClientID(ctx context.Context
 }
 
 func TestOpenAIOAuthService_ExchangeSoraSessionToken_Success(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodGet, r.Method)
 		require.Contains(t, r.Header.Get("Cookie"), "__Secure-next-auth.session-token=st-token")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"accessToken":"at-token","expires":"2099-01-01T00:00:00Z","user":{"email":"demo@example.com"}}`))
 	}))
-	defer server.Close()
 
 	origin := openAISoraSessionAuthURL
 	openAISoraSessionAuthURL = server.URL
@@ -51,11 +49,10 @@ func TestOpenAIOAuthService_ExchangeSoraSessionToken_Success(t *testing.T) {
 }
 
 func TestOpenAIOAuthService_ExchangeSoraSessionToken_MissingAccessToken(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"expires":"2099-01-01T00:00:00Z"}`))
 	}))
-	defer server.Close()
 
 	origin := openAISoraSessionAuthURL
 	openAISoraSessionAuthURL = server.URL
@@ -70,13 +67,12 @@ func TestOpenAIOAuthService_ExchangeSoraSessionToken_MissingAccessToken(t *testi
 }
 
 func TestOpenAIOAuthService_ExchangeSoraSessionToken_AcceptsSetCookieLine(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodGet, r.Method)
 		require.Contains(t, r.Header.Get("Cookie"), "__Secure-next-auth.session-token=st-cookie-value")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"accessToken":"at-token","expires":"2099-01-01T00:00:00Z","user":{"email":"demo@example.com"}}`))
 	}))
-	defer server.Close()
 
 	origin := openAISoraSessionAuthURL
 	openAISoraSessionAuthURL = server.URL
@@ -92,13 +88,12 @@ func TestOpenAIOAuthService_ExchangeSoraSessionToken_AcceptsSetCookieLine(t *tes
 }
 
 func TestOpenAIOAuthService_ExchangeSoraSessionToken_MergesChunkedSetCookieLines(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodGet, r.Method)
 		require.Contains(t, r.Header.Get("Cookie"), "__Secure-next-auth.session-token=chunk-0chunk-1")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"accessToken":"at-token","expires":"2099-01-01T00:00:00Z","user":{"email":"demo@example.com"}}`))
 	}))
-	defer server.Close()
 
 	origin := openAISoraSessionAuthURL
 	openAISoraSessionAuthURL = server.URL
@@ -117,13 +112,12 @@ func TestOpenAIOAuthService_ExchangeSoraSessionToken_MergesChunkedSetCookieLines
 }
 
 func TestOpenAIOAuthService_ExchangeSoraSessionToken_PrefersLatestDuplicateChunks(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodGet, r.Method)
 		require.Contains(t, r.Header.Get("Cookie"), "__Secure-next-auth.session-token=new-0new-1")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"accessToken":"at-token","expires":"2099-01-01T00:00:00Z","user":{"email":"demo@example.com"}}`))
 	}))
-	defer server.Close()
 
 	origin := openAISoraSessionAuthURL
 	openAISoraSessionAuthURL = server.URL
@@ -144,13 +138,12 @@ func TestOpenAIOAuthService_ExchangeSoraSessionToken_PrefersLatestDuplicateChunk
 }
 
 func TestOpenAIOAuthService_ExchangeSoraSessionToken_UsesLatestCompleteChunkGroup(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodGet, r.Method)
 		require.Contains(t, r.Header.Get("Cookie"), "__Secure-next-auth.session-token=ok-0ok-1")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"accessToken":"at-token","expires":"2099-01-01T00:00:00Z","user":{"email":"demo@example.com"}}`))
 	}))
-	defer server.Close()
 
 	origin := openAISoraSessionAuthURL
 	openAISoraSessionAuthURL = server.URL

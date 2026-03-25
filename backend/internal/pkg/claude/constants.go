@@ -69,11 +69,14 @@ var DefaultHeaders = map[string]string{
 }
 
 type EndpointHeaderProfile struct {
-	EndpointID     string
-	UserAgent      string
-	BetaHeader     string
-	Accept         string
-	AcceptEncoding string
+	EndpointID         string
+	UserAgent          string
+	BetaHeader         string
+	Accept             string
+	AcceptEncoding     string
+	StreamHeaderPolicy string // none|helper_stream
+	StainlessPolicy    string // full|minimal|none
+	ForceOfficialHost  bool
 }
 
 const (
@@ -89,37 +92,49 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 	switch endpointID {
 	case EndpointCountTokens:
 		return EndpointHeaderProfile{
-			EndpointID:     endpointID,
-			UserAgent:      "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
-			BetaHeader:     CountTokensBetaHeader,
-			Accept:         "application/json",
-			AcceptEncoding: "gzip, deflate, br, zstd",
+			EndpointID:         endpointID,
+			UserAgent:          "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
+			BetaHeader:         CountTokensBetaHeader,
+			Accept:             "application/json",
+			AcceptEncoding:     "gzip, deflate, br, zstd",
+			StreamHeaderPolicy: "none",
+			StainlessPolicy:    "minimal",
+			ForceOfficialHost:  false,
 		}
 	case EndpointMCPServers:
 		return EndpointHeaderProfile{
-			EndpointID:     endpointID,
-			UserAgent:      "axios/1.13.6",
-			BetaHeader:     MCPServersBetaHeader,
-			Accept:         "application/json, text/plain, */*",
-			AcceptEncoding: "gzip, compress, deflate, br",
+			EndpointID:         endpointID,
+			UserAgent:          "axios/1.13.6",
+			BetaHeader:         MCPServersBetaHeader,
+			Accept:             "application/json, text/plain, */*",
+			AcceptEncoding:     "gzip, compress, deflate, br",
+			StreamHeaderPolicy: "none",
+			StainlessPolicy:    "none",
+			ForceOfficialHost:  true,
 		}
 	case EndpointOAuthUsage:
 		return EndpointHeaderProfile{
-			EndpointID:     endpointID,
-			UserAgent:      "claude-code/" + ClaudeCLIVersion,
-			BetaHeader:     BetaOAuth,
-			Accept:         "application/json, text/plain, */*",
-			AcceptEncoding: "gzip, compress, deflate, br",
+			EndpointID:         endpointID,
+			UserAgent:          "claude-code/" + ClaudeCLIVersion,
+			BetaHeader:         BetaOAuth,
+			Accept:             "application/json, text/plain, */*",
+			AcceptEncoding:     "gzip, compress, deflate, br",
+			StreamHeaderPolicy: "none",
+			StainlessPolicy:    "none",
+			ForceOfficialHost:  true,
 		}
 	case EndpointMessages:
 		fallthrough
 	default:
 		return EndpointHeaderProfile{
-			EndpointID:     EndpointMessages,
-			UserAgent:      "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
-			BetaHeader:     DefaultBetaHeader,
-			Accept:         "application/json",
-			AcceptEncoding: "gzip, deflate, br, zstd",
+			EndpointID:         EndpointMessages,
+			UserAgent:          "claude-cli/" + ClaudeCLIVersion + " (external, sdk-cli)",
+			BetaHeader:         DefaultBetaHeader,
+			Accept:             "application/json",
+			AcceptEncoding:     "gzip, deflate, br, zstd",
+			StreamHeaderPolicy: "helper_stream",
+			StainlessPolicy:    "full",
+			ForceOfficialHost:  false,
 		}
 	}
 }

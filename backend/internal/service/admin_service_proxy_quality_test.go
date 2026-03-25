@@ -2,12 +2,33 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func newLoopbackHTTPTestServer(t *testing.T, h http.Handler) *httptest.Server {
+	t.Helper()
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			t.Skipf("skip test: loopback listen is not permitted in this environment: %v", err)
+		}
+		require.NoError(t, err)
+	}
+
+	srv := httptest.NewUnstartedServer(h)
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv
+}
 
 func TestFinalizeProxyQualityResult_ScoreAndGrade(t *testing.T) {
 	result := &ProxyQualityCheckResult{
@@ -28,13 +49,12 @@ func TestFinalizeProxyQualityResult_ScoreAndGrade(t *testing.T) {
 }
 
 func TestRunProxyQualityTarget_SoraChallenge(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("cf-ray", "test-ray-123")
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("<!DOCTYPE html><title>Just a moment...</title><script>window._cf_chl_opt={};</script>"))
 	}))
-	defer server.Close()
 
 	target := proxyQualityTarget{
 		Target: "sora",
@@ -52,11 +72,10 @@ func TestRunProxyQualityTarget_SoraChallenge(t *testing.T) {
 }
 
 func TestRunProxyQualityTarget_AllowedStatusPass(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"models":[]}`))
 	}))
-	defer server.Close()
 
 	target := proxyQualityTarget{
 		Target: "gemini",
@@ -73,11 +92,10 @@ func TestRunProxyQualityTarget_AllowedStatusPass(t *testing.T) {
 }
 
 func TestRunProxyQualityTarget_AllowedStatusWarnForUnauthorized(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := newLoopbackHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 	}))
-	defer server.Close()
 
 	target := proxyQualityTarget{
 		Target: "openai",
