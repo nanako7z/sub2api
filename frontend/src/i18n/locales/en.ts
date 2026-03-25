@@ -587,7 +587,7 @@ export default {
         'Add the following environment variables to your terminal profile or run directly in terminal to configure API access.',
       copy: 'Copy',
       copied: 'Copied',
-      note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+      note: 'These environment variables are active in the current terminal session. For permanent setup, add them to ~/.bashrc, ~/.zshrc, or the appropriate config file. The snippet already includes minimized outbound traffic settings (disable non-essential traffic and turn off attribution header).',
       noGroupTitle: 'Please assign a group first',
       noGroupDescription: 'This API key has not been assigned to a group. Please click the group column in the key list to assign one before viewing the configuration.',
       openai: {
@@ -607,7 +607,7 @@ export default {
         description: 'Configure API access for Antigravity group. Select the configuration method based on your client.',
         claudeCode: 'Claude Code',
         geminiCli: 'Gemini CLI',
-        claudeNote: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
+        claudeNote: 'These environment variables are active in the current terminal session. For permanent setup, add them to ~/.bashrc, ~/.zshrc, or the appropriate config file. The snippet already includes minimized outbound traffic settings (disable non-essential traffic and turn off attribution header).',
         geminiNote: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
       },
       gemini: {
