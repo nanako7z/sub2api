@@ -5,12 +5,16 @@ package tlsfingerprint
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
+	"sync"
 
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/proxy"
@@ -18,11 +22,26 @@ import (
 
 // Profile contains TLS fingerprint configuration.
 type Profile struct {
-	Name         string // Profile name for identification
-	CipherSuites []uint16
-	Curves       []uint16
-	PointFormats []uint8
-	EnableGREASE bool
+	Name      string // Profile name for identification
+	Mode      string // fixed|dynamic|mixed
+	ShapeMode string // observed_v1|random
+	// ShapeWindowSize controls rolling-window scheduling for observed_v1 mode.
+	ShapeWindowSize int
+	// ShapeWeights controls 4 shape combinations:
+	// (186,41), (218,9), (250,0), (282,0)
+	ShapeWeights   TLSShapeWeights
+	ECHPayloadMode string // templated|random
+	CipherSuites   []uint16
+	Curves         []uint16
+	PointFormats   []uint8
+	EnableGREASE   bool
+}
+
+type TLSShapeWeights struct {
+	ECH186Padding41 int
+	ECH218Padding9  int
+	ECH250Padding0  int
+	ECH282Padding0  int
 }
 
 // Dialer creates TLS connections with custom fingerprints.
@@ -48,9 +67,10 @@ type SOCKS5ProxyDialer struct {
 // Default TLS fingerprint values captured from Claude Code v2.1.80 (Bun runtime + BoringSSL)
 // Captured by intercepting a live ClientHello from Claude Code connecting to a local TLS server.
 // Extension order: SNI(0x0000) → ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
-//   ec_point_formats(0x000b) → session_ticket(0x0023) → alpn(0x0010) → status_request(0x0005) →
-//   signature_algorithms(0x000d) → sct(0x0012) → key_share(0x0033) → psk_modes(0x002d) →
-//   supported_versions(0x002b) → padding(0x0015)
+//
+//	ec_point_formats(0x000b) → session_ticket(0x0023) → alpn(0x0010) → status_request(0x0005) →
+//	signature_algorithms(0x000d) → sct(0x0012) → key_share(0x0033) → psk_modes(0x002d) →
+//	supported_versions(0x002b) → padding(0x0015)
 var (
 	// defaultCipherSuites contains the 17 cipher suites from Claude Code (Bun/BoringSSL)
 	defaultCipherSuites = []uint16{
@@ -97,7 +117,52 @@ var (
 		0x0601, // rsa_pkcs1_sha512
 		0x0201, // rsa_pkcs1_sha1
 	}
+
+	// fixedECHData is a deterministic payload used when TLS mode is fixed.
+	// This keeps a quick rollback path to one stable 65037 extension payload.
+	fixedECHData = mustDecodeBase64("AAABAAE6ACDMQnkkwg7kYVnwrnoD+fs3aXbPCPMI1VzVnxi4RJKMfQCw7TY5/QqUfp+uEmZEauSbD3kUXkCUcM+VSbUkf6Ni7KLIex24vPJaJvFIwnuXOoxKtYNZGwNZku4oLffKmdIuRARCg5gzsAWQZIym+ePe5PqbE5D+LGGx0iSCjVxPXiQR2YuI53ptlWVE95EHZ3xm6a5FYAsOxW5wnUTbprSw4v2e1wZZOFi6cfs1JvCwWJKEhuZHJoUd8Gw13KHTmyAHmYkMXua8/NUOn+G7inEVtXA=")
 )
+
+type tlsShape struct {
+	echLen     int
+	paddingLen int // 0 means no ext 21
+	weight     int
+}
+
+type tlsShapeSchedulerState struct {
+	windowSize int
+	history    []int // selected shape index history
+	pos        int
+	counts     []int
+}
+
+type TLSShapeScheduler struct {
+	mu     sync.Mutex
+	states map[string]*tlsShapeSchedulerState
+}
+
+var globalTLSShapeScheduler = NewTLSShapeScheduler()
+
+func NewTLSShapeScheduler() *TLSShapeScheduler {
+	return &TLSShapeScheduler{states: make(map[string]*tlsShapeSchedulerState)}
+}
+
+var (
+	defaultTLSShapeWeights = TLSShapeWeights{
+		ECH186Padding41: 20,
+		ECH218Padding9:  22,
+		ECH250Padding0:  23,
+		ECH282Padding0:  35,
+	}
+)
+
+func mustDecodeBase64(v string) []byte {
+	b, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
 
 // NewDialer creates a new TLS fingerprint dialer.
 // baseDialer is used for TCP connection establishment (supports proxy scenarios).
@@ -421,8 +486,18 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		pointFormats = defaultPointFormats
 	}
 
-	// Check if GREASE is enabled
-	enableGREASE := profile != nil && profile.EnableGREASE
+	mode := "mixed"
+	if profile != nil {
+		if v := profile.Mode; v != "" {
+			mode = v
+		}
+	}
+	mode = normalizeMode(mode)
+	shape := selectTLSShape(profile, mode)
+	payloadMode := "templated"
+	if profile != nil {
+		payloadMode = normalizeECHPayloadMode(profile.ECHPayloadMode)
+	}
 
 	// Claude Code v2.1.80 (Bun/BoringSSL) extension order captured from live ClientHello:
 	// SNI(0x0000) → ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
@@ -432,17 +507,16 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 	extensions := []utls.TLSExtension{
 		// SNI — HelloCustom 模式下必须显式添加，utls 从 Config.ServerName 填充
 		&utls.SNIExtension{},
-		// ECH outer ClientHello placeholder (BoringSSL sends this even without ECH config)
-		&utls.GREASEEncryptedClientHelloExtension{},
-		&utls.ExtendedMasterSecretExtension{},                                    // 0x0017
-		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient}, // 0xff01
-		&utls.SupportedCurvesExtension{Curves: curves},                           // 0x000a
-		&utls.SupportedPointsExtension{SupportedPoints: pointFormats},            // 0x000b
-		&utls.SessionTicketExtension{},                                           // 0x0023
-		&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},                  // 0x0010
-		&utls.StatusRequestExtension{},                                           // 0x0005
+		buildECHOuterExtension(mode, shape, payloadMode),
+		&utls.ExtendedMasterSecretExtension{},                                                        // 0x0017
+		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},                // 0xff01
+		&utls.SupportedCurvesExtension{Curves: curves},                                               // 0x000a
+		&utls.SupportedPointsExtension{SupportedPoints: pointFormats},                                // 0x000b
+		&utls.SessionTicketExtension{},                                                               // 0x0023
+		&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},                                     // 0x0010
+		&utls.StatusRequestExtension{},                                                               // 0x0005
 		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: defaultSignatureAlgorithms}, // 0x000d
-		&utls.SCTExtension{},                                                     // 0x0012
+		&utls.SCTExtension{},                                                                         // 0x0012
 		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
 			{Group: utls.X25519},
 		}}, // 0x0033
@@ -451,9 +525,11 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 			utls.VersionTLS13,
 			utls.VersionTLS12,
 		}}, // 0x002b
-		&utls.UtlsPaddingExtension{GetPaddingLen: utls.BoringPaddingStyle}, // 0x0015
 	}
-	_ = enableGREASE // Bun/BoringSSL does not use GREASE
+
+	if shouldIncludePadding(mode, shape) {
+		extensions = append(extensions, buildPaddingExtension(mode, shape)) // 0x0015
+	}
 
 	return &utls.ClientHelloSpec{
 		CipherSuites:       cipherSuites,
@@ -461,5 +537,273 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		Extensions:         extensions,
 		TLSVersMax:         utls.VersionTLS13,
 		TLSVersMin:         utls.VersionTLS10,
+	}
+}
+
+func buildECHOuterExtension(mode string, shape tlsShape, payloadMode string) utls.TLSExtension {
+	mode = normalizeMode(mode)
+	switch mode {
+	case "fixed":
+		return &utls.GenericExtension{Id: 65037, Data: fixedECHData}
+	default:
+		return &utls.GenericExtension{Id: 65037, Data: buildECHPayload(shape.echLen, payloadMode)}
+	}
+}
+
+func shouldIncludePadding(mode string, shape tlsShape) bool {
+	mode = normalizeMode(mode)
+	switch mode {
+	case "fixed":
+		return true
+	default:
+		return shape.paddingLen > 0
+	}
+}
+
+func buildPaddingExtension(mode string, shape tlsShape) utls.TLSExtension {
+	mode = normalizeMode(mode)
+	if mode == "fixed" || shape.paddingLen <= 0 {
+		return &utls.UtlsPaddingExtension{GetPaddingLen: utls.BoringPaddingStyle}
+	}
+	fixedPadding := shape.paddingLen
+	return &utls.UtlsPaddingExtension{
+		GetPaddingLen: func(clientHelloLen int) (paddingLen int, willPad bool) {
+			return fixedPadding, true
+		},
+	}
+}
+
+func selectTLSShape(profile *Profile, mode string) tlsShape {
+	mode = normalizeMode(mode)
+	shapeMode := "observed_v1"
+	windowSize := 64
+	if profile != nil {
+		shapeMode = normalizeShapeMode(profile.ShapeMode)
+		if profile.ShapeWindowSize > 0 {
+			windowSize = profile.ShapeWindowSize
+		}
+	}
+
+	weights := getShapeWeights(profile)
+	shapes := buildShapePool(mode, weights)
+	if len(shapes) == 0 {
+		return tlsShape{echLen: 250, paddingLen: 0}
+	}
+
+	switch mode {
+	case "fixed":
+		return tlsShape{echLen: len(fixedECHData), paddingLen: 0}
+	default:
+		if shapeMode == "random" {
+			return chooseWeightedShape(shapes)
+		}
+		return globalTLSShapeScheduler.Select(profileSchedulerKey(profile, mode, shapeMode, windowSize, weights), windowSize, shapes)
+	}
+}
+
+func (s *TLSShapeScheduler) Select(key string, windowSize int, shapes []tlsShape) tlsShape {
+	if len(shapes) == 0 {
+		return tlsShape{echLen: 250, paddingLen: 0}
+	}
+	if windowSize <= 0 {
+		return chooseWeightedShape(shapes)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state := s.states[key]
+	if state == nil || state.windowSize != windowSize || len(state.counts) != len(shapes) {
+		state = &tlsShapeSchedulerState{
+			windowSize: windowSize,
+			history:    make([]int, 0, windowSize),
+			counts:     make([]int, len(shapes)),
+		}
+		s.states[key] = state
+	}
+
+	nextN := len(state.history) + 1
+	if nextN > windowSize {
+		nextN = windowSize
+	}
+
+	totalWeight := 0
+	for _, sh := range shapes {
+		if sh.weight > 0 {
+			totalWeight += sh.weight
+		}
+	}
+	if totalWeight <= 0 {
+		return chooseWeightedShape(shapes)
+	}
+
+	bestIdx := 0
+	bestDeficit := -1e9
+	bestWeight := -1
+	for i, sh := range shapes {
+		if sh.weight <= 0 {
+			continue
+		}
+		target := float64(nextN) * float64(sh.weight) / float64(totalWeight)
+		current := float64(state.counts[i])
+		deficit := target - current
+		if deficit > bestDeficit || (deficit == bestDeficit && sh.weight > bestWeight) {
+			bestDeficit = deficit
+			bestWeight = sh.weight
+			bestIdx = i
+		}
+	}
+
+	if len(state.history) < windowSize {
+		state.history = append(state.history, bestIdx)
+	} else {
+		evict := state.history[state.pos]
+		if evict >= 0 && evict < len(state.counts) {
+			state.counts[evict]--
+		}
+		state.history[state.pos] = bestIdx
+		state.pos = (state.pos + 1) % windowSize
+	}
+	state.counts[bestIdx]++
+	return shapes[bestIdx]
+}
+
+func chooseWeightedShape(shapes []tlsShape) tlsShape {
+	if len(shapes) == 0 {
+		return tlsShape{echLen: 250, paddingLen: 0}
+	}
+	total := 0
+	for _, s := range shapes {
+		if s.weight > 0 {
+			total += s.weight
+		}
+	}
+	if total <= 0 {
+		return shapes[0]
+	}
+	n := cryptoRandInt(total)
+	acc := 0
+	for _, s := range shapes {
+		if s.weight <= 0 {
+			continue
+		}
+		acc += s.weight
+		if n < acc {
+			return s
+		}
+	}
+	return shapes[len(shapes)-1]
+}
+
+func cryptoRandInt(max int) int {
+	if max <= 1 {
+		return 0
+	}
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// Safe deterministic fallback for rare entropy failures.
+		return 0
+	}
+	return int(binary.BigEndian.Uint64(b) % uint64(max))
+}
+
+func randomBytes(n int) []byte {
+	if n <= 0 {
+		return nil
+	}
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return make([]byte, n)
+	}
+	return b
+}
+
+func buildECHPayload(length int, mode string) []byte {
+	mode = normalizeECHPayloadMode(mode)
+	switch mode {
+	case "random":
+		return randomBytes(length)
+	default:
+		return templatedECHPayload(length)
+	}
+}
+
+func templatedECHPayload(length int) []byte {
+	if length <= 0 {
+		return nil
+	}
+	out := randomBytes(length)
+	// Keep a stable prefix similar to observed ECH outer framing bytes.
+	prefix := []byte{0x00, 0x00, 0x01, 0x00, 0x01}
+	copy(out, prefix)
+	return out
+}
+
+func normalizeShapeMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "observed_v1", "random":
+		return mode
+	default:
+		return "observed_v1"
+	}
+}
+
+func normalizeECHPayloadMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "templated", "random":
+		return mode
+	default:
+		return "templated"
+	}
+}
+
+func getShapeWeights(profile *Profile) TLSShapeWeights {
+	if profile == nil {
+		return defaultTLSShapeWeights
+	}
+	w := profile.ShapeWeights
+	if w.ECH186Padding41+w.ECH218Padding9+w.ECH250Padding0+w.ECH282Padding0 <= 0 {
+		return defaultTLSShapeWeights
+	}
+	return w
+}
+
+func buildShapePool(mode string, weights TLSShapeWeights) []tlsShape {
+	mode = normalizeMode(mode)
+	mixed := []tlsShape{
+		{echLen: 186, paddingLen: 41, weight: weights.ECH186Padding41},
+		{echLen: 218, paddingLen: 9, weight: weights.ECH218Padding9},
+		{echLen: 250, paddingLen: 0, weight: weights.ECH250Padding0},
+		{echLen: 282, paddingLen: 0, weight: weights.ECH282Padding0},
+	}
+	if mode == "dynamic" {
+		return []tlsShape{
+			{echLen: 186, paddingLen: 41, weight: weights.ECH186Padding41},
+			{echLen: 218, paddingLen: 9, weight: weights.ECH218Padding9},
+		}
+	}
+	return mixed
+}
+
+func profileSchedulerKey(profile *Profile, mode, shapeMode string, windowSize int, weights TLSShapeWeights) string {
+	name := ""
+	if profile != nil {
+		name = profile.Name
+	}
+	return fmt.Sprintf("%s|%s|%s|w=%d|%d,%d,%d,%d",
+		name, mode, shapeMode, windowSize,
+		weights.ECH186Padding41, weights.ECH218Padding9, weights.ECH250Padding0, weights.ECH282Padding0,
+	)
+}
+
+func normalizeMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "fixed", "dynamic", "mixed":
+		return mode
+	default:
+		return "mixed"
 	}
 }

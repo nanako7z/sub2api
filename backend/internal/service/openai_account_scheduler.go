@@ -357,7 +357,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.RequestedModel)
 	if account == nil {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash, accountID)
 		return nil, nil
 	}
 

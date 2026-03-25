@@ -463,6 +463,10 @@ type GatewayConfig struct {
 	UserGroupRateCacheTTLSeconds int `mapstructure:"user_group_rate_cache_ttl_seconds"`
 	// ModelsListCacheTTLSeconds: /v1/models 模型列表短缓存 TTL（秒）
 	ModelsListCacheTTLSeconds int `mapstructure:"models_list_cache_ttl_seconds"`
+	// MCPPrefetchSessionTTLMinutes: OAuth 链路 mcp_servers 预触发会话去重窗口（分钟）
+	MCPPrefetchSessionTTLMinutes int `mapstructure:"mcp_prefetch_session_ttl_minutes"`
+	// MCPPrefetchCleanupIntervalMinutes: mcp 预触发缓存清理周期（分钟）
+	MCPPrefetchCleanupIntervalMinutes int `mapstructure:"mcp_prefetch_cleanup_interval_minutes"`
 
 	// UserMessageQueue: 用户消息串行队列配置
 	// 对 role:"user" 的真实用户消息实施账号级串行化 + RPM 自适应延迟
@@ -651,15 +655,45 @@ type SoraModelFiltersConfig struct {
 type TLSFingerprintConfig struct {
 	// Enabled: 是否全局启用TLS指纹功能
 	Enabled bool `mapstructure:"enabled"`
+	// ProfileMode: TLS 指纹模式
+	// - fixed: 固定模板（用于快速回滚）
+	// - dynamic: 每连接动态生成 65037（ECH outer）扩展，固定扩展形态
+	// - mixed: 每连接动态生成 65037，并在两种扩展形态间混合（默认）
+	ProfileMode string `mapstructure:"profile_mode"`
+	// ShapeMode: TLS 组合调度模式
+	// - observed_v1: 使用观测组合 + 赤字优先调度（推荐）
+	// - random: 纯权重随机（无短会话收敛保障）
+	ShapeMode string `mapstructure:"shape_mode"`
+	// ShapeWindowSize: 组合调度滚动窗口大小（用于短会话收敛）
+	ShapeWindowSize int `mapstructure:"shape_window_size"`
+	// ShapeWeights: 4 组 (65037_len,padding21_len) 组合权重
+	ShapeWeights TLSShapeWeightsConfig `mapstructure:"shape_weights"`
+	// ECHPayloadMode: 65037 payload 生成模式（templated|random）
+	ECHPayloadMode string `mapstructure:"ech_payload_mode"`
 	// Profiles: 预定义的TLS指纹配置模板
 	// key 为模板名称，如 "claude_cli_v2", "chrome_120" 等
 	Profiles map[string]TLSProfileConfig `mapstructure:"profiles"`
+}
+
+// TLSShapeWeightsConfig 4组 TLS 组合权重配置
+// 组合 key 采用 ech_len + padding_len 命名:
+// - ech_186_padding_41
+// - ech_218_padding_9
+// - ech_250_padding_0
+// - ech_282_padding_0
+type TLSShapeWeightsConfig struct {
+	ECH186Padding41 int `mapstructure:"ech_186_padding_41"`
+	ECH218Padding9  int `mapstructure:"ech_218_padding_9"`
+	ECH250Padding0  int `mapstructure:"ech_250_padding_0"`
+	ECH282Padding0  int `mapstructure:"ech_282_padding_0"`
 }
 
 // TLSProfileConfig 单个TLS指纹模板的配置
 type TLSProfileConfig struct {
 	// Name: 模板显示名称
 	Name string `mapstructure:"name"`
+	// Mode: 覆盖全局 profile_mode（可选）
+	Mode string `mapstructure:"mode"`
 	// EnableGREASE: 是否启用GREASE扩展（Chrome使用，Node.js不使用）
 	EnableGREASE bool `mapstructure:"enable_grease"`
 	// CipherSuites: TLS加密套件列表（空则使用内置默认值）
@@ -1439,6 +1473,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.usage_record.auto_scale_cooldown_seconds", 10)
 	viper.SetDefault("gateway.user_group_rate_cache_ttl_seconds", 30)
 	viper.SetDefault("gateway.models_list_cache_ttl_seconds", 15)
+	viper.SetDefault("gateway.mcp_prefetch_session_ttl_minutes", 10)
+	viper.SetDefault("gateway.mcp_prefetch_cleanup_interval_minutes", 5)
 	// TLS指纹伪装配置（默认关闭，需要账号级别单独启用）
 	// 用户消息串行队列默认值
 	viper.SetDefault("gateway.user_message_queue.enabled", false)
@@ -1449,6 +1485,14 @@ func setDefaults() {
 	viper.SetDefault("gateway.user_message_queue.cleanup_interval_seconds", 60)
 
 	viper.SetDefault("gateway.tls_fingerprint.enabled", true)
+	viper.SetDefault("gateway.tls_fingerprint.profile_mode", "mixed")
+	viper.SetDefault("gateway.tls_fingerprint.shape_mode", "observed_v1")
+	viper.SetDefault("gateway.tls_fingerprint.shape_window_size", 64)
+	viper.SetDefault("gateway.tls_fingerprint.ech_payload_mode", "templated")
+	viper.SetDefault("gateway.tls_fingerprint.shape_weights.ech_186_padding_41", 20)
+	viper.SetDefault("gateway.tls_fingerprint.shape_weights.ech_218_padding_9", 22)
+	viper.SetDefault("gateway.tls_fingerprint.shape_weights.ech_250_padding_0", 23)
+	viper.SetDefault("gateway.tls_fingerprint.shape_weights.ech_282_padding_0", 35)
 	viper.SetDefault("concurrency.ping_interval", 10)
 
 	// Sora 直连配置
@@ -2176,6 +2220,44 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.ModelsListCacheTTLSeconds < 10 || c.Gateway.ModelsListCacheTTLSeconds > 30 {
 		return fmt.Errorf("gateway.models_list_cache_ttl_seconds must be between 10-30")
+	}
+	if c.Gateway.MCPPrefetchSessionTTLMinutes <= 0 {
+		return fmt.Errorf("gateway.mcp_prefetch_session_ttl_minutes must be positive")
+	}
+	if c.Gateway.MCPPrefetchCleanupIntervalMinutes <= 0 {
+		return fmt.Errorf("gateway.mcp_prefetch_cleanup_interval_minutes must be positive")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Gateway.TLSFingerprint.ProfileMode)) {
+	case "", "fixed", "dynamic", "mixed":
+	default:
+		return fmt.Errorf("gateway.tls_fingerprint.profile_mode must be one of: fixed/dynamic/mixed")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Gateway.TLSFingerprint.ShapeMode)) {
+	case "", "observed_v1", "random":
+	default:
+		return fmt.Errorf("gateway.tls_fingerprint.shape_mode must be one of: observed_v1/random")
+	}
+	if c.Gateway.TLSFingerprint.ShapeWindowSize <= 0 {
+		return fmt.Errorf("gateway.tls_fingerprint.shape_window_size must be positive")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Gateway.TLSFingerprint.ECHPayloadMode)) {
+	case "", "templated", "random":
+	default:
+		return fmt.Errorf("gateway.tls_fingerprint.ech_payload_mode must be one of: templated/random")
+	}
+	weights := c.Gateway.TLSFingerprint.ShapeWeights
+	if weights.ECH186Padding41 < 0 || weights.ECH218Padding9 < 0 || weights.ECH250Padding0 < 0 || weights.ECH282Padding0 < 0 {
+		return fmt.Errorf("gateway.tls_fingerprint.shape_weights.* must be non-negative")
+	}
+	if weights.ECH186Padding41+weights.ECH218Padding9+weights.ECH250Padding0+weights.ECH282Padding0 <= 0 {
+		return fmt.Errorf("gateway.tls_fingerprint.shape_weights total must be positive")
+	}
+	for name, p := range c.Gateway.TLSFingerprint.Profiles {
+		switch strings.ToLower(strings.TrimSpace(p.Mode)) {
+		case "", "fixed", "dynamic", "mixed":
+		default:
+			return fmt.Errorf("gateway.tls_fingerprint.profiles.%s.mode must be one of: fixed/dynamic/mixed", name)
+		}
 	}
 	if c.Gateway.Scheduling.StickySessionMaxWaiting <= 0 {
 		return fmt.Errorf("gateway.scheduling.sticky_session_max_waiting must be positive")

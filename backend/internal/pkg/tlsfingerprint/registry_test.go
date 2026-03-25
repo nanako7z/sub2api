@@ -147,10 +147,21 @@ func TestNewRegistryFromConfig(t *testing.T) {
 
 	// Test with enabled config and custom profiles
 	enabledCfg := &config.TLSFingerprintConfig{
-		Enabled: true,
+		Enabled:         true,
+		ProfileMode:     "dynamic",
+		ShapeMode:       "observed_v1",
+		ShapeWindowSize: 80,
+		ECHPayloadMode:  "random",
+		ShapeWeights: config.TLSShapeWeightsConfig{
+			ECH186Padding41: 11,
+			ECH218Padding9:  12,
+			ECH250Padding0:  13,
+			ECH282Padding0:  14,
+		},
 		Profiles: map[string]config.TLSProfileConfig{
 			"custom1": {
 				Name:         "Custom Profile 1",
+				Mode:         "fixed",
 				EnableGREASE: true,
 			},
 			"custom2": {
@@ -171,9 +182,33 @@ func TestNewRegistryFromConfig(t *testing.T) {
 	if custom1 == nil || custom1.Name != "Custom Profile 1" {
 		t.Error("expected custom1 profile to exist with correct name")
 	}
+	if custom1 != nil && custom1.Mode != "fixed" {
+		t.Errorf("expected custom1 mode fixed, got %q", custom1.Mode)
+	}
+	if custom1 != nil && custom1.ShapeWindowSize != 80 {
+		t.Errorf("expected custom1 shape window 80, got %d", custom1.ShapeWindowSize)
+	}
 	custom2 := r.GetProfile("custom2")
 	if custom2 == nil || custom2.Name != "Custom Profile 2" {
 		t.Error("expected custom2 profile to exist with correct name")
+	}
+	if custom2 != nil && custom2.Mode != "dynamic" {
+		t.Errorf("expected custom2 mode dynamic (inherited), got %q", custom2.Mode)
+	}
+	if custom2 != nil && custom2.ECHPayloadMode != "random" {
+		t.Errorf("expected custom2 payload mode random (inherited), got %q", custom2.ECHPayloadMode)
+	}
+	defaultProfile := r.GetDefaultProfile()
+	if defaultProfile == nil || defaultProfile.Mode != "dynamic" {
+		t.Errorf("expected default profile mode dynamic, got %+v", defaultProfile)
+	}
+	if defaultProfile != nil {
+		if defaultProfile.ShapeMode != "observed_v1" {
+			t.Errorf("expected default shape mode observed_v1, got %q", defaultProfile.ShapeMode)
+		}
+		if defaultProfile.ShapeWeights.ECH282Padding0 != 14 {
+			t.Errorf("expected default weight ech_282_padding_0=14, got %d", defaultProfile.ShapeWeights.ECH282Padding0)
+		}
 	}
 }
 

@@ -52,6 +52,8 @@ const (
 
 	defaultUserGroupRateCacheTTL = 30 * time.Second
 	defaultModelsListCacheTTL    = 15 * time.Second
+	defaultMCPPrefetchSessionTTL = 10 * time.Minute
+	defaultMCPPrefetchCleanupTTL = 5 * time.Minute
 	postUsageBillingTimeout      = 15 * time.Second
 	debugGatewayBodyEnv          = "SUB2API_DEBUG_GATEWAY_BODY"
 )
@@ -538,6 +540,20 @@ func resolveModelsListCacheTTL(cfg *config.Config) time.Duration {
 	return time.Duration(cfg.Gateway.ModelsListCacheTTLSeconds) * time.Second
 }
 
+func resolveMCPPrefetchSessionTTL(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.Gateway.MCPPrefetchSessionTTLMinutes <= 0 {
+		return defaultMCPPrefetchSessionTTL
+	}
+	return time.Duration(cfg.Gateway.MCPPrefetchSessionTTLMinutes) * time.Minute
+}
+
+func resolveMCPPrefetchCleanupTTL(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.Gateway.MCPPrefetchCleanupIntervalMinutes <= 0 {
+		return defaultMCPPrefetchCleanupTTL
+	}
+	return time.Duration(cfg.Gateway.MCPPrefetchCleanupIntervalMinutes) * time.Minute
+}
+
 func modelsListCacheKey(groupID *int64, platform string) string {
 	return fmt.Sprintf("%d|%s", derefGroupID(groupID), strings.TrimSpace(platform))
 }
@@ -725,6 +741,8 @@ func NewGatewayService(
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
+	mcpPrefetchSessionTTL := resolveMCPPrefetchSessionTTL(cfg)
+	mcpPrefetchCleanupTTL := resolveMCPPrefetchCleanupTTL(cfg)
 
 	svc := &GatewayService{
 		accountRepo:          accountRepo,
@@ -754,7 +772,7 @@ func NewGatewayService(
 		partnerService:       partnerService,
 		modelsListCache:      gocache.New(modelsListTTL, time.Minute),
 		modelsListCacheTTL:   modelsListTTL,
-		mcpTriggerCache:      gocache.New(30*time.Minute, 5*time.Minute),
+		mcpTriggerCache:      gocache.New(mcpPrefetchSessionTTL, mcpPrefetchCleanupTTL),
 		responseHeaderFilter: compileResponseHeaderFilter(cfg),
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
@@ -6494,12 +6512,8 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool, endpointID st
 	req.Header.Set("accept-encoding", profile.AcceptEncoding)
 	req.Header.Set("anthropic-beta", profile.BetaHeader)
 
-	switch endpointID {
-	case claude.EndpointMCPServers:
-		// mcp_servers capture: axios UA + minimal headers only.
-		return
-	case claude.EndpointCountTokens:
-		// count_tokens capture: has X-Stainless set, but no x-stainless-timeout/helper-method.
+	switch profile.StainlessPolicy {
+	case "minimal":
 		req.Header.Set("x-stainless-lang", claude.DefaultHeaders["X-Stainless-Lang"])
 		req.Header.Set("x-stainless-package-version", claude.DefaultHeaders["X-Stainless-Package-Version"])
 		req.Header.Set("x-stainless-os", claude.DefaultHeaders["X-Stainless-OS"])
@@ -6509,9 +6523,7 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool, endpointID st
 		req.Header.Set("x-stainless-retry-count", claude.DefaultHeaders["X-Stainless-Retry-Count"])
 		req.Header.Set("x-app", claude.DefaultHeaders["X-App"])
 		req.Header.Set("anthropic-dangerous-direct-browser-access", claude.DefaultHeaders["Anthropic-Dangerous-Direct-Browser-Access"])
-		return
-	default:
-		// messages capture: full claude-cli SDK-like header set.
+	case "full":
 		req.Header.Set("x-stainless-lang", claude.DefaultHeaders["X-Stainless-Lang"])
 		req.Header.Set("x-stainless-package-version", claude.DefaultHeaders["X-Stainless-Package-Version"])
 		req.Header.Set("x-stainless-os", claude.DefaultHeaders["X-Stainless-OS"])
@@ -6522,9 +6534,14 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool, endpointID st
 		req.Header.Set("x-stainless-timeout", claude.DefaultHeaders["X-Stainless-Timeout"])
 		req.Header.Set("x-app", claude.DefaultHeaders["X-App"])
 		req.Header.Set("anthropic-dangerous-direct-browser-access", claude.DefaultHeaders["Anthropic-Dangerous-Direct-Browser-Access"])
-		if isStream && endpointID == claude.EndpointMessages {
-			req.Header.Set("x-stainless-helper-method", "stream")
-		}
+	case "none":
+		// mcp_servers/oauth_usage captures: minimal headers, no stainless family.
+	default:
+		// Unknown policy: fail-safe to none.
+	}
+
+	if isStream && profile.StreamHeaderPolicy == "helper_stream" {
+		req.Header.Set("x-stainless-helper-method", "stream")
 	}
 }
 
@@ -8942,8 +8959,12 @@ func (s *GatewayService) buildMCPServersRequest(
 	token string,
 	tokenType string,
 ) (*http.Request, error) {
+	profile := claude.HeaderProfileForEndpoint(claude.EndpointMCPServers)
 	// IMPORTANT: align with real Claude Code capture behavior.
 	// /v1/mcp_servers bypasses custom baseURL and always targets api.anthropic.com.
+	if !profile.ForceOfficialHost {
+		return nil, fmt.Errorf("invalid mcp_servers profile: ForceOfficialHost must be true")
+	}
 	targetURL := claudeAPIMCPServersURL
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
@@ -8951,7 +8972,7 @@ func (s *GatewayService) buildMCPServersRequest(
 		return nil, err
 	}
 
-	applyClaudeCodeMimicHeaders(req, false, claude.EndpointMCPServers)
+	applyClaudeCodeMimicHeaders(req, false, profile.EndpointID)
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
 	if tokenType == "oauth" {

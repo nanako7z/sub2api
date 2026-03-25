@@ -1,4 +1,4 @@
-.PHONY: build build-backend build-frontend build-datamanagementd test test-backend test-frontend test-datamanagementd secret-scan
+.PHONY: build build-backend build-frontend build-datamanagementd test test-backend test-frontend test-datamanagementd secret-scan mitm-compare
 
 # 一键编译前后端
 build: build-backend build-frontend
@@ -30,3 +30,9 @@ test-datamanagementd:
 
 secret-scan:
 	@python3 tools/secret_scan.py
+
+# MITM 抓包对比回归（用法: make mitm-compare BASELINE=... CANDIDATE=...）
+mitm-compare:
+	@test -n "$(BASELINE)" || (echo "BASELINE is required"; exit 1)
+	@test -n "$(CANDIDATE)" || (echo "CANDIDATE is required"; exit 1)
+	@python3 tools/mitm/compare_captures.py --strict --baseline "$(BASELINE)" --candidate "$(CANDIDATE)"

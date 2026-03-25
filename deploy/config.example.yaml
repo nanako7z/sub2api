@@ -374,11 +374,35 @@ gateway:
   # 默认模板 "claude_cli_v2" 模拟 Node.js 20.x 指纹
   tls_fingerprint:
     enabled: true
+    # fixed/dynamic/mixed
+    # - fixed: 固定模板（回滚）
+    # - dynamic: 每连接动态 65037，固定扩展形态
+    # - mixed: 每连接动态 65037 + 双形态混合（推荐）
+    profile_mode: "mixed"
+    # TLS 组合调度模式：
+    # - observed_v1: 观测组合 + 赤字优先调度（推荐）
+    # - random: 纯权重随机
+    shape_mode: "observed_v1"
+    # 组合调度滚动窗口大小（短会话收敛）
+    shape_window_size: 64
+    # 65037 payload 生成模式：templated|random
+    ech_payload_mode: "templated"
+    # 组合权重：(ech_len, padding21_len)
+    shape_weights:
+      ech_186_padding_41: 20
+      ech_218_padding_9: 22
+      ech_250_padding_0: 23
+      ech_282_padding_0: 35
     # profiles:
     #   profile_1:
     #     name: "Custom Profile 1"
+    #     mode: "mixed"
     #   profile_2:
     #     name: "Custom Profile 2"
+    #     mode: "fixed"
+  # OAuth 链路 mcp_servers 预触发节奏
+  mcp_prefetch_session_ttl_minutes: 10
+  mcp_prefetch_cleanup_interval_minutes: 5
 
 # =============================================================================
 # Logging Configuration

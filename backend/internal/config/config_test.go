@@ -84,6 +84,24 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultGatewayClaudeMimicConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	require.Equal(t, 10, cfg.Gateway.MCPPrefetchSessionTTLMinutes)
+	require.Equal(t, 5, cfg.Gateway.MCPPrefetchCleanupIntervalMinutes)
+	require.Equal(t, "mixed", cfg.Gateway.TLSFingerprint.ProfileMode)
+	require.Equal(t, "observed_v1", cfg.Gateway.TLSFingerprint.ShapeMode)
+	require.Equal(t, 64, cfg.Gateway.TLSFingerprint.ShapeWindowSize)
+	require.Equal(t, "templated", cfg.Gateway.TLSFingerprint.ECHPayloadMode)
+	require.Equal(t, 20, cfg.Gateway.TLSFingerprint.ShapeWeights.ECH186Padding41)
+	require.Equal(t, 22, cfg.Gateway.TLSFingerprint.ShapeWeights.ECH218Padding9)
+	require.Equal(t, 23, cfg.Gateway.TLSFingerprint.ShapeWeights.ECH250Padding0)
+	require.Equal(t, 35, cfg.Gateway.TLSFingerprint.ShapeWeights.ECH282Padding0)
+}
+
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
@@ -1226,6 +1244,65 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway models list cache ttl range",
 			mutate:  func(c *Config) { c.Gateway.ModelsListCacheTTLSeconds = 31 },
 			wantErr: "gateway.models_list_cache_ttl_seconds",
+		},
+		{
+			name:    "gateway mcp prefetch session ttl",
+			mutate:  func(c *Config) { c.Gateway.MCPPrefetchSessionTTLMinutes = 0 },
+			wantErr: "gateway.mcp_prefetch_session_ttl_minutes",
+		},
+		{
+			name:    "gateway mcp prefetch cleanup interval",
+			mutate:  func(c *Config) { c.Gateway.MCPPrefetchCleanupIntervalMinutes = 0 },
+			wantErr: "gateway.mcp_prefetch_cleanup_interval_minutes",
+		},
+		{
+			name:    "gateway tls fingerprint global profile mode invalid",
+			mutate:  func(c *Config) { c.Gateway.TLSFingerprint.ProfileMode = "invalid" },
+			wantErr: "gateway.tls_fingerprint.profile_mode must be one of: fixed/dynamic/mixed",
+		},
+		{
+			name:    "gateway tls fingerprint shape mode invalid",
+			mutate:  func(c *Config) { c.Gateway.TLSFingerprint.ShapeMode = "invalid" },
+			wantErr: "gateway.tls_fingerprint.shape_mode must be one of: observed_v1/random",
+		},
+		{
+			name:    "gateway tls fingerprint shape window invalid",
+			mutate:  func(c *Config) { c.Gateway.TLSFingerprint.ShapeWindowSize = 0 },
+			wantErr: "gateway.tls_fingerprint.shape_window_size must be positive",
+		},
+		{
+			name:    "gateway tls fingerprint ech payload mode invalid",
+			mutate:  func(c *Config) { c.Gateway.TLSFingerprint.ECHPayloadMode = "invalid" },
+			wantErr: "gateway.tls_fingerprint.ech_payload_mode must be one of: templated/random",
+		},
+		{
+			name: "gateway tls fingerprint shape weights negative",
+			mutate: func(c *Config) {
+				c.Gateway.TLSFingerprint.ShapeWeights.ECH186Padding41 = -1
+			},
+			wantErr: "gateway.tls_fingerprint.shape_weights.* must be non-negative",
+		},
+		{
+			name: "gateway tls fingerprint shape weights total invalid",
+			mutate: func(c *Config) {
+				c.Gateway.TLSFingerprint.ShapeWeights.ECH186Padding41 = 0
+				c.Gateway.TLSFingerprint.ShapeWeights.ECH218Padding9 = 0
+				c.Gateway.TLSFingerprint.ShapeWeights.ECH250Padding0 = 0
+				c.Gateway.TLSFingerprint.ShapeWeights.ECH282Padding0 = 0
+			},
+			wantErr: "gateway.tls_fingerprint.shape_weights total must be positive",
+		},
+		{
+			name: "gateway tls fingerprint per-profile mode invalid",
+			mutate: func(c *Config) {
+				c.Gateway.TLSFingerprint.Profiles = map[string]TLSProfileConfig{
+					"bad": {
+						Name: "Bad",
+						Mode: "invalid",
+					},
+				}
+			},
+			wantErr: "gateway.tls_fingerprint.profiles.bad.mode must be one of: fixed/dynamic/mixed",
 		},
 		{
 			name:    "gateway scheduling sticky waiting",

@@ -70,6 +70,32 @@ MITM_PORT=8083 tools/mitm/stop_daemon.sh
 python3 tools/mitm/analyze.py
 ```
 
+### 5. 生成 Claude 可执行文件逆向证据报告（静态+动态）
+
+```bash
+python3 tools/mitm/build_reverse_report.py \
+  --binary /Users/luli/.local/share/claude/versions/2.1.79 \
+  --capture tools/mitm/captures/capture-1774444271.jsonl
+```
+
+输出：
+
+- `reports/reverse_evidence_2.1.79.json`
+- `reports/reverse_report_2.1.79.md`
+
+### 6. 基线 vs 新回放 命中率对比
+
+```bash
+python3 tools/mitm/compare_captures.py \
+  --baseline tools/mitm/captures/capture-1774444271.jsonl \
+  --candidate tools/mitm/captures/<new-capture>.jsonl
+```
+
+输出：
+
+- `reports/capture_compare_report.json`
+- `reports/capture_compare_report.md`
+
 ## 事件模型
 
 每个 flow 会按 `flow_id` 输出多条事件：

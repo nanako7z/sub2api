@@ -4,6 +4,7 @@ package tlsfingerprint
 import (
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -45,14 +46,29 @@ func NewRegistryFromConfig(cfg *config.TLSFingerprintConfig) *Registry {
 		return r
 	}
 
+	if p := r.GetProfile(DefaultProfileName); p != nil {
+		// Global profile_mode should control the built-in default profile as well.
+		// Per-profile mode overrides are only applicable to custom profiles.
+		p.Mode = normalizeProfileMode("", cfg.ProfileMode)
+		p.ShapeMode = normalizeShapeMode(cfg.ShapeMode)
+		p.ShapeWindowSize = normalizeShapeWindowSize(cfg.ShapeWindowSize)
+		p.ShapeWeights = shapeWeightsFromConfig(cfg.ShapeWeights)
+		p.ECHPayloadMode = normalizeECHPayloadMode(cfg.ECHPayloadMode)
+	}
+
 	// Load custom profiles from config
 	for name, profileCfg := range cfg.Profiles {
 		profile := &Profile{
-			Name:         profileCfg.Name,
-			EnableGREASE: profileCfg.EnableGREASE,
-			CipherSuites: profileCfg.CipherSuites,
-			Curves:       profileCfg.Curves,
-			PointFormats: profileCfg.PointFormats,
+			Name:            profileCfg.Name,
+			Mode:            normalizeProfileMode(profileCfg.Mode, cfg.ProfileMode),
+			ShapeMode:       normalizeShapeMode(cfg.ShapeMode),
+			ShapeWindowSize: normalizeShapeWindowSize(cfg.ShapeWindowSize),
+			ShapeWeights:    shapeWeightsFromConfig(cfg.ShapeWeights),
+			ECHPayloadMode:  normalizeECHPayloadMode(cfg.ECHPayloadMode),
+			EnableGREASE:    profileCfg.EnableGREASE,
+			CipherSuites:    profileCfg.CipherSuites,
+			Curves:          profileCfg.Curves,
+			PointFormats:    profileCfg.PointFormats,
 		}
 
 		// If the profile has empty values, they will use defaults in dialer
@@ -67,14 +83,52 @@ func NewRegistryFromConfig(cfg *config.TLSFingerprintConfig) *Registry {
 // registerBuiltinProfile adds the default Claude CLI profile to the registry.
 func (r *Registry) registerBuiltinProfile() {
 	defaultProfile := &Profile{
-		Name:         "Claude Code v2.1.80 (Bun runtime + BoringSSL)",
-		EnableGREASE: false, // Bun/BoringSSL does not use GREASE
+		Name:            "Claude Code v2.1.80 (Bun runtime + BoringSSL)",
+		Mode:            "mixed",
+		ShapeMode:       "observed_v1",
+		ShapeWindowSize: 64,
+		ShapeWeights:    defaultTLSShapeWeights,
+		ECHPayloadMode:  "templated",
+		EnableGREASE:    false, // Bun/BoringSSL does not use GREASE
 		// Empty slices will cause dialer to use built-in defaults
 		CipherSuites: nil,
 		Curves:       nil,
 		PointFormats: nil,
 	}
 	r.RegisterProfile(DefaultProfileName, defaultProfile)
+}
+
+func normalizeProfileMode(profileMode, globalMode string) string {
+	mode := strings.ToLower(strings.TrimSpace(profileMode))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(globalMode))
+	}
+	switch mode {
+	case "fixed", "dynamic", "mixed":
+		return mode
+	default:
+		return "mixed"
+	}
+}
+
+func normalizeShapeWindowSize(v int) int {
+	if v <= 0 {
+		return 64
+	}
+	return v
+}
+
+func shapeWeightsFromConfig(w config.TLSShapeWeightsConfig) TLSShapeWeights {
+	out := TLSShapeWeights{
+		ECH186Padding41: w.ECH186Padding41,
+		ECH218Padding9:  w.ECH218Padding9,
+		ECH250Padding0:  w.ECH250Padding0,
+		ECH282Padding0:  w.ECH282Padding0,
+	}
+	if out.ECH186Padding41+out.ECH218Padding9+out.ECH250Padding0+out.ECH282Padding0 <= 0 {
+		return defaultTLSShapeWeights
+	}
+	return out
 }
 
 // RegisterProfile adds or updates a profile in the registry.

@@ -53,6 +53,11 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 
 	// 设置请求头（端点画像）
 	profile := claude.HeaderProfileForEndpoint(claude.EndpointOAuthUsage)
+	// oauth_usage 固定走官方 host，不跟随账号 base_url。
+	// Header profile 的 ForceOfficialHost 用于显式声明该策略。
+	if !profile.ForceOfficialHost {
+		return nil, fmt.Errorf("invalid oauth_usage profile: ForceOfficialHost must be true")
+	}
 	req.Header.Set("Accept", profile.Accept)
 	req.Header.Set("Accept-Encoding", profile.AcceptEncoding)
 	req.Header.Set("Content-Type", "application/json")

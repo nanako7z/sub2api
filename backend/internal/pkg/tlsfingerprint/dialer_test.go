@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	utls "github.com/refraction-networking/utls"
 )
 
 // TestDialerBasicConnection tests that the dialer can establish TLS connections.
@@ -428,4 +430,160 @@ func fetchFingerprint(t *testing.T, profile *Profile) *TLSInfo {
 	}
 
 	return &fpResp.TLS
+}
+
+func TestBuildClientHelloSpec_ModeFixedUsesStaticECHAndPadding(t *testing.T) {
+	spec := buildClientHelloSpecFromProfile(&Profile{Mode: "fixed"})
+
+	var hasPadding bool
+	var echGeneric *utls.GenericExtension
+	for _, ext := range spec.Extensions {
+		switch v := ext.(type) {
+		case *utls.UtlsPaddingExtension:
+			hasPadding = true
+		case *utls.GenericExtension:
+			if v.Id == 65037 {
+				echGeneric = v
+			}
+		}
+	}
+
+	if !hasPadding {
+		t.Fatalf("expected padding extension in fixed mode")
+	}
+	if echGeneric == nil {
+		t.Fatalf("expected generic extension 65037 in fixed mode")
+	}
+	if len(echGeneric.Data) == 0 {
+		t.Fatalf("expected non-empty static 65037 payload in fixed mode")
+	}
+}
+
+func TestBuildClientHelloSpec_ModeDynamicUsesObservedPaddedShapes(t *testing.T) {
+	const attempts = 60
+	observed := map[[2]int]bool{}
+	for i := 0; i < attempts; i++ {
+		spec := buildClientHelloSpecFromProfile(&Profile{Mode: "dynamic"})
+		echLen, padLen := extractECHAndPaddingLen(spec)
+		key := [2]int{echLen, padLen}
+		observed[key] = true
+		if !isKnownTLSShape(echLen, padLen) {
+			t.Fatalf("unexpected dynamic tls shape (%d,%d)", echLen, padLen)
+		}
+		if padLen <= 0 {
+			t.Fatalf("dynamic mode must always include padding ext 21")
+		}
+	}
+	// Dynamic mode should stay in padded subset and can hit both known padded shapes.
+	if !observed[[2]int{186, 41}] && !observed[[2]int{218, 9}] {
+		t.Fatalf("dynamic mode did not produce any known padded shape")
+	}
+}
+
+func TestBuildClientHelloSpec_ModeMixedProducesObservedShapeFamily(t *testing.T) {
+	const attempts = 200
+	var withPadding bool
+	var withoutPadding bool
+
+	for i := 0; i < attempts; i++ {
+		spec := buildClientHelloSpecFromProfile(&Profile{Mode: "mixed"})
+		echLen, padLen := extractECHAndPaddingLen(spec)
+		if !isKnownTLSShape(echLen, padLen) {
+			t.Fatalf("unexpected mixed tls shape (%d,%d)", echLen, padLen)
+		}
+		if padLen > 0 {
+			withPadding = true
+		} else {
+			withoutPadding = true
+		}
+		if withPadding && withoutPadding {
+			return
+		}
+	}
+
+	t.Fatalf("expected mixed mode to produce both with/without padding within %d attempts", attempts)
+}
+
+func extractECHAndPaddingLen(spec *utls.ClientHelloSpec) (echLen int, paddingLen int) {
+	for _, ext := range spec.Extensions {
+		switch v := ext.(type) {
+		case *utls.GenericExtension:
+			if v.Id == 65037 {
+				echLen = len(v.Data)
+			}
+		case *utls.UtlsPaddingExtension:
+			// Mimic what utls does when assembling ClientHello.
+			var willPad bool
+			paddingLen, willPad = v.GetPaddingLen(0)
+			if !willPad {
+				paddingLen = 0
+			}
+		}
+	}
+	return echLen, paddingLen
+}
+
+func isKnownTLSShape(echLen int, paddingLen int) bool {
+	switch {
+	case echLen == 186 && paddingLen == 41:
+		return true
+	case echLen == 218 && paddingLen == 9:
+		return true
+	case echLen == 250 && paddingLen == 0:
+		return true
+	case echLen == 282 && paddingLen == 0:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestTLSShapeSchedulerConvergesWithinWindow(t *testing.T) {
+	profile := &Profile{
+		Mode:            "mixed",
+		ShapeMode:       "observed_v1",
+		ShapeWindowSize: 64,
+		ShapeWeights: TLSShapeWeights{
+			ECH186Padding41: 20,
+			ECH218Padding9:  22,
+			ECH250Padding0:  23,
+			ECH282Padding0:  35,
+		},
+		ECHPayloadMode: "templated",
+	}
+
+	const attempts = 1000
+	counts := map[[2]int]int{}
+	for i := 0; i < attempts; i++ {
+		spec := buildClientHelloSpecFromProfile(profile)
+		echLen, padLen := extractECHAndPaddingLen(spec)
+		counts[[2]int{echLen, padLen}]++
+	}
+
+	targets := map[[2]int]float64{
+		{186, 41}: 0.20,
+		{218, 9}:  0.22,
+		{250, 0}:  0.23,
+		{282, 0}:  0.35,
+	}
+	const tolerance = 0.08
+	for combo, target := range targets {
+		got := float64(counts[combo]) / attempts
+		if got < target-tolerance || got > target+tolerance {
+			t.Fatalf("combo %v out of tolerance: got %.3f target %.3f ± %.3f", combo, got, target, tolerance)
+		}
+	}
+}
+
+func TestBuildECHPayload_TemplatedKeepsStablePrefix(t *testing.T) {
+	payload := buildECHPayload(64, "templated")
+	if len(payload) != 64 {
+		t.Fatalf("unexpected payload length: %d", len(payload))
+	}
+	want := []byte{0x00, 0x00, 0x01, 0x00, 0x01}
+	for i := range want {
+		if payload[i] != want[i] {
+			t.Fatalf("templated payload prefix mismatch at %d: got 0x%02x want 0x%02x", i, payload[i], want[i])
+		}
+	}
 }
