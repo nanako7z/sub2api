@@ -334,7 +334,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 
 	if useBearer {
 		// OAuth 账号：完整 Claude Code 伪装头（与 applyClaudeCodeMimicHeaders 一致）
-		applyClaudeCodeMimicHeaders(req, true)
+		applyClaudeCodeMimicHeaders(req, true, claude.EndpointMessages)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
 

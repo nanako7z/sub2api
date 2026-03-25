@@ -1361,7 +1361,6 @@ func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {
 	return true
 }
 
-
 // CountTokens handles token counting endpoint
 // POST /v1/messages/count_tokens
 // 特点：校验订阅/余额，但不计算并发、不记录使用量
@@ -1726,7 +1725,6 @@ func (h *GatewayHandler) maybeLogCompatibilityFallbackMetrics(reqLog *zap.Logger
 		zap.Int64("metadata_legacy_fallback_total", metrics.MetadataLegacyFallbackTotal),
 	)
 }
-
 
 // getUserMsgQueueMode 获取当前请求的 UMQ 模式
 // 返回 "serialize" | "throttle" | ""

@@ -2,19 +2,20 @@
 package claude
 
 // Claude Code 客户端相关常量
+const ClaudeCLIVersion = "2.1.79"
 
 // Beta header 常量
 const (
-	BetaOAuth                = "oauth-2025-04-20"
-	BetaClaudeCode           = "claude-code-20250219"
-	BetaInterleavedThinking  = "interleaved-thinking-2025-05-14"
-	BetaTokenCounting        = "token-counting-2024-11-01"
-	BetaContext1M            = "context-1m-2025-08-07"
-	BetaContextManagement    = "context-management-2025-06-27"
-	BetaPromptCachingScope   = "prompt-caching-scope-2026-01-05"
-	BetaAdvancedToolUse      = "advanced-tool-use-2025-11-20"
-	BetaEffort               = "effort-2025-11-24"
-	BetaFastMode             = "fast-mode-2026-02-01"
+	BetaOAuth               = "oauth-2025-04-20"
+	BetaClaudeCode          = "claude-code-20250219"
+	BetaInterleavedThinking = "interleaved-thinking-2025-05-14"
+	BetaTokenCounting       = "token-counting-2024-11-01"
+	BetaContext1M           = "context-1m-2025-08-07"
+	BetaContextManagement   = "context-management-2025-06-27"
+	BetaPromptCachingScope  = "prompt-caching-scope-2026-01-05"
+	BetaAdvancedToolUse     = "advanced-tool-use-2025-11-20"
+	BetaEffort              = "effort-2025-11-24"
+	BetaFastMode            = "fast-mode-2026-02-01"
 )
 
 // DroppedBetas 是转发时需要从 anthropic-beta header 中移除的 beta token 列表。
@@ -22,8 +23,8 @@ const (
 var DroppedBetas = []string{}
 
 // DefaultBetaHeader Claude Code 客户端默认的 anthropic-beta header
-// Captured from Claude Code v2.1.80 /v1/messages request on 2026-03-20.
-const DefaultBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaContext1M + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
+// Captured from Claude Code v2.1.80 /v1/messages request on 2026-03-25.
+const DefaultBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
 
 // MessageBetaHeaderNoTools /v1/messages 在无工具时的 beta header
 //
@@ -37,7 +38,7 @@ const MessageBetaHeaderNoTools = BetaClaudeCode + "," + BetaOAuth + "," + BetaCo
 const MessageBetaHeaderWithTools = BetaClaudeCode + "," + BetaOAuth + "," + BetaContext1M + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
 
 // CountTokensBetaHeader count_tokens 请求使用的 anthropic-beta header
-const CountTokensBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaTokenCounting
+const CountTokensBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaPromptCachingScope + "," + BetaTokenCounting
 
 // HaikuBetaHeader Haiku 模型使用的 anthropic-beta header（不需要 claude-code beta）
 const HaikuBetaHeader = BetaOAuth + "," + BetaInterleavedThinking
@@ -52,12 +53,12 @@ const APIKeyHaikuBetaHeader = BetaInterleavedThinking
 var DefaultHeaders = map[string]string{
 	// Keep these in sync with recent Claude CLI traffic to reduce the chance
 	// that Claude Code-scoped OAuth credentials are rejected as "non-CLI" usage.
-	// Captured from Claude Code v2.1.80 on 2026-03-20.
-	"User-Agent":                                "claude-cli/2.1.80 (external, sdk-cli)",
+	// Captured from Claude Code on macOS/arm64 traffic (v2.1.79 observed in recent captures).
+	"User-Agent":                                "claude-cli/" + ClaudeCLIVersion + " (external, sdk-cli)",
 	"X-Stainless-Lang":                          "js",
 	"X-Stainless-Package-Version":               "0.74.0",
-	"X-Stainless-OS":                            "Linux",
-	"X-Stainless-Arch":                          "x64",
+	"X-Stainless-OS":                            "MacOS",
+	"X-Stainless-Arch":                          "arm64",
 	"X-Stainless-Runtime":                       "node",
 	"X-Stainless-Runtime-Version":               "v24.3.0",
 	"X-Stainless-Retry-Count":                   "0",
@@ -65,6 +66,62 @@ var DefaultHeaders = map[string]string{
 	"X-App":                                     "cli",
 	"Anthropic-Dangerous-Direct-Browser-Access": "true",
 	"Accept-Encoding":                           "gzip, deflate, br, zstd",
+}
+
+type EndpointHeaderProfile struct {
+	EndpointID     string
+	UserAgent      string
+	BetaHeader     string
+	Accept         string
+	AcceptEncoding string
+}
+
+const (
+	EndpointMessages    = "messages"
+	EndpointCountTokens = "count_tokens"
+	EndpointMCPServers  = "mcp_servers"
+	EndpointOAuthUsage  = "oauth_usage"
+)
+
+const MCPServersBetaHeader = "mcp-servers-2025-12-04"
+
+func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
+	switch endpointID {
+	case EndpointCountTokens:
+		return EndpointHeaderProfile{
+			EndpointID:     endpointID,
+			UserAgent:      "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
+			BetaHeader:     CountTokensBetaHeader,
+			Accept:         "application/json",
+			AcceptEncoding: "gzip, deflate, br, zstd",
+		}
+	case EndpointMCPServers:
+		return EndpointHeaderProfile{
+			EndpointID:     endpointID,
+			UserAgent:      "axios/1.13.6",
+			BetaHeader:     MCPServersBetaHeader,
+			Accept:         "application/json, text/plain, */*",
+			AcceptEncoding: "gzip, compress, deflate, br",
+		}
+	case EndpointOAuthUsage:
+		return EndpointHeaderProfile{
+			EndpointID:     endpointID,
+			UserAgent:      "claude-code/" + ClaudeCLIVersion,
+			BetaHeader:     BetaOAuth,
+			Accept:         "application/json, text/plain, */*",
+			AcceptEncoding: "gzip, compress, deflate, br",
+		}
+	case EndpointMessages:
+		fallthrough
+	default:
+		return EndpointHeaderProfile{
+			EndpointID:     EndpointMessages,
+			UserAgent:      "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
+			BetaHeader:     DefaultBetaHeader,
+			Accept:         "application/json",
+			AcceptEncoding: "gzip, deflate, br, zstd",
+		}
+	}
 }
 
 // Model 表示一个 Claude 模型

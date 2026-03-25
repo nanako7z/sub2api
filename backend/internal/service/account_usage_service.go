@@ -244,10 +244,10 @@ type ClaudeUsageResponse struct {
 
 // ClaudeUsageFetchOptions 包含获取 Claude 用量数据所需的所有选项
 type ClaudeUsageFetchOptions struct {
-	AccessToken          string       // OAuth access token
-	ProxyURL             string       // 代理 URL（可选）
-	AccountID            int64        // 账号 ID（用于 TLS 指纹选择）
-	EnableTLSFingerprint bool         // 是否启用 TLS 指纹伪装
+	AccessToken          string // OAuth access token
+	ProxyURL             string // 代理 URL（可选）
+	AccountID            int64  // 账号 ID（用于 TLS 指纹选择）
+	EnableTLSFingerprint bool   // 是否启用 TLS 指纹伪装
 }
 
 // ClaudeUsageFetcher fetches usage data from Anthropic OAuth API
@@ -1144,14 +1144,14 @@ func (s *AccountUsageService) fetchOAuthUsageRaw(ctx context.Context, account *A
 		return nil, fmt.Errorf("no access token available")
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolve outbound context failed: %w", err)
 	}
 
 	opts := &ClaudeUsageFetchOptions{
 		AccessToken:          accessToken,
-		ProxyURL:             proxyURL,
+		ProxyURL:             outboundCtx.ProxyURL,
 		AccountID:            account.ID,
 		EnableTLSFingerprint: account.IsTLSFingerprintEnabled(),
 	}

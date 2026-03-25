@@ -41,6 +41,7 @@ import (
 const (
 	claudeAPIURL            = "https://api.anthropic.com/v1/messages?beta=true"
 	claudeAPICountTokensURL = "https://api.anthropic.com/v1/messages/count_tokens?beta=true"
+	claudeAPIMCPServersURL  = "https://api.anthropic.com/v1/mcp_servers?limit=1000"
 	stickySessionTTL        = time.Hour // 粘性会话TTL
 	defaultMaxLineSize      = 500 * 1024 * 1024
 	// Canonical Claude Code banner. Keep it EXACT (no trailing whitespace/newlines)
@@ -686,6 +687,7 @@ type GatewayService struct {
 	userGroupRateSF       singleflight.Group
 	modelsListCache       *gocache.Cache
 	modelsListCacheTTL    time.Duration
+	mcpTriggerCache       *gocache.Cache
 	settingService        *SettingService
 	referralService       *ReferralService
 	partnerService        *PartnerService
@@ -752,6 +754,7 @@ func NewGatewayService(
 		partnerService:       partnerService,
 		modelsListCache:      gocache.New(modelsListTTL, time.Minute),
 		modelsListCacheTTL:   modelsListTTL,
+		mcpTriggerCache:      gocache.New(30*time.Minute, 5*time.Minute),
 		responseHeaderFilter: compileResponseHeaderFilter(cfg),
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
@@ -4175,8 +4178,9 @@ func minCacheTokensByModel(model string) int {
 //  3. 前缀 token 数（tools + system 文本）估算达到最小缓存阈值
 //
 // token 估算说明：len(bytes)/3 对 ASCII 和 CJK 均合理——
-//   ASCII: ~4 bytes/token，保守估算约 3 bytes/token（轻微高估，使注入更积极）
-//   CJK: 1 char = 3 bytes UTF-8 ≈ 1 token，故 byteLen/3 ≈ rune count ≈ token count
+//
+//	ASCII: ~4 bytes/token，保守估算约 3 bytes/token（轻微高估，使注入更积极）
+//	CJK: 1 char = 3 bytes UTF-8 ≈ 1 token，故 byteLen/3 ≈ rune count ≈ token count
 func injectAutoCacheControl(body []byte, model string) []byte {
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
@@ -4529,7 +4533,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// 在 system 最后一个块上添加 ephemeral 标记以利用上游前缀缓存
 	body = injectAutoCacheControl(body, reqModel)
 
-
 	// 强制执行 cache_control 块数量限制（最多 4 个）
 	body = enforceCacheControlLimit(body)
 
@@ -4564,21 +4567,28 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return nil, err
 	}
 
-	// 获取代理URL
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, nil)
+	if err != nil {
+		return nil, err
 	}
+	proxyURL := outboundCtx.ProxyURL
 
 	// 调试日志：记录即将转发的账号信息
-	logger.LegacyPrintf("service.gateway", "[Forward] Using account: ID=%d Name=%s Platform=%s Type=%s TLSFingerprint=%v Proxy=%s",
-		account.ID, account.Name, account.Platform, account.Type, account.IsTLSFingerprintEnabled(), proxyURL)
+	logger.LegacyPrintf("service.gateway", "[Forward] outbound_class=minimal_oauth account=%d(%s) platform=%s type=%s tls=%v proxy=%s token_generation=%d runtime_profile=%s tls_profile=%s session=%s",
+		account.ID, account.Name, account.Platform, account.Type, account.IsTLSFingerprintEnabled(), proxyURL, outboundCtx.TokenGeneration, outboundCtx.RuntimeProfileID, outboundCtx.TLSProfileID, outboundCtx.SessionID)
+
+	if account.IsOAuth() {
+		if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerStartupPrefetch); err != nil {
+			logger.LegacyPrintf("service.gateway", "[mcp_prefetch] account=%d reason=%s failed=%v", account.ID, MCPTriggerStartupPrefetch, err)
+		}
+	}
 	// 重试间复用同一请求体，避免每次 string(body) 产生额外分配。
 	setOpsUpstreamRequestBody(c, body)
 
 	// 重试循环
 	var resp *http.Response
 	retryStart := time.Now()
+	mcpRecoveryTried := false
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
 		// 构建上游请求（每次重试需要重新构建，因为请求体需要重新读取）
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
@@ -4613,6 +4623,15 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				},
 			})
 			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		}
+
+		if account.IsOAuth() && !mcpRecoveryTried && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+			_ = resp.Body.Close()
+			mcpRecoveryTried = true
+			if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerAuthFailureRecover); err != nil {
+				logger.LegacyPrintf("service.gateway", "[mcp_recovery] account=%d status=%d failed=%v", account.ID, resp.StatusCode, err)
+			}
+			continue
 		}
 
 		// 优先检测thinking block签名错误（400）并重试一次
@@ -5046,10 +5065,11 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		return nil, fmt.Errorf("anthropic api key passthrough requires apikey token, got: %s", tokenType)
 	}
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, nil)
+	if err != nil {
+		return nil, err
 	}
+	proxyURL := outboundCtx.ProxyURL
 
 	logger.LegacyPrintf("service.gateway", "[Anthropic 自动透传] 命中 API Key 透传分支: account=%d name=%s model=%s stream=%v",
 		account.ID, account.Name, input.RequestModel, input.RequestStream)
@@ -5684,10 +5704,11 @@ func (s *GatewayService) forwardBedrock(
 		return nil, fmt.Errorf("prepare bedrock request body: %w", err)
 	}
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, nil)
+	if err != nil {
+		return nil, err
 	}
+	proxyURL := outboundCtx.ProxyURL
 
 	logger.LegacyPrintf("service.gateway", "[Bedrock] 命中 Bedrock 分支: account=%d name=%s model=%s->%s stream=%v",
 		account.ID, account.Name, reqModel, mappedModel, reqStream)
@@ -6069,7 +6090,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		incomingBeta := clientHeaders.Get("anthropic-beta")
 
 		// 设置完整 Claude Code 请求头（UA/X-Stainless/X-App/Accept/Accept-Encoding 等）
-		applyClaudeCodeMimicHeaders(req, reqStream)
+		applyClaudeCodeMimicHeaders(req, reqStream, claude.EndpointMessages)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
 
@@ -6117,7 +6138,6 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	return req, nil
 }
-
 
 func requestNeedsBetaFeatures(body []byte) bool {
 	tools := gjson.GetBytes(body, "tools")
@@ -6446,23 +6466,50 @@ var defaultDroppedBetasSet = buildBetaTokenSet(claude.DroppedBetas)
 // applyClaudeCodeMimicHeaders forces "Claude Code-like" request headers.
 // This mirrors opencode-anthropic-auth behavior: do not trust downstream
 // headers when using Claude Code-scoped OAuth credentials.
-func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
+func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool, endpointID string) {
 	if req == nil {
 		return
 	}
-	// Start with the standard defaults (fill missing).
-	applyClaudeOAuthHeaderDefaults(req, isStream)
-	// Then force key headers to match Claude Code fingerprint regardless of what the client sent.
-	for key, value := range claude.DefaultHeaders {
-		if value == "" {
-			continue
+	profile := claude.HeaderProfileForEndpoint(endpointID)
+
+	// Build endpoint headers from whitelist templates captured from real traffic.
+	// Do not carry over generic defaults that are absent on certain endpoints (e.g. mcp_servers).
+	req.Header.Set("user-agent", profile.UserAgent)
+	req.Header.Set("accept", profile.Accept)
+	req.Header.Set("accept-encoding", profile.AcceptEncoding)
+	req.Header.Set("anthropic-beta", profile.BetaHeader)
+
+	switch endpointID {
+	case claude.EndpointMCPServers:
+		// mcp_servers capture: axios UA + minimal headers only.
+		return
+	case claude.EndpointCountTokens:
+		// count_tokens capture: has X-Stainless set, but no x-stainless-timeout/helper-method.
+		req.Header.Set("x-stainless-lang", claude.DefaultHeaders["X-Stainless-Lang"])
+		req.Header.Set("x-stainless-package-version", claude.DefaultHeaders["X-Stainless-Package-Version"])
+		req.Header.Set("x-stainless-os", claude.DefaultHeaders["X-Stainless-OS"])
+		req.Header.Set("x-stainless-arch", claude.DefaultHeaders["X-Stainless-Arch"])
+		req.Header.Set("x-stainless-runtime", claude.DefaultHeaders["X-Stainless-Runtime"])
+		req.Header.Set("x-stainless-runtime-version", claude.DefaultHeaders["X-Stainless-Runtime-Version"])
+		req.Header.Set("x-stainless-retry-count", claude.DefaultHeaders["X-Stainless-Retry-Count"])
+		req.Header.Set("x-app", claude.DefaultHeaders["X-App"])
+		req.Header.Set("anthropic-dangerous-direct-browser-access", claude.DefaultHeaders["Anthropic-Dangerous-Direct-Browser-Access"])
+		return
+	default:
+		// messages capture: full claude-cli SDK-like header set.
+		req.Header.Set("x-stainless-lang", claude.DefaultHeaders["X-Stainless-Lang"])
+		req.Header.Set("x-stainless-package-version", claude.DefaultHeaders["X-Stainless-Package-Version"])
+		req.Header.Set("x-stainless-os", claude.DefaultHeaders["X-Stainless-OS"])
+		req.Header.Set("x-stainless-arch", claude.DefaultHeaders["X-Stainless-Arch"])
+		req.Header.Set("x-stainless-runtime", claude.DefaultHeaders["X-Stainless-Runtime"])
+		req.Header.Set("x-stainless-runtime-version", claude.DefaultHeaders["X-Stainless-Runtime-Version"])
+		req.Header.Set("x-stainless-retry-count", claude.DefaultHeaders["X-Stainless-Retry-Count"])
+		req.Header.Set("x-stainless-timeout", claude.DefaultHeaders["X-Stainless-Timeout"])
+		req.Header.Set("x-app", claude.DefaultHeaders["X-App"])
+		req.Header.Set("anthropic-dangerous-direct-browser-access", claude.DefaultHeaders["Anthropic-Dangerous-Direct-Browser-Access"])
+		if isStream && endpointID == claude.EndpointMessages {
+			req.Header.Set("x-stainless-helper-method", "stream")
 		}
-		req.Header.Set(key, value)
-	}
-	// Real Claude CLI uses Accept: application/json (even for streaming).
-	req.Header.Set("accept", "application/json")
-	if isStream {
-		req.Header.Set("x-stainless-helper-method", "stream")
 	}
 }
 
@@ -8409,9 +8456,17 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 获取代理URL
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, nil)
+	if err != nil {
+		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "invalid outbound context")
+		return err
+	}
+	proxyURL := outboundCtx.ProxyURL
+
+	if account.IsOAuth() {
+		if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerStartupPrefetch); err != nil {
+			logger.LegacyPrintf("service.gateway", "[mcp_prefetch] account=%d reason=%s failed=%v", account.ID, MCPTriggerStartupPrefetch, err)
+		}
 	}
 
 	// 发送请求
@@ -8420,6 +8475,23 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		setOpsUpstreamError(c, 0, sanitizeUpstreamErrorMessage(err.Error()), "")
 		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Request failed")
 		return fmt.Errorf("upstream request failed: %w", err)
+	}
+
+	if account.IsOAuth() && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+		_ = resp.Body.Close()
+		if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerAuthFailureRecover); err != nil {
+			logger.LegacyPrintf("service.gateway", "[mcp_recovery] account=%d status=%d failed=%v", account.ID, resp.StatusCode, err)
+		}
+		retryReq, buildErr := s.buildCountTokensRequest(ctx, c, account, body, token, tokenType, reqModel, shouldMimicHeaders)
+		if buildErr != nil {
+			s.countTokensError(c, http.StatusInternalServerError, "api_error", "Failed to build retry request")
+			return buildErr
+		}
+		resp, err = s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
+		if err != nil {
+			s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Retry request failed")
+			return err
+		}
 	}
 
 	// 读取响应体
@@ -8527,10 +8599,12 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		return err
 	}
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, nil)
+	if err != nil {
+		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "invalid outbound context")
+		return err
 	}
+	proxyURL := outboundCtx.ProxyURL
 
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
 	if err != nil {
@@ -8727,7 +8801,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		// ── OAuth 账号：从零构建请求头，不透传任何客户端 header ──
 		incomingBeta := clientHeaders.Get("anthropic-beta")
 
-		applyClaudeCodeMimicHeaders(req, false)
+		applyClaudeCodeMimicHeaders(req, false, claude.EndpointCountTokens)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
 
@@ -8783,6 +8857,122 @@ func (s *GatewayService) countTokensError(c *gin.Context, status int, errType, m
 			"message": message,
 		},
 	})
+}
+
+func (s *GatewayService) mcpSessionCacheKey(accountID int64) string {
+	return fmt.Sprintf("mcp:session:%d", accountID)
+}
+
+func (s *GatewayService) mcpTokenGenerationKey(accountID int64) string {
+	return fmt.Sprintf("mcp:token_generation:%d", accountID)
+}
+
+func (s *GatewayService) maybeTriggerMCPServers(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	token string,
+	tokenType string,
+	outboundCtx *AccountOutboundContext,
+	reason MCPTriggerReason,
+) error {
+	if s == nil || account == nil || outboundCtx == nil {
+		return fmt.Errorf("invalid mcp trigger context")
+	}
+	if s.mcpTriggerCache == nil {
+		return nil
+	}
+
+	effectiveReason := reason
+	if v, ok := s.mcpTriggerCache.Get(s.mcpTokenGenerationKey(account.ID)); ok {
+		if lastTokenGen, ok := v.(int64); ok && lastTokenGen != outboundCtx.TokenGeneration {
+			effectiveReason = MCPTriggerSessionReset
+		}
+	}
+
+	if effectiveReason != MCPTriggerAuthFailureRecover {
+		if _, ok := s.mcpTriggerCache.Get(s.mcpSessionCacheKey(account.ID)); ok {
+			return nil
+		}
+	}
+
+	req, err := s.buildMCPServersRequest(ctx, account, token, tokenType)
+	if err != nil {
+		return err
+	}
+	resp, err := s.httpUpstream.DoWithTLS(req, outboundCtx.ProxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	s.mcpTriggerCache.SetDefault(s.mcpTokenGenerationKey(account.ID), outboundCtx.TokenGeneration)
+	if resp.StatusCode < 400 {
+		s.mcpTriggerCache.SetDefault(s.mcpSessionCacheKey(account.ID), true)
+	}
+
+	logger.LegacyPrintf("service.gateway", "[mcp_trigger] account=%d reason=%s status=%d token_generation=%d proxy_effective=%t endpoint_profile_id=%s",
+		account.ID, effectiveReason, resp.StatusCode, outboundCtx.TokenGeneration, outboundCtx.ProxyURL != "", claude.EndpointMCPServers)
+	return nil
+}
+
+func (s *GatewayService) buildMCPServersRequest(
+	ctx context.Context,
+	account *Account,
+	token string,
+	tokenType string,
+) (*http.Request, error) {
+	// IMPORTANT: align with real Claude Code capture behavior.
+	// /v1/mcp_servers bypasses custom baseURL and always targets api.anthropic.com.
+	targetURL := claudeAPIMCPServersURL
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	applyClaudeCodeMimicHeaders(req, false, claude.EndpointMCPServers)
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	if tokenType == "oauth" {
+		req.Header.Set("authorization", "Bearer "+token)
+	} else {
+		req.Header.Set("x-api-key", token)
+	}
+	return req, nil
+}
+
+// ForwardMCPServers proxies /v1/mcp_servers to upstream.
+func (s *GatewayService) ForwardMCPServers(ctx context.Context, c *gin.Context, account *Account) error {
+	token, tokenType, err := s.GetAccessToken(ctx, account)
+	if err != nil {
+		return err
+	}
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, nil)
+	if err != nil {
+		return err
+	}
+	req, err := s.buildMCPServersRequest(ctx, account, token, tokenType)
+	if err != nil {
+		return err
+	}
+	resp, err := s.httpUpstream.DoWithTLS(req, outboundCtx.ProxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	c.Data(resp.StatusCode, contentType, body)
+	return nil
 }
 
 func (s *GatewayService) validateUpstreamBaseURL(raw string) (string, error) {

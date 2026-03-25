@@ -292,15 +292,11 @@ func (s *OAuthService) RefreshAccountToken(ctx context.Context, account *Account
 		return nil, fmt.Errorf("no refresh token available")
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	outboundCtx, err := ResolveAccountOutboundContext(ctx, account, s.proxyRepo)
+	if err != nil {
+		return nil, err
 	}
-
-	return s.RefreshToken(ctx, refreshToken, proxyURL)
+	return s.RefreshToken(ctx, refreshToken, outboundCtx.ProxyURL)
 }
 
 // Stop stops the session store cleanup goroutine

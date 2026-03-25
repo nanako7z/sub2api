@@ -8,15 +8,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 const defaultClaudeUsageURL = "https://api.anthropic.com/api/oauth/usage"
-
-// 默认 User-Agent，与用户抓包的请求一致
-const defaultUsageUserAgent = "claude-code/2.1.7"
 
 type claudeUsageService struct {
 	usageURL          string
@@ -53,13 +51,14 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 		return nil, fmt.Errorf("create request failed: %w", err)
 	}
 
-	// 设置请求头（与抓包一致，但不设置 Accept-Encoding，让 Go 自动处理压缩）
-	req.Header.Set("Accept", "application/json, text/plain, */*")
+	// 设置请求头（端点画像）
+	profile := claude.HeaderProfileForEndpoint(claude.EndpointOAuthUsage)
+	req.Header.Set("Accept", profile.Accept)
+	req.Header.Set("Accept-Encoding", profile.AcceptEncoding)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+opts.AccessToken)
-	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
-
-	req.Header.Set("User-Agent", defaultUsageUserAgent)
+	req.Header.Set("anthropic-beta", profile.BetaHeader)
+	req.Header.Set("User-Agent", profile.UserAgent)
 
 	var resp *http.Response
 
