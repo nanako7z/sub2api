@@ -1,8 +1,12 @@
-// Command tlscapture starts a TLS capture server and remotely triggers Claude Code
-// to connect to it, capturing the real ClientHello fingerprint and HTTP headers.
+// Command tlscapture is a legacy one-shot calibration tool that starts a local TLS
+// capture server and remotely triggers Claude Code to connect to it, capturing a
+// single real ClientHello fingerprint and HTTP request header snapshot.
 //
-// It hijacks /etc/hosts on the remote machine to redirect api.anthropic.com to
-// the local capture server, then triggers a Claude Code API request.
+// Prefer tools/mitm for continuous observation. tlscapture remains useful when a
+// quick remote TLS/header validation is needed and proxy-based MITM is unavailable.
+//
+// It hijacks /etc/hosts on the remote machine to redirect api.anthropic.com to the
+// local capture server, then triggers one Claude Code API request.
 //
 // Usage: go run ./cmd/tlscapture
 package main
@@ -523,6 +527,7 @@ func main() {
 	// Validate required flags
 	if *flagRemoteUser == "" || *flagRemotePass == "" || *flagLocalIP == "" {
 		fmt.Fprintln(os.Stderr, "Usage: tlscapture -user USER -pass PASS -local-ip IP [-remote HOST:PORT] [-listen ADDR]")
+		fmt.Fprintln(os.Stderr, "Legacy one-shot TLS/header calibration tool. Prefer tools/mitm for continuous capture.")
 		fmt.Fprintln(os.Stderr, "  Or set env: CAPTURE_REMOTE_USER, CAPTURE_REMOTE_PASS, CAPTURE_LOCAL_IP")
 		flag.PrintDefaults()
 		os.Exit(1)

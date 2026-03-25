@@ -1,6 +1,29 @@
-# tlscapture — Claude Code TLS 指纹 & HTTP 请求头抓取工具
+# tlscapture — Legacy Claude Code TLS/请求头单次校准工具
+
+`tlscapture` 现在的定位是 **legacy / one-shot calibration**：
+
+- 用于快速抓取一次真实 Claude Code 的 TLS ClientHello 和关键请求头
+- 适合作为 `tools/mitm/` 连续观测链路的补充和兜底
+- 不再作为 `sub2api` 的主请求捕获方案
+
+如果你的目标是观察 Claude Code 的真实外联行为、多个端点、失败无响应请求和模式差异，请优先使用项目根目录下的 `tools/mitm/`。
+
+---
 
 通过 hosts 劫持 + 自签名证书捕获服务器，抓取真实 Claude Code 客户端发送 API 请求时的 TLS ClientHello 指纹和 HTTP 请求头。
+
+## 适用场景
+
+- 需要快速验证单次 TLS 指纹是否变化
+- 需要在无法使用代理 MITM 时远程抓取一次真实请求头
+- 需要对 `tools/mitm` 产出的结果做补充校准
+
+不适合：
+
+- 持续观察 Claude Code 的完整请求生命周期
+- 分析多个端点，例如 `/v1/messages`、`/v1/mcp_servers`
+- 记录失败但无响应的请求
+- 对 OAuth / API key / 不同网络环境做长期实验
 
 ## 原理
 
@@ -126,6 +149,17 @@ Claude Code 启动时会发多个请求，使用不同的 User-Agent：
 | `/api/oauth/claude_cli/client_data` | `claude-code/2.1.80` |
 | `/api/claude_code_grove` | `claude-cli/2.1.80 (external, sdk-cli)` |
 | 其他 `/api/*` | `axios/1.13.6` |
+
+## 推荐主工作流
+
+主工作流已经迁移到 `tools/mitm/`：
+
+1. 启动 `tools/mitm/start_daemon.sh`
+2. 使用 `tools/mitm/claude_with_proxy.sh` 启动 Claude Code
+3. 运行 `tools/mitm/analyze.py` 生成结构化报告
+4. 用 `tools/mitm/reports/*.json` 回填上游仿真代码
+
+`tlscapture` 保留为一次性校准工具，不再承担持续观测职责。
 
 ## 更新指纹后需修改的文件
 

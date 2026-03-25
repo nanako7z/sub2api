@@ -47,7 +47,7 @@ type SOCKS5ProxyDialer struct {
 
 // Default TLS fingerprint values captured from Claude Code v2.1.80 (Bun runtime + BoringSSL)
 // Captured by intercepting a live ClientHello from Claude Code connecting to a local TLS server.
-// Extension order: ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
+// Extension order: SNI(0x0000) → ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
 //   ec_point_formats(0x000b) → session_ticket(0x0023) → alpn(0x0010) → status_request(0x0005) →
 //   signature_algorithms(0x000d) → sct(0x0012) → key_share(0x0033) → psk_modes(0x002d) →
 //   supported_versions(0x002b) → padding(0x0015)
@@ -425,15 +425,15 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 	enableGREASE := profile != nil && profile.EnableGREASE
 
 	// Claude Code v2.1.80 (Bun/BoringSSL) extension order captured from live ClientHello:
-	// ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
+	// SNI(0x0000) → ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
 	// ec_point_formats(0x000b) → session_ticket(0x0023) → alpn(0x0010) →
 	// status_request(0x0005) → signature_algorithms(0x000d) → sct(0x0012) →
 	// key_share(0x0033) → psk_modes(0x002d) → supported_versions(0x002b) → padding(0x0015)
 	extensions := []utls.TLSExtension{
-		// ECH outer ClientHello placeholder (BoringSSL sends this even without ECH config)
-		&utls.GREASEEncryptedClientHelloExtension{},
 		// SNI — HelloCustom 模式下必须显式添加，utls 从 Config.ServerName 填充
 		&utls.SNIExtension{},
+		// ECH outer ClientHello placeholder (BoringSSL sends this even without ECH config)
+		&utls.GREASEEncryptedClientHelloExtension{},
 		&utls.ExtendedMasterSecretExtension{},                                    // 0x0017
 		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient}, // 0xff01
 		&utls.SupportedCurvesExtension{Curves: curves},                           // 0x000a

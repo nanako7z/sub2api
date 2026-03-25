@@ -133,3 +133,11 @@ frontend/coverage/
 aicodex
 output/
 
+# ===================
+# MITM 真实请求捕获
+# ===================
+tools/mitm/captures/
+tools/mitm/reports/
+tools/mitm/logs/
+tools/mitm/state/
+tools/mitm/__pycache__/
