@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from '../client'
-import type { CustomMenuItem } from '@/types'
+import type { CustomMenuItem, CustomEndpoint } from '@/types'
 
 export interface DefaultSubscriptionSetting {
   group_id: number
@@ -44,6 +44,7 @@ export interface SystemSettings {
   sora_client_enabled: boolean
   backend_mode_enabled: boolean
   custom_menu_items: CustomMenuItem[]
+  custom_endpoints: CustomEndpoint[]
   // SMTP settings
   smtp_host: string
   smtp_port: number
@@ -125,6 +126,7 @@ export interface UpdateSettingsRequest {
   sora_client_enabled?: boolean
   backend_mode_enabled?: boolean
   custom_menu_items?: CustomMenuItem[]
+  custom_endpoints?: CustomEndpoint[]
   smtp_host?: string
   smtp_port?: number
   smtp_username?: string

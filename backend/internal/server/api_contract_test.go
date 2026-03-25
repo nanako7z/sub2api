@@ -549,7 +549,8 @@ func TestAPIContracts(t *testing.T) {
 					"referral_referrer_bonus": 0,
 					"referral_max_commission_per_user": 0,
 					"partner_enabled": false,
-					"custom_menu_items": []
+					"custom_menu_items": [],
+					"custom_endpoints": []
 				}
 			}`,
 		},
@@ -1022,7 +1023,7 @@ func (s *stubAccountRepo) List(ctx context.Context, params pagination.Pagination
 	return nil, nil, errors.New("not implemented")
 }
 
-func (s *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64) ([]service.Account, *pagination.PaginationResult, error) {
+func (s *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 

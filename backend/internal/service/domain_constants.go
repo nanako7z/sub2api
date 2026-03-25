@@ -120,6 +120,7 @@ const (
 	SettingKeyPurchaseSubscriptionURL     = "purchase_subscription_url"     // "购买订阅"页面 URL（作为 iframe src）
 	SettingKeyPurchaseSubscriptionNewTab  = "purchase_subscription_new_tab" // 点击"购买订阅"时是否直接在新标签页打开，而非内嵌 iframe
 	SettingKeyCustomMenuItems             = "custom_menu_items"             // 自定义菜单项（JSON 数组）
+	SettingKeyCustomEndpoints             = "custom_endpoints"              // 自定义端点列表（JSON 数组）
 
 	// 默认配置
 	SettingKeyDefaultConcurrency   = "default_concurrency"   // 新用户默认并发量

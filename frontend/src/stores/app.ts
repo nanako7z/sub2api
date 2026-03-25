@@ -331,6 +331,7 @@ export const useAppStore = defineStore('app', () => {
         purchase_subscription_url: '',
         purchase_subscription_new_tab: false,
         custom_menu_items: [],
+        custom_endpoints: [],
         linuxdo_oauth_enabled: false,
         sora_client_enabled: false,
         backend_mode_enabled: false,

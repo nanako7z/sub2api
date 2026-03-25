@@ -644,6 +644,7 @@ urlFallbackLoop:
 					AccountID:          p.account.ID,
 					AccountName:        p.account.Name,
 					UpstreamStatusCode: 0,
+					UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
 					Kind:               "request_error",
 					Message:            safeErr,
 				})
@@ -721,6 +722,7 @@ urlFallbackLoop:
 							AccountName:        p.account.Name,
 							UpstreamStatusCode: resp.StatusCode,
 							UpstreamRequestID:  resp.Header.Get("x-request-id"),
+							UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
 							Kind:               "retry",
 							Message:            upstreamMsg,
 							Detail:             getUpstreamDetail(respBody),
@@ -755,6 +757,7 @@ urlFallbackLoop:
 							AccountName:        p.account.Name,
 							UpstreamStatusCode: resp.StatusCode,
 							UpstreamRequestID:  resp.Header.Get("x-request-id"),
+							UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
 							Kind:               "retry",
 							Message:            upstreamMsg,
 							Detail:             getUpstreamDetail(respBody),
