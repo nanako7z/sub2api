@@ -124,7 +124,7 @@ func writeOrderedHeaders(w io.Writer, req *http.Request, host string) error {
 		if strings.TrimSpace(host) == "" {
 			return nil
 		}
-		if _, err := fmt.Fprintf(w, "Host: %s\r\n", host); err != nil {
+		if _, err := fmt.Fprintf(w, "%s: %s\r\n", wireHeaderKey(req, "host"), host); err != nil {
 			return err
 		}
 		written["host"] = struct{}{}
@@ -138,7 +138,7 @@ func writeOrderedHeaders(w io.Writer, req *http.Request, host string) error {
 		if len(values) == 0 {
 			return nil
 		}
-		wireKey := textproto.CanonicalMIMEHeaderKey(lowerKey)
+		wireKey := wireHeaderKey(req, lowerKey)
 		for _, v := range values {
 			if _, err := fmt.Fprintf(w, "%s: %s\r\n", wireKey, v); err != nil {
 				return err
@@ -182,6 +182,100 @@ func writeOrderedHeaders(w io.Writer, req *http.Request, host string) error {
 		}
 	}
 	return nil
+}
+
+func wireHeaderKey(req *http.Request, lowerKey string) string {
+	if req != nil && req.URL != nil && strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), "api.anthropic.com") {
+		path := strings.TrimSpace(req.URL.Path)
+		switch {
+		case req.Method == http.MethodPost && strings.HasPrefix(path, "/v1/messages/count_tokens"):
+			return anthropicMessagesWireHeaderKey(lowerKey)
+		case req.Method == http.MethodPost && strings.HasPrefix(path, "/v1/messages"):
+			return anthropicMessagesWireHeaderKey(lowerKey)
+		case req.Method == http.MethodGet && strings.HasPrefix(path, "/v1/mcp_servers"):
+			return anthropicMCPWireHeaderKey(lowerKey)
+		case req.Method == http.MethodGet && strings.HasPrefix(path, "/api/oauth/usage"):
+			return anthropicOAuthUsageWireHeaderKey(lowerKey)
+		}
+	}
+	return textproto.CanonicalMIMEHeaderKey(lowerKey)
+}
+
+func anthropicMessagesWireHeaderKey(lowerKey string) string {
+	switch lowerKey {
+	case "host", "connection", "authorization", "x-app", "content-type", "anthropic-dangerous-direct-browser-access",
+		"anthropic-version", "anthropic-beta", "x-client-request-id", "accept-language", "sec-fetch-mode",
+		"accept-encoding", "content-length":
+		return lowerKey
+	case "accept":
+		return "Accept"
+	case "user-agent":
+		return "User-Agent"
+	case "x-stainless-retry-count":
+		return "X-Stainless-Retry-Count"
+	case "x-stainless-timeout":
+		return "X-Stainless-Timeout"
+	case "x-stainless-lang":
+		return "X-Stainless-Lang"
+	case "x-stainless-package-version":
+		return "X-Stainless-Package-Version"
+	case "x-stainless-os":
+		return "X-Stainless-OS"
+	case "x-stainless-arch":
+		return "X-Stainless-Arch"
+	case "x-stainless-runtime":
+		return "X-Stainless-Runtime"
+	case "x-stainless-runtime-version":
+		return "X-Stainless-Runtime-Version"
+	default:
+		return textproto.CanonicalMIMEHeaderKey(lowerKey)
+	}
+}
+
+func anthropicMCPWireHeaderKey(lowerKey string) string {
+	switch lowerKey {
+	case "anthropic-beta", "anthropic-version":
+		return lowerKey
+	case "accept":
+		return "Accept"
+	case "content-type":
+		return "Content-Type"
+	case "authorization":
+		return "Authorization"
+	case "user-agent":
+		return "User-Agent"
+	case "accept-encoding":
+		return "Accept-Encoding"
+	case "host":
+		return "Host"
+	case "connection":
+		return "Connection"
+	default:
+		return textproto.CanonicalMIMEHeaderKey(lowerKey)
+	}
+}
+
+func anthropicOAuthUsageWireHeaderKey(lowerKey string) string {
+	switch lowerKey {
+	case "anthropic-beta":
+		return lowerKey
+	case "accept":
+		return "Accept"
+	case "content-type":
+		return "Content-Type"
+	case "user-agent":
+		return "User-Agent"
+	case "authorization":
+		return "Authorization"
+	case "accept-encoding":
+		return "Accept-Encoding"
+	case "host":
+		return "Host"
+	case "connection":
+		return "Connection"
+	default:
+		return textproto.CanonicalMIMEHeaderKey(lowerKey)
+	}
 }
 
 func preferredHeaderOrder(req *http.Request) []string {

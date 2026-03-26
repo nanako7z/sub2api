@@ -130,15 +130,6 @@ func main() {
 			ctReq.Header.Set("content-type", "application/json")
 			ctReq.Header.Set("anthropic-version", "2023-06-01")
 			ctReq.Header.Set("authorization", "Bearer invalid-oauth-token")
-			ctReq.Header.Set(
-				"anthropic-beta",
-				strings.Join([]string{
-					claude.BetaClaudeCode,
-					claude.BetaOAuth,
-					claude.BetaInterleavedThinking,
-					claude.BetaTokenCounting,
-				}, ","),
-			)
 			ctReq.Header.Set("x-client-request-id", resolveClientRequestID(*clientRequestID))
 			sendReq(ctx, upstream, account, *proxyURL, ctReq, *tlsFP)
 		}

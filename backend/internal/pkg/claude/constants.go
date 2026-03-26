@@ -10,6 +10,7 @@ const (
 	BetaClaudeCode          = "claude-code-20250219"
 	BetaInterleavedThinking = "interleaved-thinking-2025-05-14"
 	BetaTokenCounting       = "token-counting-2024-11-01"
+	BetaStructuredOutputs   = "structured-outputs-2025-12-15"
 	BetaContext1M           = "context-1m-2025-08-07"
 	BetaContextManagement   = "context-management-2025-06-27"
 	BetaPromptCachingScope  = "prompt-caching-scope-2026-01-05"
@@ -24,7 +25,7 @@ var DroppedBetas = []string{}
 
 // DefaultBetaHeader Claude Code 客户端默认的 anthropic-beta header
 // Captured from Claude Code /v1/messages request on 2026-03-26.
-const DefaultBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
+const DefaultBetaHeader = BetaOAuth + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaStructuredOutputs
 
 // MessageBetaHeaderNoTools /v1/messages 在无工具时的 beta header
 //
@@ -32,10 +33,10 @@ const DefaultBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleav
 // Claude Code for non-Claude-Code clients, we must include the claude-code beta
 // even if the request doesn't use tools, otherwise upstream may reject the
 // request as a non-Claude-Code API request.
-const MessageBetaHeaderNoTools = BetaClaudeCode + "," + BetaOAuth + "," + BetaContext1M + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
+const MessageBetaHeaderNoTools = DefaultBetaHeader
 
 // MessageBetaHeaderWithTools /v1/messages 在有工具时的 beta header
-const MessageBetaHeaderWithTools = BetaClaudeCode + "," + BetaOAuth + "," + BetaContext1M + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
+const MessageBetaHeaderWithTools = DefaultBetaHeader
 
 // CountTokensBetaHeader count_tokens 请求使用的 anthropic-beta header
 const CountTokensBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaTokenCounting
@@ -57,8 +58,8 @@ var DefaultHeaders = map[string]string{
 	"User-Agent":                                "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
 	"X-Stainless-Lang":                          "js",
 	"X-Stainless-Package-Version":               "0.74.0",
-	"X-Stainless-OS":                            "Linux",
-	"X-Stainless-Arch":                          "x64",
+	"X-Stainless-OS":                            "MacOS",
+	"X-Stainless-Arch":                          "arm64",
 	"X-Stainless-Runtime":                       "node",
 	"X-Stainless-Runtime-Version":               "v24.3.0",
 	"X-Stainless-Retry-Count":                   "0",

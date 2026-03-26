@@ -28,6 +28,8 @@ func (s *ClaudeUsageServiceSuite) TearDownTest() {
 type usageRequestCapture struct {
 	authorization string
 	anthropicBeta string
+	connection    string
+	userAgent     string
 }
 
 func (s *ClaudeUsageServiceSuite) TestFetchUsage_Success() {
@@ -36,6 +38,8 @@ func (s *ClaudeUsageServiceSuite) TestFetchUsage_Success() {
 	s.srv = newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		captured.authorization = r.Header.Get("Authorization")
 		captured.anthropicBeta = r.Header.Get("anthropic-beta")
+		captured.connection = r.Header.Get("Connection")
+		captured.userAgent = r.Header.Get("User-Agent")
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{
@@ -59,6 +63,8 @@ func (s *ClaudeUsageServiceSuite) TestFetchUsage_Success() {
 	// Assertions on captured request data
 	require.Equal(s.T(), "Bearer at", captured.authorization, "Authorization header mismatch")
 	require.Equal(s.T(), "oauth-2025-04-20", captured.anthropicBeta, "anthropic-beta header mismatch")
+	require.Equal(s.T(), "close", captured.connection, "Connection header mismatch")
+	require.Equal(s.T(), "claude-code/2.1.84", captured.userAgent, "User-Agent header mismatch")
 }
 
 func (s *ClaudeUsageServiceSuite) TestFetchUsage_NonOK() {

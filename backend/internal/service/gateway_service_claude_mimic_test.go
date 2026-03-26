@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,10 @@ func TestPassthroughClientRequestID_GenerateWhenMissing(t *testing.T) {
 
 	if got := strings.TrimSpace(req.Header.Get("x-client-request-id")); got == "" {
 		t.Fatalf("x-client-request-id should be generated for messages when missing")
+	}
+	got := strings.TrimSpace(req.Header.Get("x-client-request-id"))
+	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(got) {
+		t.Fatalf("x-client-request-id should be UUIDv4, got %q", got)
 	}
 }
 

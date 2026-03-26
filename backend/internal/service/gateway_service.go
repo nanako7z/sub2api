@@ -6127,7 +6127,6 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		applyClaudeCodeMimicHeaders(req, reqStream, claude.EndpointMessages)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
-		passthroughClientRequestID(req, clientHeaders, claude.EndpointMessages)
 
 		// Beta：完整 8-token DefaultBetaHeader + 客户端额外 token，经动态策略过滤
 		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
@@ -6161,6 +6160,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			}
 		}
 	}
+	// x-client-request-id: 优先透传客户端值；缺失时按 Claude Code 规则生成随机 UUID v4。
+	passthroughClientRequestID(req, clientHeaders, claude.EndpointMessages)
 
 	// Always capture a compact fingerprint line for later error diagnostics.
 	// We only print it when needed (or when the explicit debug flag is enabled).
@@ -6568,9 +6569,15 @@ func passthroughClientRequestID(req *http.Request, clientHeaders http.Header, en
 	}
 	switch endpointID {
 	case claude.EndpointMessages, claude.EndpointCountTokens:
-		req.Header.Set("x-client-request-id", uuid.NewString())
+		req.Header.Set("x-client-request-id", generateClaudeClientRequestID())
 	default:
 	}
+}
+
+// generateClaudeClientRequestID returns an RFC4122 UUID v4 string, aligned
+// with the local Claude Code client's random request-id format.
+func generateClaudeClientRequestID() string {
+	return uuid.NewString()
 }
 
 func truncateForLog(b []byte, maxBytes int) string {
@@ -8865,7 +8872,6 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		applyClaudeCodeMimicHeaders(req, false, claude.EndpointCountTokens)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
-		passthroughClientRequestID(req, clientHeaders, claude.EndpointCountTokens)
 
 		// count_tokens beta：claude-code + oauth + interleaved-thinking + token-counting
 		requiredBetas := []string{claude.BetaClaudeCode, claude.BetaOAuth, claude.BetaInterleavedThinking, claude.BetaTokenCounting}
@@ -8899,6 +8905,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 			}
 		}
 	}
+	// x-client-request-id: 优先透传客户端值；缺失时按 Claude Code 规则生成随机 UUID v4。
+	passthroughClientRequestID(req, clientHeaders, claude.EndpointCountTokens)
 
 	if c != nil && tokenType == "oauth" {
 		c.Set(claudeMimicDebugInfoKey, buildClaudeMimicDebugLine(req, body, account, tokenType, mimicClaudeCode))

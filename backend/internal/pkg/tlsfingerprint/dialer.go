@@ -88,11 +88,18 @@ var (
 		53, 47,
 	}
 
-	// defaultCurves contains the 3 supported groups from Claude Code (Bun/BoringSSL)
+	// defaultCurves contains the captured supported_groups from Claude Code.
+	// Byte-equivalent payload (ext 10) from baseline:
+	// 001011ec001d0017001e0018001901000101
 	defaultCurves = []utls.CurveID{
-		utls.X25519,    // 0x001d
-		utls.CurveP256, // 0x0017 (secp256r1)
-		utls.CurveP384, // 0x0018 (secp384r1)
+		utls.CurveID(0x11ec), // X25519MLKEM768 / hybrid group in captured traffic
+		utls.X25519,          // 0x001d
+		utls.CurveP256,       // 0x0017 (secp256r1)
+		utls.CurveID(0x001e), // x448
+		utls.CurveP384,       // 0x0018 (secp384r1)
+		utls.CurveP521,       // 0x0019 (secp521r1)
+		utls.CurveID(0x0100), // ffdhe2048
+		utls.CurveID(0x0101), // ffdhe3072
 	}
 
 	// defaultPointFormats contains the single point format from Claude Code (Bun/BoringSSL)
@@ -356,6 +363,7 @@ func (d *SOCKS5ProxyDialer) DialTLSContext(ctx context.Context, network, addr st
 	// Create uTLS connection on the tunnel
 	tlsCfg := &utls.Config{
 		ServerName:                         host,
+		OmitEmptyPsk:                      true,
 		PreferSkipResumptionOnNilExtension: true,
 	}
 	if shouldSkipVerifyForTest() {
@@ -474,6 +482,7 @@ func (d *HTTPProxyDialer) DialTLSContext(ctx context.Context, network, addr stri
 	// Note: TLS 1.3 cipher suites are handled automatically by utls when TLS 1.3 is in SupportedVersions
 	tlsCfg := &utls.Config{
 		ServerName:                         host,
+		OmitEmptyPsk:                      true,
 		PreferSkipResumptionOnNilExtension: true,
 	}
 	if shouldSkipVerifyForTest() {
@@ -541,6 +550,7 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, addr string) (net.
 	// Note: TLS 1.3 cipher suites are handled automatically by utls when TLS 1.3 is in SupportedVersions
 	tlsCfg := &utls.Config{
 		ServerName:                         host,
+		OmitEmptyPsk:                      true,
 		PreferSkipResumptionOnNilExtension: true,
 	}
 	if shouldSkipVerifyForTest() {
@@ -626,7 +636,7 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 	}
 	includeALPN := shouldIncludeALPN(scope)
 	// npm-like extension order from latest capture:
-	// 65281,0,11,10,35,(16),22,23,13,43,45,51
+	// 65281,0,11,10,35,(16),22,23,13,43,45,51,(41 when PSK available)
 	extensions := make([]utls.TLSExtension, 0, 12)
 	extensions = append(extensions,
 		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient}, // 65281
@@ -644,8 +654,15 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: defaultSignatureAlgorithms}, // 13
 		&utls.SupportedVersionsExtension{Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12}},   // 43
 		&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},                          // 45
-		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{{Group: utls.X25519}}},                    // 51
+		// Captured shape uses two shares: X25519MLKEM768 + X25519.
+		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
+			{Group: utls.CurveID(0x11ec)}, // X25519MLKEM768
+			{Group: utls.X25519},
+		}}, // 51
 	)
+	if shouldEnablePreSharedKey(profile) {
+		extensions = append(extensions, &utls.UtlsPreSharedKeyExtension{}) // 41
+	}
 
 	return &utls.ClientHelloSpec{
 		CipherSuites:       cipherSuites,

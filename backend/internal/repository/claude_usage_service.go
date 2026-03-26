@@ -59,11 +59,14 @@ func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *se
 		return nil, fmt.Errorf("invalid oauth_usage profile: ForceOfficialHost must be true")
 	}
 	req.Header.Set("Accept", profile.Accept)
-	req.Header.Set("Accept-Encoding", profile.AcceptEncoding)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", profile.UserAgent)
 	req.Header.Set("Authorization", "Bearer "+opts.AccessToken)
 	req.Header.Set("anthropic-beta", profile.BetaHeader)
-	req.Header.Set("User-Agent", profile.UserAgent)
+	req.Header.Set("Accept-Encoding", profile.AcceptEncoding)
+	if profile.Connection != "" {
+		req.Header.Set("Connection", profile.Connection)
+	}
 
 	var resp *http.Response
 
