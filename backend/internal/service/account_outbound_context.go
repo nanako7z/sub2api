@@ -15,6 +15,7 @@ const (
 	MCPTriggerStartupPrefetch    MCPTriggerReason = "startup_prefetch"
 	MCPTriggerAuthFailureRecover MCPTriggerReason = "auth_failure_recovery"
 	MCPTriggerSessionReset       MCPTriggerReason = "session_reset"
+	MCPTriggerMessageAsync       MCPTriggerReason = "message_async"
 )
 
 // AccountOutboundContext is the canonical outbound context for one account session.

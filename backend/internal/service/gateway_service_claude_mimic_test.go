@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	gocache "github.com/patrickmn/go-cache"
 )
 
 func TestApplyClaudeCodeMimicHeaders_MessagesStream(t *testing.T) {
@@ -107,5 +110,48 @@ func TestResolveMCPPrefetchTTLs(t *testing.T) {
 	}
 	if got := resolveMCPPrefetchCleanupTTL(cfg); got != 3*time.Minute {
 		t.Fatalf("cleanup ttl mismatch: got %v want %v", got, 3*time.Minute)
+	}
+}
+
+func TestMaybeTriggerMCPServers_MessageAsyncBypassesSessionDedupe(t *testing.T) {
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			Header:     make(http.Header),
+		},
+	}
+	svc := &GatewayService{
+		httpUpstream:    upstream,
+		mcpTriggerCache: gocache.New(10*time.Minute, time.Minute),
+	}
+	account := &Account{
+		ID:          9001,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	outboundCtx := &AccountOutboundContext{TokenGeneration: 1}
+
+	// Startup prefetch should be deduped by session cache.
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch); err != nil {
+		t.Fatalf("startup prefetch #1 failed: %v", err)
+	}
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch); err != nil {
+		t.Fatalf("startup prefetch #2 failed: %v", err)
+	}
+	if upstream.callCount != 1 {
+		t.Fatalf("startup prefetch should be deduped, got callCount=%d want=1", upstream.callCount)
+	}
+
+	// Message async should bypass dedupe and fire every time.
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerMessageAsync); err != nil {
+		t.Fatalf("message async #1 failed: %v", err)
+	}
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerMessageAsync); err != nil {
+		t.Fatalf("message async #2 failed: %v", err)
+	}
+	if upstream.callCount != 3 {
+		t.Fatalf("message async should bypass dedupe, got callCount=%d want=3", upstream.callCount)
 	}
 }

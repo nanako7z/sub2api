@@ -21,10 +21,12 @@ import (
 )
 
 type anthropicHTTPUpstreamRecorder struct {
-	lastReq  *http.Request
-	lastBody []byte
-	resp     *http.Response
-	err      error
+	lastReq                  *http.Request
+	lastBody                 []byte
+	lastEnableTLSFingerprint bool
+	callCount                int
+	resp                     *http.Response
+	err                      error
 }
 
 func newAnthropicAPIKeyAccountForTest() *Account {
@@ -47,6 +49,7 @@ func newAnthropicAPIKeyAccountForTest() *Account {
 }
 
 func (u *anthropicHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	u.callCount++
 	u.lastReq = req
 	if req != nil && req.Body != nil {
 		b, _ := io.ReadAll(req.Body)
@@ -61,6 +64,7 @@ func (u *anthropicHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, a
 }
 
 func (u *anthropicHTTPUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, enableTLSFingerprint bool) (*http.Response, error) {
+	u.lastEnableTLSFingerprint = enableTLSFingerprint
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
@@ -263,6 +267,75 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBo
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, upstreamRespBody, rec.Body.String())
 	require.Empty(t, rec.Header().Get("Set-Cookie"))
+}
+
+func TestGatewayService_OAuthCountTokens_PassthroughBodyWithMimicHeadersAndTLS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+	c.Request.Header.Set("Anthropic-Beta", "user-custom-beta")
+	c.Request.Header.Set("User-Agent", "downstream-custom-ua/1.0")
+
+	body := []byte(`{"model":"claude-3-5-sonnet-latest","messages":[{"role":"user","content":"hello"}],"metadata":{"user_id":"u-raw"}}`)
+	parsed := &ParsedRequest{
+		Body:  body,
+		Model: "claude-3-5-sonnet-latest",
+	}
+
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"input_tokens":12}`)),
+		},
+	}
+
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &GatewayService{
+		cfg:                  cfg,
+		responseHeaderFilter: compileResponseHeaderFilter(cfg),
+		httpUpstream:         upstream,
+		rateLimitService:     &RateLimitService{},
+	}
+
+	account := &Account{
+		ID:          302,
+		Name:        "anthropic-oauth-count",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "oauth-token-raw",
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	err := svc.ForwardCountTokens(context.Background(), c, account, parsed)
+	require.NoError(t, err)
+
+	// Body should be passthrough for OAuth count_tokens (no model/user_id rewrite).
+	require.JSONEq(t, string(body), string(upstream.lastBody))
+
+	// Header/TLS should still mimic Claude OAuth client behavior.
+	require.Equal(t, "Bearer oauth-token-raw", upstream.lastReq.Header.Get("authorization"))
+	require.Equal(t, "claude-cli/2.1.79 (external, cli)", upstream.lastReq.Header.Get("user-agent"))
+	betaHeader := upstream.lastReq.Header.Get("anthropic-beta")
+	require.Contains(t, betaHeader, claude.BetaClaudeCode)
+	require.Contains(t, betaHeader, claude.BetaOAuth)
+	require.Contains(t, betaHeader, claude.BetaInterleavedThinking)
+	require.Contains(t, betaHeader, claude.BetaTokenCounting)
+	require.Contains(t, betaHeader, "user-custom-beta")
+	require.Equal(t, "application/json", upstream.lastReq.Header.Get("accept"))
+	require.True(t, upstream.lastEnableTLSFingerprint, "oauth count_tokens should enable TLS fingerprint")
 }
 
 // TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases 覆盖透传模式下模型映射的各种边界情况

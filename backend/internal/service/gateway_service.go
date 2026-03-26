@@ -4595,10 +4595,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	logger.LegacyPrintf("service.gateway", "[Forward] outbound_class=minimal_oauth account=%d(%s) platform=%s type=%s tls=%v proxy=%s token_generation=%d runtime_profile=%s tls_profile=%s session=%s",
 		account.ID, account.Name, account.Platform, account.Type, account.IsTLSFingerprintEnabled(), proxyURL, outboundCtx.TokenGeneration, outboundCtx.RuntimeProfileID, outboundCtx.TLSProfileID, outboundCtx.SessionID)
 
-	if account.IsOAuth() {
-		if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerStartupPrefetch); err != nil {
-			logger.LegacyPrintf("service.gateway", "[mcp_prefetch] account=%d reason=%s failed=%v", account.ID, MCPTriggerStartupPrefetch, err)
-		}
+	// Claude OAuth: on every messages request, asynchronously trigger one mcp_servers fetch
+	// to better mimic real client-side cadence while keeping the main request path non-blocking.
+	if account.Platform == PlatformAnthropic && account.Type == AccountTypeOAuth {
+		s.triggerMCPServersAsync(account, token, tokenType, outboundCtx, MCPTriggerMessageAsync)
 	}
 	// Pre-filter: strip empty text blocks (including nested in tool_result) to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
@@ -8431,17 +8431,13 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	body := parsed.Body
 	reqModel := parsed.Model
 
-	// Pre-filter: strip empty text blocks to prevent upstream 400.
-	body = StripEmptyTextBlocks(body)
-
-	isClaudeCode := isClaudeCodeRequest(ctx, c, parsed)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
-	shouldMimicHeaders := account.IsOAuth()
-
-	if shouldMimicClaudeCode {
-		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
-		body, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
+	// OAuth count_tokens should preserve downstream payload semantics.
+	// Keep body as-is and only replace upstream transport/header fingerprint.
+	if !account.IsOAuth() {
+		// Pre-filter: strip empty text blocks to prevent upstream 400.
+		body = StripEmptyTextBlocks(body)
 	}
+	shouldMimicHeaders := account.IsOAuth()
 
 	// Antigravity 账户不支持 count_tokens，返回 404 让客户端 fallback 到本地估算。
 	// 返回 nil 避免 handler 层记录为错误，也不设置 ops 上游错误上下文。
@@ -8453,7 +8449,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	// 应用模型映射：
 	// - APIKey 账号：使用账号级别的显式映射（如果配置），否则透传原始模型名
 	// - OAuth/SetupToken 账号：使用 Anthropic 标准映射（短ID → 长ID）
-	if reqModel != "" {
+	if reqModel != "" && !account.IsOAuth() {
 		mappedModel := reqModel
 		mappingSource := ""
 		if account.Type == AccountTypeAPIKey {
@@ -8484,7 +8480,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 构建上游请求
-	upstreamReq, err := s.buildCountTokensRequest(ctx, c, account, body, token, tokenType, reqModel, shouldMimicHeaders)
+	upstreamReq, err := s.buildCountTokensRequest(ctx, c, account, body, token, tokenType, reqModel, shouldMimicHeaders, account.IsOAuth())
 	if err != nil {
 		s.countTokensError(c, http.StatusInternalServerError, "api_error", "Failed to build request")
 		return err
@@ -8517,7 +8513,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerAuthFailureRecover); err != nil {
 			logger.LegacyPrintf("service.gateway", "[mcp_recovery] account=%d status=%d failed=%v", account.ID, resp.StatusCode, err)
 		}
-		retryReq, buildErr := s.buildCountTokensRequest(ctx, c, account, body, token, tokenType, reqModel, shouldMimicHeaders)
+		retryReq, buildErr := s.buildCountTokensRequest(ctx, c, account, body, token, tokenType, reqModel, shouldMimicHeaders, account.IsOAuth())
 		if buildErr != nil {
 			s.countTokensError(c, http.StatusInternalServerError, "api_error", "Failed to build retry request")
 			return buildErr
@@ -8548,7 +8544,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		logger.LegacyPrintf("service.gateway", "Account %d: detected thinking block signature error on count_tokens, retrying with filtered thinking blocks", account.ID)
 
 		filteredBody := FilterThinkingBlocksForRetry(body)
-		retryReq, buildErr := s.buildCountTokensRequest(ctx, c, account, filteredBody, token, tokenType, reqModel, shouldMimicHeaders)
+		retryReq, buildErr := s.buildCountTokensRequest(ctx, c, account, filteredBody, token, tokenType, reqModel, shouldMimicHeaders, account.IsOAuth())
 		if buildErr == nil {
 			retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
 			if retryErr == nil {
@@ -8786,7 +8782,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 }
 
 // buildCountTokensRequest 构建 count_tokens 上游请求
-func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, tokenType, modelID string, mimicClaudeCode bool) (*http.Request, error) {
+func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, tokenType, modelID string, mimicClaudeCode bool, passthroughBody bool) (*http.Request, error) {
 	// 确定目标 URL
 	targetURL := claudeAPICountTokensURL
 	if account.Type == AccountTypeAPIKey {
@@ -8805,9 +8801,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		clientHeaders = c.Request.Header
 	}
 
-	// OAuth 账号：应用统一指纹和重写 userID
-	// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-	if account.IsOAuth() && s.identityService != nil {
+	// OAuth count_tokens passthrough: keep payload unchanged.
+	// For non-passthrough paths, preserve legacy identity rewrite behavior.
+	if account.IsOAuth() && !passthroughBody && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
@@ -8927,7 +8923,7 @@ func (s *GatewayService) maybeTriggerMCPServers(
 		}
 	}
 
-	if effectiveReason != MCPTriggerAuthFailureRecover {
+	if effectiveReason != MCPTriggerAuthFailureRecover && effectiveReason != MCPTriggerMessageAsync {
 		if _, ok := s.mcpTriggerCache.Get(s.mcpSessionCacheKey(account.ID)); ok {
 			return nil
 		}
@@ -8951,6 +8947,25 @@ func (s *GatewayService) maybeTriggerMCPServers(
 	logger.LegacyPrintf("service.gateway", "[mcp_trigger] account=%d reason=%s status=%d token_generation=%d proxy_effective=%t endpoint_profile_id=%s",
 		account.ID, effectiveReason, resp.StatusCode, outboundCtx.TokenGeneration, outboundCtx.ProxyURL != "", claude.EndpointMCPServers)
 	return nil
+}
+
+func (s *GatewayService) triggerMCPServersAsync(
+	account *Account,
+	token string,
+	tokenType string,
+	outboundCtx *AccountOutboundContext,
+	reason MCPTriggerReason,
+) {
+	if s == nil || account == nil || outboundCtx == nil {
+		return
+	}
+	go func() {
+		triggerCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := s.maybeTriggerMCPServers(triggerCtx, nil, account, token, tokenType, outboundCtx, reason); err != nil {
+			logger.LegacyPrintf("service.gateway", "[mcp_async] account=%d reason=%s failed=%v", account.ID, reason, err)
+		}
+	}()
 }
 
 func (s *GatewayService) buildMCPServersRequest(
