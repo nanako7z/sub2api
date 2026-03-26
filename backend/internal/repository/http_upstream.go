@@ -3,6 +3,8 @@ package repository
 import (
 	"compress/flate"
 	"compress/gzip"
+	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -15,9 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"crypto/tls"
-
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -51,6 +52,13 @@ const (
 	defaultMaxUpstreamClients = 5000
 	// defaultClientIdleTTLSeconds: 默认客户端空闲回收阈值（15分钟）
 	defaultClientIdleTTLSeconds = 900
+
+	anthropicAPIHost                     = "api.anthropic.com"
+	anthropicOAuthECHConfigListBase64    = "AEX+DQBBbAAgACCZ7m2mTvp5kT51lIgAuzpdyTAKAhqO/Q8mPWf5mwLxCgAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA="
+)
+
+var (
+	anthropicOAuthECHConfigList = mustDecodeECHConfigListBase64(anthropicOAuthECHConfigListBase64)
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -205,6 +213,10 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 		slog.Debug("tls_fingerprint_no_profile", "account_id", accountID, "fallback", "standard_request")
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
 	}
+	if shouldUseAnthropicOAuthRealECH(req) && len(anthropicOAuthECHConfigList) > 0 {
+		scope := anthropicOAuthEndpointScope(req)
+		profile = cloneProfileForAnthropicOAuth(profile, scope)
+	}
 
 	slog.Debug("tls_fingerprint_using_profile", "account_id", accountID, "profile", profile.Name, "grease", profile.EnableGREASE)
 
@@ -239,6 +251,66 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	return resp, nil
 }
 
+func shouldUseAnthropicOAuthRealECH(req *http.Request) bool {
+	if req == nil || req.URL == nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), anthropicAPIHost) {
+		return false
+	}
+	anthropicBeta := strings.TrimSpace(req.Header.Get("anthropic-beta"))
+	if anthropicBeta == "" {
+		return false
+	}
+	for _, item := range strings.Split(anthropicBeta, ",") {
+		if strings.EqualFold(strings.TrimSpace(item), claude.BetaOAuth) {
+			return true
+		}
+	}
+	return false
+}
+
+func mustDecodeECHConfigListBase64(v string) []byte {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(v))
+	if err != nil {
+		slog.Warn("decode_ech_config_list_failed", "error", err)
+		return nil
+	}
+	return decoded
+}
+
+func cloneProfileForAnthropicOAuth(base *tlsfingerprint.Profile, scope string) *tlsfingerprint.Profile {
+	if base == nil {
+		return nil
+	}
+	cp := *base
+	cp.ECHPayloadMode = "oauth_outer"
+	cp.ECHConfigList = append([]byte(nil), anthropicOAuthECHConfigList...)
+	cp.ECHScopeKey = scope
+	cp.ClientCacheKey = "oauth_ech:" + scope
+	cp.Name = cp.Name + " [oauth_ech:" + scope + "]"
+	return &cp
+}
+
+func anthropicOAuthEndpointScope(req *http.Request) string {
+	if req == nil || req.URL == nil {
+		return "unknown"
+	}
+	path := strings.TrimSpace(req.URL.Path)
+	switch {
+	case strings.HasPrefix(path, "/v1/messages/count_tokens"):
+		return "messages_count_tokens"
+	case strings.HasPrefix(path, "/v1/messages"):
+		return "messages"
+	case strings.HasPrefix(path, "/v1/mcp_servers"):
+		return "mcp_servers"
+	case strings.HasPrefix(path, "/api/oauth/usage"):
+		return "oauth_usage"
+	default:
+		return req.Method + ":" + path
+	}
+}
+
 // acquireClientWithTLS 获取或创建带 TLS 指纹的客户端
 func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*upstreamClientEntry, error) {
 	return s.getClientEntryWithTLS(proxyURL, accountID, accountConcurrency, profile, true, true)
@@ -254,6 +326,9 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
 	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID)
+	if profile != nil && strings.TrimSpace(profile.ClientCacheKey) != "" {
+		cacheKey += ":" + strings.TrimSpace(profile.ClientCacheKey)
+	}
 	poolKey := s.buildPoolKey(isolation, accountConcurrency) + ":tls"
 
 	now := time.Now()

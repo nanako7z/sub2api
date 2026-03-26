@@ -576,7 +576,7 @@ func TestTLSShapeSchedulerConvergesWithinWindow(t *testing.T) {
 }
 
 func TestBuildECHPayload_TemplatedKeepsStablePrefix(t *testing.T) {
-	payload := buildECHPayload(64, "templated")
+	payload := buildECHPayload(64, "templated", nil)
 	if len(payload) != 64 {
 		t.Fatalf("unexpected payload length: %d", len(payload))
 	}
@@ -585,5 +585,35 @@ func TestBuildECHPayload_TemplatedKeepsStablePrefix(t *testing.T) {
 		if payload[i] != want[i] {
 			t.Fatalf("templated payload prefix mismatch at %d: got 0x%02x want 0x%02x", i, payload[i], want[i])
 		}
+	}
+}
+
+func TestBuildECHPayload_OAuthOuter_FromECHConfigList(t *testing.T) {
+	profile := &Profile{
+		ECHPayloadMode: "oauth_outer",
+		ECHConfigList: mustDecodeBase64(
+			"AEX+DQBBbAAgACCZ7m2mTvp5kT51lIgAuzpdyTAKAhqO/Q8mPWf5mwLxCgAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA=",
+		),
+		ECHScopeKey: "messages_beta",
+	}
+	payload := buildECHPayload(218, "oauth_outer", profile)
+	if len(payload) != 218 {
+		t.Fatalf("unexpected payload length: %d", len(payload))
+	}
+	if payload[0] != 0x00 {
+		t.Fatalf("unexpected ech type byte: 0x%02x", payload[0])
+	}
+	kdfID := uint16(payload[1])<<8 | uint16(payload[2])
+	aeadID := uint16(payload[3])<<8 | uint16(payload[4])
+	if kdfID != 0x0001 || aeadID != 0x0001 {
+		t.Fatalf("unexpected kdf/aead: 0x%04x/0x%04x", kdfID, aeadID)
+	}
+	encLen := int(uint16(payload[6])<<8 | uint16(payload[7]))
+	if encLen != 32 {
+		t.Fatalf("unexpected enc len: %d", encLen)
+	}
+	payloadLen := int(uint16(payload[8+encLen])<<8 | uint16(payload[9+encLen]))
+	if payloadLen != 176 {
+		t.Fatalf("unexpected inner payload len: %d", payloadLen)
 	}
 }

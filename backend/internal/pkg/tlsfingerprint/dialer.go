@@ -35,6 +35,11 @@ type Profile struct {
 	Curves         []uint16
 	PointFormats   []uint8
 	EnableGREASE   bool
+	ECHConfigList  []byte // Optional ECHConfigList for endpoint-aware dynamic 65037 generation
+	// ECHScopeKey is a runtime-only key used for endpoint-aware shape scheduling/cache segregation.
+	ECHScopeKey string
+	// ClientCacheKey is a runtime-only cache key suffix used by upstream client cache.
+	ClientCacheKey string
 }
 
 type TLSShapeWeights struct {
@@ -121,6 +126,15 @@ var (
 	// fixedECHData is a deterministic payload used when TLS mode is fixed.
 	// This keeps a quick rollback path to one stable 65037 extension payload.
 	fixedECHData = mustDecodeBase64("AAABAAE6ACDMQnkkwg7kYVnwrnoD+fs3aXbPCPMI1VzVnxi4RJKMfQCw7TY5/QqUfp+uEmZEauSbD3kUXkCUcM+VSbUkf6Ni7KLIex24vPJaJvFIwnuXOoxKtYNZGwNZku4oLffKmdIuRARCg5gzsAWQZIym+ePe5PqbE5D+LGGx0iSCjVxPXiQR2YuI53ptlWVE95EHZ3xm6a5FYAsOxW5wnUTbprSw4v2e1wZZOFi6cfs1JvCwWJKEhuZHJoUd8Gw13KHTmyAHmYkMXua8/NUOn+G7inEVtXA=")
+	// observedECHTemplates keeps known-good ECH(65037) payloads captured from real Claude Code traffic.
+	// Using these templates avoids malformed random payloads that can trigger
+	// "remote error: tls: error decoding message" during handshake.
+	observedECHTemplates = map[int][]byte{
+		186: mustDecodeBase64("AAABAAGvACCNpc+T2+xzEWU1kwul1LatFU6is+zNQGRzyg8rYN8xCQCQzYUPbm+zshaySOAk657is70oEI3DlAo0ZQivzM52iL/kzj1Mf8ul1JpZE5FNG05QhZqlD6SMlE7zJ83S2svLzMn1BEmU4wY+9Ls5r9GCZazjPC6sNMU41S3/k67rqWxGC4k9hz+pSixTTozEgpDS8rCxx8g0i1+oucxF3BoNrY3+yMNGMaRmOpvgvQAW2IJQ"),
+		218: mustDecodeBase64("AAABAAE6ACDMQnkkwg7kYVnwrnoD+fs3aXbPCPMI1VzVnxi4RJKMfQCw7TY5/QqUfp+uEmZEauSbD3kUXkCUcM+VSbUkf6Ni7KLIex24vPJaJvFIwnuXOoxKtYNZGwNZku4oLffKmdIuRARCg5gzsAWQZIym+ePe5PqbE5D+LGGx0iSCjVxPXiQR2YuI53ptlWVE95EHZ3xm6a5FYAsOxW5wnUTbprSw4v2e1wZZOFi6cfs1JvCwWJKEhuZHJoUd8Gw13KHTmyAHmYkMXua8/NUOn+G7inEVtXA="),
+		250: mustDecodeBase64("AAABAAECACDxIu1If0e37bXx/XrCr6wJM9lxMjGIyKd8DmFx975XRQDQQPtWcYEu1Rgkt9gsqev9lL8+Wvyv1nYWsB/o2UyJkFQVUUl7sI/nJmH0nIgifS5s2K1ddbVnRqwXA+G8QQSWzh7MSIwn7XNDESpEN8RhCQlFqSGZzDWdk+eQ9J14PLARcNsDmdZcNpiO03XDApSs9C4o1CIAcBYH4BwBi968NPdKDjDMw1lchPXJ+0dXCerlyi0w9Xofx5WxDSdq6w5bBcIvDlem8EVc3CXjALofFt7zvaKPPgfGOc3x43hAQoDKrfl8GIRpOkK757JojbdP+w=="),
+		282: mustDecodeBase64("AAABAAEqACAj8mmxflJFnBK1JCND1B4LqXE54CctLPno4BxVU7T9IwDwSd3k4QnwU4rzxL9mieALyDkfEUoglCO4kfvBWXb0FtxtyW2g92nNNP1xBMRDFvPeAGM9TFAYEE2wkunOnz9OL3HouyaiR5L7MXSbrQRgi5Q6d63PJ5THCJflKznCrHrOkbB4rVfYQ8rMPlBd3DQ8aySNHuyvIcufJLp/3Eb2vVbwCa10erJsipTETi2780140/4j7u+HyFmMcW5A6FPGLP2w3JVZ62wQ8Uf/FqZFiAJGGdroKOTyNme+XvF7zeSokVnh7BGxhaAA0FP/A87tPJJINOZh94OZimnufK4Gofz3ZEwZg3HWdKrOnscjjcZY"),
+	}
 )
 
 type tlsShape struct {
@@ -507,7 +521,7 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 	extensions := []utls.TLSExtension{
 		// SNI — HelloCustom 模式下必须显式添加，utls 从 Config.ServerName 填充
 		&utls.SNIExtension{},
-		buildECHOuterExtension(mode, shape, payloadMode),
+		buildECHOuterExtension(mode, shape, payloadMode, profile),
 		&utls.ExtendedMasterSecretExtension{},                                                        // 0x0017
 		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},                // 0xff01
 		&utls.SupportedCurvesExtension{Curves: curves},                                               // 0x000a
@@ -540,13 +554,13 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 	}
 }
 
-func buildECHOuterExtension(mode string, shape tlsShape, payloadMode string) utls.TLSExtension {
+func buildECHOuterExtension(mode string, shape tlsShape, payloadMode string, profile *Profile) utls.TLSExtension {
 	mode = normalizeMode(mode)
 	switch mode {
 	case "fixed":
 		return &utls.GenericExtension{Id: 65037, Data: fixedECHData}
 	default:
-		return &utls.GenericExtension{Id: 65037, Data: buildECHPayload(shape.echLen, payloadMode)}
+		return &utls.GenericExtension{Id: 65037, Data: buildECHPayload(shape.echLen, payloadMode, profile)}
 	}
 }
 
@@ -718,9 +732,11 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-func buildECHPayload(length int, mode string) []byte {
+func buildECHPayload(length int, mode string, profile *Profile) []byte {
 	mode = normalizeECHPayloadMode(mode)
 	switch mode {
+	case "oauth_outer":
+		return buildOAuthOuterECHPayload(length, profile)
 	case "random":
 		return randomBytes(length)
 	default:
@@ -728,14 +744,150 @@ func buildECHPayload(length int, mode string) []byte {
 	}
 }
 
+type parsedECHConfig struct {
+	configID byte
+	kemID    uint16
+	kdfID    uint16
+	aeadID   uint16
+}
+
+func parseECHConfigList(cfgList []byte) (parsedECHConfig, bool) {
+	if len(cfgList) < 2 {
+		return parsedECHConfig{}, false
+	}
+	listLen := int(binary.BigEndian.Uint16(cfgList[:2]))
+	if listLen <= 0 || listLen+2 > len(cfgList) {
+		return parsedECHConfig{}, false
+	}
+	p := cfgList[2 : 2+listLen]
+	off := 0
+	for off+4 <= len(p) {
+		ver := binary.BigEndian.Uint16(p[off : off+2])
+		off += 2
+		cfgLen := int(binary.BigEndian.Uint16(p[off : off+2]))
+		off += 2
+		if cfgLen <= 0 || off+cfgLen > len(p) {
+			return parsedECHConfig{}, false
+		}
+		cfg := p[off : off+cfgLen]
+		off += cfgLen
+		if ver != 0xfe0d || len(cfg) < 8 {
+			continue
+		}
+		cOff := 0
+		configID := cfg[cOff]
+		cOff++
+		kemID := binary.BigEndian.Uint16(cfg[cOff : cOff+2])
+		cOff += 2
+		pubKeyLen := int(binary.BigEndian.Uint16(cfg[cOff : cOff+2]))
+		cOff += 2
+		if pubKeyLen < 0 || cOff+pubKeyLen > len(cfg) {
+			return parsedECHConfig{}, false
+		}
+		cOff += pubKeyLen
+		if cOff+2 > len(cfg) {
+			return parsedECHConfig{}, false
+		}
+		suiteLen := int(binary.BigEndian.Uint16(cfg[cOff : cOff+2]))
+		cOff += 2
+		if suiteLen < 4 || cOff+suiteLen > len(cfg) {
+			return parsedECHConfig{}, false
+		}
+		kdfID := binary.BigEndian.Uint16(cfg[cOff : cOff+2])
+		aeadID := binary.BigEndian.Uint16(cfg[cOff+2 : cOff+4])
+		return parsedECHConfig{
+			configID: configID,
+			kemID:    kemID,
+			kdfID:    kdfID,
+			aeadID:   aeadID,
+		}, true
+	}
+	return parsedECHConfig{}, false
+}
+
+func kemEncLen(kemID uint16) int {
+	switch kemID {
+	case 0x0020: // X25519
+		return 32
+	case 0x0010: // P-256
+		return 65
+	case 0x0011: // P-384
+		return 97
+	case 0x0012: // P-521
+		return 133
+	default:
+		return 32
+	}
+}
+
+func randomByte() byte {
+	b := randomBytes(1)
+	if len(b) == 0 {
+		return 0
+	}
+	return b[0]
+}
+
+// buildOAuthOuterECHPayload generates a GREASE-like ECH outer extension payload
+// matching the observed structure from Claude Code OAuth traffic:
+// [type(1), kdf(2), aead(2), config_id(1), enc_len(2), enc, payload_len(2), payload]
+func buildOAuthOuterECHPayload(length int, profile *Profile) []byte {
+	if length <= 0 {
+		return nil
+	}
+	cfg, ok := parseECHConfigList(nil)
+	if profile != nil {
+		cfg, ok = parseECHConfigList(profile.ECHConfigList)
+	}
+	if !ok {
+		return templatedECHPayload(length)
+	}
+	encLen := kemEncLen(cfg.kemID)
+	overhead := 1 + 2 + 2 + 1 + 2 + encLen + 2
+	if length < overhead {
+		return templatedECHPayload(length)
+	}
+	payloadLen := length - overhead
+	out := make([]byte, length)
+	out[0] = 0x00 // outer_client_hello
+	binary.BigEndian.PutUint16(out[1:3], cfg.kdfID)
+	binary.BigEndian.PutUint16(out[3:5], cfg.aeadID)
+	// Claude Code observed traffic shows varying config_id in GREASE-like 65037.
+	// Keep endpoint-awareness via scope key while preserving per-connection variation.
+	configID := cfg.configID
+	if profile != nil && profile.ECHScopeKey != "" {
+		var seed byte
+		for i := 0; i < len(profile.ECHScopeKey); i++ {
+			seed ^= profile.ECHScopeKey[i]
+		}
+		configID = seed ^ randomByte()
+	} else {
+		configID = randomByte()
+	}
+	out[5] = configID
+	binary.BigEndian.PutUint16(out[6:8], uint16(encLen))
+	enc := randomBytes(encLen)
+	copy(out[8:8+encLen], enc)
+	binary.BigEndian.PutUint16(out[8+encLen:10+encLen], uint16(payloadLen))
+	copy(out[10+encLen:], randomBytes(payloadLen))
+	return out
+}
+
 func templatedECHPayload(length int) []byte {
 	if length <= 0 {
 		return nil
 	}
-	out := randomBytes(length)
-	// Keep a stable prefix similar to observed ECH outer framing bytes.
-	prefix := []byte{0x00, 0x00, 0x01, 0x00, 0x01}
-	copy(out, prefix)
+	if tpl, ok := observedECHTemplates[length]; ok && len(tpl) == length {
+		out := make([]byte, length)
+		copy(out, tpl)
+		return out
+	}
+	// Safe fallback for unknown lengths: use deterministic known-good payload and resize.
+	out := make([]byte, length)
+	copy(out, fixedECHData)
+	if len(fixedECHData) < length {
+		copy(out[len(fixedECHData):], randomBytes(length-len(fixedECHData)))
+	}
 	return out
 }
 
@@ -752,7 +904,7 @@ func normalizeShapeMode(mode string) string {
 func normalizeECHPayloadMode(mode string) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
-	case "templated", "random":
+	case "templated", "random", "oauth_outer":
 		return mode
 	default:
 		return "templated"
@@ -789,11 +941,13 @@ func buildShapePool(mode string, weights TLSShapeWeights) []tlsShape {
 
 func profileSchedulerKey(profile *Profile, mode, shapeMode string, windowSize int, weights TLSShapeWeights) string {
 	name := ""
+	scope := ""
 	if profile != nil {
 		name = profile.Name
+		scope = profile.ECHScopeKey
 	}
-	return fmt.Sprintf("%s|%s|%s|w=%d|%d,%d,%d,%d",
-		name, mode, shapeMode, windowSize,
+	return fmt.Sprintf("%s|%s|%s|scope=%s|w=%d|%d,%d,%d,%d",
+		name, mode, shapeMode, scope, windowSize,
 		weights.ECH186Padding41, weights.ECH218Padding9, weights.ECH250Padding0, weights.ECH282Padding0,
 	)
 }
