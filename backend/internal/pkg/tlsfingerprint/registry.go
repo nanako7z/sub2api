@@ -83,12 +83,12 @@ func NewRegistryFromConfig(cfg *config.TLSFingerprintConfig) *Registry {
 // registerBuiltinProfile adds the default Claude CLI profile to the registry.
 func (r *Registry) registerBuiltinProfile() {
 	defaultProfile := &Profile{
-		Name:            "Claude Code v2.1.80 (Bun runtime + BoringSSL)",
-		Mode:            "mixed",
-		ShapeMode:       "observed_v1",
+		Name:            "npm",
+		Mode:            "npm",
+		ShapeMode:       "npm",
 		ShapeWindowSize: 64,
 		ShapeWeights:    defaultTLSShapeWeights,
-		ECHPayloadMode:  "templated",
+		ECHPayloadMode:  "npm",
 		EnableGREASE:    false, // Bun/BoringSSL does not use GREASE
 		// Empty slices will cause dialer to use built-in defaults
 		CipherSuites: nil,
@@ -103,12 +103,10 @@ func normalizeProfileMode(profileMode, globalMode string) string {
 	if mode == "" {
 		mode = strings.ToLower(strings.TrimSpace(globalMode))
 	}
-	switch mode {
-	case "fixed", "dynamic", "mixed":
+	if mode == "npm" {
 		return mode
-	default:
-		return "mixed"
 	}
+	return "npm"
 }
 
 func normalizeShapeWindowSize(v int) int {

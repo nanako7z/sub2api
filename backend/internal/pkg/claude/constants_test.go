@@ -19,7 +19,7 @@ func TestHeaderProfileForEndpoint(t *testing.T) {
 			wantStainless:      "full",
 			wantForceOfficial:  false,
 			wantAcceptContains: "application/json",
-			wantUAContains:     "(external, sdk-cli)",
+			wantUAContains:     "(external, cli)",
 		},
 		{
 			endpointID:         EndpointCountTokens,

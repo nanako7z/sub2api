@@ -4,7 +4,6 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"crypto/tls"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +17,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -53,12 +51,7 @@ const (
 	// defaultClientIdleTTLSeconds: 默认客户端空闲回收阈值（15分钟）
 	defaultClientIdleTTLSeconds = 900
 
-	anthropicAPIHost                     = "api.anthropic.com"
-	anthropicOAuthECHConfigListBase64    = "AEX+DQBBbAAgACCZ7m2mTvp5kT51lIgAuzpdyTAKAhqO/Q8mPWf5mwLxCgAEAAEAAQASY2xvdWRmbGFyZS1lY2guY29tAAA="
-)
-
-var (
-	anthropicOAuthECHConfigList = mustDecodeECHConfigListBase64(anthropicOAuthECHConfigListBase64)
+	anthropicAPIHost = "api.anthropic.com"
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -213,15 +206,17 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 		slog.Debug("tls_fingerprint_no_profile", "account_id", accountID, "fallback", "standard_request")
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
 	}
-	if shouldUseAnthropicOAuthRealECH(req) && len(anthropicOAuthECHConfigList) > 0 {
+	if req != nil && req.URL != nil && strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), anthropicAPIHost) {
 		scope := anthropicOAuthEndpointScope(req)
-		profile = cloneProfileForAnthropicOAuth(profile, scope)
+		profile = cloneProfileForNPM(profile, scope)
 	}
 
 	slog.Debug("tls_fingerprint_using_profile", "account_id", accountID, "profile", profile.Name, "grease", profile.EnableGREASE)
 
 	// 获取或创建带 TLS 指纹的客户端
-	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, profile)
+	useRawWriteLayer := req != nil && req.URL != nil &&
+		strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), anthropicAPIHost)
+	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, profile, useRawWriteLayer)
 	if err != nil {
 		slog.Debug("tls_fingerprint_acquire_client_failed", "account_id", accountID, "error", err)
 		return nil, err
@@ -251,44 +246,14 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	return resp, nil
 }
 
-func shouldUseAnthropicOAuthRealECH(req *http.Request) bool {
-	if req == nil || req.URL == nil {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), anthropicAPIHost) {
-		return false
-	}
-	anthropicBeta := strings.TrimSpace(req.Header.Get("anthropic-beta"))
-	if anthropicBeta == "" {
-		return false
-	}
-	for _, item := range strings.Split(anthropicBeta, ",") {
-		if strings.EqualFold(strings.TrimSpace(item), claude.BetaOAuth) {
-			return true
-		}
-	}
-	return false
-}
-
-func mustDecodeECHConfigListBase64(v string) []byte {
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(v))
-	if err != nil {
-		slog.Warn("decode_ech_config_list_failed", "error", err)
-		return nil
-	}
-	return decoded
-}
-
-func cloneProfileForAnthropicOAuth(base *tlsfingerprint.Profile, scope string) *tlsfingerprint.Profile {
+func cloneProfileForNPM(base *tlsfingerprint.Profile, scope string) *tlsfingerprint.Profile {
 	if base == nil {
 		return nil
 	}
 	cp := *base
-	cp.ECHPayloadMode = "oauth_outer"
-	cp.ECHConfigList = append([]byte(nil), anthropicOAuthECHConfigList...)
 	cp.ECHScopeKey = scope
-	cp.ClientCacheKey = "oauth_ech:" + scope
-	cp.Name = cp.Name + " [oauth_ech:" + scope + "]"
+	cp.ClientCacheKey = "npm:" + scope
+	cp.Name = cp.Name + " [npm:" + scope + "]"
 	return &cp
 }
 
@@ -312,13 +277,13 @@ func anthropicOAuthEndpointScope(req *http.Request) string {
 }
 
 // acquireClientWithTLS 获取或创建带 TLS 指纹的客户端
-func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*upstreamClientEntry, error) {
-	return s.getClientEntryWithTLS(proxyURL, accountID, accountConcurrency, profile, true, true)
+func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, useRawWriteLayer bool) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithTLS(proxyURL, accountID, accountConcurrency, profile, useRawWriteLayer, true, true)
 }
 
 // getClientEntryWithTLS 获取或创建带 TLS 指纹的客户端条目
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
-func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
+func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, useRawWriteLayer bool, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	isolation := s.getIsolationMode()
 	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
 	if err != nil {
@@ -330,6 +295,9 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 		cacheKey += ":" + strings.TrimSpace(profile.ClientCacheKey)
 	}
 	poolKey := s.buildPoolKey(isolation, accountConcurrency) + ":tls"
+	if useRawWriteLayer {
+		poolKey += ":raw-http1"
+	}
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -381,7 +349,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	// 创建带 TLS 指纹的 Transport
 	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
+	transport, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile, useRawWriteLayer)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
@@ -903,7 +871,7 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		MaxConnsPerHost:       settings.maxConnsPerHost,
 		IdleConnTimeout:       settings.idleConnTimeout,
 		ResponseHeaderTimeout: settings.responseHeaderTimeout,
-		TLSClientConfig: &tls.Config{},
+		TLSClientConfig:       &tls.Config{},
 	}
 
 	// 根据代理类型选择合适的 TLS 指纹 Dialer
@@ -938,6 +906,26 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 	// 不应出现 h2 协商。移除 http2.ConfigureTransports 使传输层行为与真实客户端一致。
 
 	return transport, nil
+}
+
+func buildUpstreamRoundTripperWithTLSFingerprint(
+	settings poolSettings,
+	proxyURL *url.URL,
+	profile *tlsfingerprint.Profile,
+	useRawWriteLayer bool,
+) (http.RoundTripper, error) {
+	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
+	if err != nil {
+		return nil, err
+	}
+	if !useRawWriteLayer {
+		return transport, nil
+	}
+	// Raw 写出层依赖可控的 TLS 拨号函数；若当前代理方案未注入拨号器则回退标准 Transport。
+	if transport.DialTLSContext == nil {
+		return transport, nil
+	}
+	return tlsfingerprint.NewRawHTTP1RoundTripper(transport.DialTLSContext, settings.responseHeaderTimeout), nil
 }
 
 // trackedBody 带跟踪功能的响应体包装器

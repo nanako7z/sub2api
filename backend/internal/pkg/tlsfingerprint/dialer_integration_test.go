@@ -112,16 +112,16 @@ func TestJA3Fingerprint(t *testing.T) {
 		t.Errorf("✗ JA4 suffix mismatch: got %s, expected suffix %s", fpResp.TLS.JA4, expectedJA4Suffix)
 	}
 
-	// Verify JA4 prefix (t13d5911h1 or t13i5911h1)
+	// Verify JA4 prefix (t13d5911h2 or t13i5911h2)
 	// d = domain (SNI present), i = IP (no SNI)
 	// Since we connect to tls.peet.ws (domain), we expect 'd'
-	// h1 = ALPN first protocol is http/1.1
-	expectedJA4Prefix := "t13d5911h1"
+	// h2 = ALPN first protocol is h2
+	expectedJA4Prefix := "t13d5911h2"
 	if strings.HasPrefix(fpResp.TLS.JA4, expectedJA4Prefix) {
-		t.Logf("✓ JA4 prefix matches: %s (t13=TLS1.3, d=domain, 59=ciphers, 11=extensions, h1=HTTP/1.1)", expectedJA4Prefix)
+		t.Logf("✓ JA4 prefix matches: %s (t13=TLS1.3, d=domain, 59=ciphers, 11=extensions, h2=HTTP/2)", expectedJA4Prefix)
 	} else {
 		// Also accept 'i' variant for IP connections
-		altPrefix := "t13i5911h1"
+		altPrefix := "t13i5911h2"
 		if strings.HasPrefix(fpResp.TLS.JA4, altPrefix) {
 			t.Logf("✓ JA4 prefix matches (IP variant): %s", altPrefix)
 		} else {

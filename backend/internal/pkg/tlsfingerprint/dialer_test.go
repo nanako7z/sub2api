@@ -191,9 +191,9 @@ func TestDialerWithProfile(t *testing.T) {
 	spec1 := dialer1.buildClientHelloSpec()
 	spec2 := dialer2.buildClientHelloSpec()
 
-	// Profile with GREASE should have more extensions
-	if len(spec2.Extensions) <= len(spec1.Extensions) {
-		t.Error("expected GREASE profile to have more extensions")
+	// npm mode is single-shape; GREASE flag is ignored by design.
+	if len(spec2.Extensions) != len(spec1.Extensions) {
+		t.Error("expected same extension count in single npm mode")
 	}
 }
 
@@ -217,6 +217,44 @@ func TestHTTPProxyDialerBasic(t *testing.T) {
 	}
 	if dialer.proxyURL != proxyURL {
 		t.Error("expected proxyURL to be set")
+	}
+}
+
+func TestShouldEnablePreSharedKey(t *testing.T) {
+	if shouldEnablePreSharedKey(nil) {
+		t.Fatal("nil profile should not enable pre_shared_key")
+	}
+
+	if !shouldEnablePreSharedKey(&Profile{ECHScopeKey: "messages_count_tokens"}) {
+		t.Fatal("messages_count_tokens should enable pre_shared_key")
+	}
+
+	if !shouldEnablePreSharedKey(&Profile{ECHScopeKey: "messages"}) {
+		t.Fatal("messages should enable pre_shared_key")
+	}
+
+	if shouldEnablePreSharedKey(&Profile{ECHScopeKey: "mcp_servers"}) {
+		t.Fatal("mcp_servers should not enable pre_shared_key")
+	}
+}
+
+func TestPreSharedKeySessionCacheByScope(t *testing.T) {
+	msgProfile := &Profile{
+		ECHScopeKey:    "messages_count_tokens",
+		ClientCacheKey: "npm:messages_count_tokens",
+	}
+	cache := preSharedKeySessionCache(msgProfile)
+	if cache == nil {
+		t.Fatal("messages_count_tokens should get a non-nil session cache")
+	}
+
+	cache2 := preSharedKeySessionCache(msgProfile)
+	if cache2 == nil || cache2 != cache {
+		t.Fatal("same scope should reuse the same session cache instance")
+	}
+
+	if preSharedKeySessionCache(&Profile{ECHScopeKey: "mcp_servers"}) != nil {
+		t.Fatal("mcp_servers should not use pre_shared_key session cache")
 	}
 }
 
@@ -434,6 +472,8 @@ func fetchFingerprint(t *testing.T, profile *Profile) *TLSInfo {
 
 func TestBuildClientHelloSpec_ModeFixedUsesStaticECHAndPadding(t *testing.T) {
 	spec := buildClientHelloSpecFromProfile(&Profile{Mode: "fixed"})
+	_ = spec
+	t.Skip("legacy fixed/dynamic/mixed behavior removed; single npm mode only")
 
 	var hasPadding bool
 	var echGeneric *utls.GenericExtension
@@ -460,6 +500,7 @@ func TestBuildClientHelloSpec_ModeFixedUsesStaticECHAndPadding(t *testing.T) {
 }
 
 func TestBuildClientHelloSpec_ModeDynamicUsesObservedPaddedShapes(t *testing.T) {
+	t.Skip("legacy fixed/dynamic/mixed behavior removed; single npm mode only")
 	const attempts = 60
 	observed := map[[2]int]bool{}
 	for i := 0; i < attempts; i++ {
@@ -481,6 +522,7 @@ func TestBuildClientHelloSpec_ModeDynamicUsesObservedPaddedShapes(t *testing.T) 
 }
 
 func TestBuildClientHelloSpec_ModeMixedProducesObservedShapeFamily(t *testing.T) {
+	t.Skip("legacy fixed/dynamic/mixed behavior removed; single npm mode only")
 	const attempts = 200
 	var withPadding bool
 	var withoutPadding bool
@@ -539,6 +581,7 @@ func isKnownTLSShape(echLen int, paddingLen int) bool {
 }
 
 func TestTLSShapeSchedulerConvergesWithinWindow(t *testing.T) {
+	t.Skip("legacy scheduler behavior removed; single npm mode only")
 	profile := &Profile{
 		Mode:            "mixed",
 		ShapeMode:       "observed_v1",
@@ -576,6 +619,7 @@ func TestTLSShapeSchedulerConvergesWithinWindow(t *testing.T) {
 }
 
 func TestBuildECHPayload_TemplatedKeepsStablePrefix(t *testing.T) {
+	t.Skip("legacy ECH payload behavior removed; single npm mode only")
 	payload := buildECHPayload(64, "templated", nil)
 	if len(payload) != 64 {
 		t.Fatalf("unexpected payload length: %d", len(payload))
@@ -589,6 +633,7 @@ func TestBuildECHPayload_TemplatedKeepsStablePrefix(t *testing.T) {
 }
 
 func TestBuildECHPayload_OAuthOuter_FromECHConfigList(t *testing.T) {
+	t.Skip("legacy oauth_outer ECH behavior removed; single npm mode only")
 	profile := &Profile{
 		ECHPayloadMode: "oauth_outer",
 		ECHConfigList: mustDecodeBase64(

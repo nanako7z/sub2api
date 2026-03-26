@@ -13,8 +13,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
+	"time"
 
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/proxy"
@@ -23,14 +25,13 @@ import (
 // Profile contains TLS fingerprint configuration.
 type Profile struct {
 	Name      string // Profile name for identification
-	Mode      string // fixed|dynamic|mixed
-	ShapeMode string // observed_v1|random
+	Mode      string // npm
+	ShapeMode string // npm (legacy field, ignored by npm mode)
 	// ShapeWindowSize controls rolling-window scheduling for observed_v1 mode.
 	ShapeWindowSize int
-	// ShapeWeights controls 4 shape combinations:
-	// (186,41), (218,9), (250,0), (282,0)
+	// ShapeWeights is a legacy field kept for compatibility.
 	ShapeWeights   TLSShapeWeights
-	ECHPayloadMode string // templated|random
+	ECHPayloadMode string // npm (legacy field, ignored by npm mode)
 	CipherSuites   []uint16
 	Curves         []uint16
 	PointFormats   []uint8
@@ -77,25 +78,14 @@ type SOCKS5ProxyDialer struct {
 //	signature_algorithms(0x000d) → sct(0x0012) → key_share(0x0033) → psk_modes(0x002d) →
 //	supported_versions(0x002b) → padding(0x0015)
 var (
-	// defaultCipherSuites contains the 17 cipher suites from Claude Code (Bun/BoringSSL)
+	// defaultCipherSuites contains the latest captured npm/Node TLS cipher suite order (52 suites).
 	defaultCipherSuites = []uint16{
-		0x1301, // TLS_AES_128_GCM_SHA256
-		0x1302, // TLS_AES_256_GCM_SHA384
-		0x1303, // TLS_CHACHA20_POLY1305_SHA256
-		0xc02b, // TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-		0xc02f, // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-		0xc02c, // TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-		0xc030, // TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-		0xcca9, // TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-		0xcca8, // TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-		0xc009, // TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
-		0xc013, // TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
-		0xc00a, // TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
-		0xc014, // TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
-		0x009c, // TLS_RSA_WITH_AES_128_GCM_SHA256
-		0x009d, // TLS_RSA_WITH_AES_256_GCM_SHA384
-		0x002f, // TLS_RSA_WITH_AES_128_CBC_SHA
-		0x0035, // TLS_RSA_WITH_AES_256_CBC_SHA
+		4866, 4867, 4865, 49199, 49195, 49200, 49196, 158, 49191, 103,
+		49192, 107, 163, 159, 52393, 52392, 52394, 49325, 49311, 49245,
+		49249, 49239, 49235, 162, 49324, 49310, 49244, 49248, 49238, 49234,
+		49188, 106, 49187, 64, 49162, 49172, 57, 56, 49161, 49171,
+		51, 50, 157, 49309, 49233, 156, 49308, 49232, 61, 60,
+		53, 47,
 	}
 
 	// defaultCurves contains the 3 supported groups from Claude Code (Bun/BoringSSL)
@@ -110,17 +100,13 @@ var (
 		0, // uncompressed
 	}
 
-	// defaultSignatureAlgorithms contains the 9 signature algorithms from Claude Code (Bun/BoringSSL)
+	// defaultSignatureAlgorithms follows the latest npm/Node captured list.
 	defaultSignatureAlgorithms = []utls.SignatureScheme{
-		0x0403, // ecdsa_secp256r1_sha256
-		0x0804, // rsa_pss_rsae_sha256
-		0x0401, // rsa_pkcs1_sha256
-		0x0503, // ecdsa_secp384r1_sha384
-		0x0805, // rsa_pss_rsae_sha384
-		0x0501, // rsa_pkcs1_sha384
-		0x0806, // rsa_pss_rsae_sha512
-		0x0601, // rsa_pkcs1_sha512
-		0x0201, // rsa_pkcs1_sha1
+		0x0905, 0x0906, 0x0904, 0x0403, 0x0503, 0x0603,
+		0x0807, 0x0808, 0x081a, 0x081b, 0x081c, 0x0809,
+		0x080a, 0x080b, 0x0804, 0x0805, 0x0806, 0x0401,
+		0x0501, 0x0601, 0x0303, 0x0301, 0x0302, 0x0402,
+		0x0502, 0x0602,
 	}
 
 	// fixedECHData is a deterministic payload used when TLS mode is fixed.
@@ -169,6 +155,116 @@ var (
 		ECH282Padding0:  35,
 	}
 )
+
+const (
+	// npmPSKSessionTTL follows the observed effective timeout from live ticket capture:
+	// "Timeout: 7200 (sec)".
+	npmPSKSessionTTL = 2 * time.Hour
+	// npmPSKCacheCapacity is enough for multi-account/account-proxy isolated caches.
+	npmPSKCacheCapacity = 256
+)
+
+const tlsFPInsecureSkipVerifyEnv = "SUB2API_TLSFP_INSECURE_SKIP_VERIFY"
+
+func shouldSkipVerifyForTest() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(tlsFPInsecureSkipVerifyEnv)))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+type expiringClientSessionCache struct {
+	base    utls.ClientSessionCache
+	ttl     time.Duration
+	mu      sync.RWMutex
+	expires map[string]time.Time
+}
+
+func newExpiringClientSessionCache(capacity int, ttl time.Duration) utls.ClientSessionCache {
+	if capacity <= 0 {
+		capacity = npmPSKCacheCapacity
+	}
+	if ttl <= 0 {
+		ttl = npmPSKSessionTTL
+	}
+	return &expiringClientSessionCache{
+		base:    utls.NewLRUClientSessionCache(capacity),
+		ttl:     ttl,
+		expires: make(map[string]time.Time, capacity),
+	}
+}
+
+func (c *expiringClientSessionCache) Get(sessionKey string) (*utls.ClientSessionState, bool) {
+	now := time.Now()
+
+	c.mu.RLock()
+	exp, ok := c.expires[sessionKey]
+	c.mu.RUnlock()
+	if ok && now.After(exp) {
+		c.mu.Lock()
+		delete(c.expires, sessionKey)
+		c.mu.Unlock()
+		c.base.Put(sessionKey, nil)
+		return nil, false
+	}
+	return c.base.Get(sessionKey)
+}
+
+func (c *expiringClientSessionCache) Put(sessionKey string, cs *utls.ClientSessionState) {
+	c.base.Put(sessionKey, cs)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cs == nil {
+		delete(c.expires, sessionKey)
+		return
+	}
+	c.expires[sessionKey] = time.Now().Add(c.ttl)
+}
+
+type pskSessionCacheRegistry struct {
+	mu     sync.Mutex
+	caches map[string]utls.ClientSessionCache
+}
+
+var globalPSKSessionCacheRegistry = &pskSessionCacheRegistry{
+	caches: make(map[string]utls.ClientSessionCache),
+}
+
+func (r *pskSessionCacheRegistry) getOrCreate(key string) utls.ClientSessionCache {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if cache, ok := r.caches[key]; ok {
+		return cache
+	}
+	cache := newExpiringClientSessionCache(npmPSKCacheCapacity, npmPSKSessionTTL)
+	r.caches[key] = cache
+	return cache
+}
+
+func shouldEnablePreSharedKey(profile *Profile) bool {
+	if profile == nil {
+		return false
+	}
+	switch strings.TrimSpace(profile.ECHScopeKey) {
+	case "messages", "messages_count_tokens":
+		return true
+	default:
+		return false
+	}
+}
+
+func preSharedKeySessionCache(profile *Profile) utls.ClientSessionCache {
+	if !shouldEnablePreSharedKey(profile) {
+		return nil
+	}
+	cacheKey := "npm:messages"
+	if profile != nil {
+		if v := strings.TrimSpace(profile.ClientCacheKey); v != "" {
+			cacheKey = v
+		} else if v := strings.TrimSpace(profile.ECHScopeKey); v != "" {
+			cacheKey = "npm:" + v
+		}
+	}
+	return globalPSKSessionCacheRegistry.getOrCreate(cacheKey)
+}
 
 func mustDecodeBase64(v string) []byte {
 	b, err := base64.StdEncoding.DecodeString(v)
@@ -258,9 +354,17 @@ func (d *SOCKS5ProxyDialer) DialTLSContext(ctx context.Context, network, addr st
 	}
 
 	// Create uTLS connection on the tunnel
-	tlsConn := utls.UClient(conn, &utls.Config{
-		ServerName: host,
-	}, utls.HelloCustom)
+	tlsCfg := &utls.Config{
+		ServerName:                         host,
+		PreferSkipResumptionOnNilExtension: true,
+	}
+	if shouldSkipVerifyForTest() {
+		tlsCfg.InsecureSkipVerify = true
+	}
+	if cache := preSharedKeySessionCache(d.profile); cache != nil {
+		tlsCfg.ClientSessionCache = cache
+	}
+	tlsConn := utls.UClient(conn, tlsCfg, utls.HelloCustom)
 
 	if err := tlsConn.ApplyPreset(spec); err != nil {
 		slog.Debug("tls_fingerprint_socks5_apply_preset_failed", "error", err)
@@ -368,9 +472,17 @@ func (d *HTTPProxyDialer) DialTLSContext(ctx context.Context, network, addr stri
 
 	// Create uTLS connection on the tunnel
 	// Note: TLS 1.3 cipher suites are handled automatically by utls when TLS 1.3 is in SupportedVersions
-	tlsConn := utls.UClient(conn, &utls.Config{
-		ServerName: host,
-	}, utls.HelloCustom)
+	tlsCfg := &utls.Config{
+		ServerName:                         host,
+		PreferSkipResumptionOnNilExtension: true,
+	}
+	if shouldSkipVerifyForTest() {
+		tlsCfg.InsecureSkipVerify = true
+	}
+	if cache := preSharedKeySessionCache(d.profile); cache != nil {
+		tlsCfg.ClientSessionCache = cache
+	}
+	tlsConn := utls.UClient(conn, tlsCfg, utls.HelloCustom)
 
 	if err := tlsConn.ApplyPreset(spec); err != nil {
 		slog.Debug("tls_fingerprint_http_proxy_apply_preset_failed", "error", err)
@@ -427,9 +539,17 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, addr string) (net.
 
 	// Create uTLS connection
 	// Note: TLS 1.3 cipher suites are handled automatically by utls when TLS 1.3 is in SupportedVersions
-	tlsConn := utls.UClient(conn, &utls.Config{
-		ServerName: host,
-	}, utls.HelloCustom)
+	tlsCfg := &utls.Config{
+		ServerName:                         host,
+		PreferSkipResumptionOnNilExtension: true,
+	}
+	if shouldSkipVerifyForTest() {
+		tlsCfg.InsecureSkipVerify = true
+	}
+	if cache := preSharedKeySessionCache(d.profile); cache != nil {
+		tlsCfg.ClientSessionCache = cache
+	}
+	tlsConn := utls.UClient(conn, tlsCfg, utls.HelloCustom)
 
 	// Apply fingerprint
 	if err := tlsConn.ApplyPreset(spec); err != nil {
@@ -500,50 +620,32 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		pointFormats = defaultPointFormats
 	}
 
-	mode := "mixed"
+	scope := ""
 	if profile != nil {
-		if v := profile.Mode; v != "" {
-			mode = v
-		}
+		scope = strings.TrimSpace(profile.ECHScopeKey)
 	}
-	mode = normalizeMode(mode)
-	shape := selectTLSShape(profile, mode)
-	payloadMode := "templated"
-	if profile != nil {
-		payloadMode = normalizeECHPayloadMode(profile.ECHPayloadMode)
+	includeALPN := shouldIncludeALPN(scope)
+	// npm-like extension order from latest capture:
+	// 65281,0,11,10,35,(16),22,23,13,43,45,51
+	extensions := make([]utls.TLSExtension, 0, 12)
+	extensions = append(extensions,
+		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient}, // 65281
+		&utls.SNIExtension{}, // 0
+		&utls.SupportedPointsExtension{SupportedPoints: pointFormats}, // 11
+		&utls.SupportedCurvesExtension{Curves: curves},                // 10
+		&utls.SessionTicketExtension{},                                // 35
+	)
+	if includeALPN {
+		extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}}) // 16
 	}
-
-	// Claude Code v2.1.80 (Bun/BoringSSL) extension order captured from live ClientHello:
-	// SNI(0x0000) → ECH(0xfe0d) → EMS(0x0017) → renegotiation(0xff01) → supported_groups(0x000a) →
-	// ec_point_formats(0x000b) → session_ticket(0x0023) → alpn(0x0010) →
-	// status_request(0x0005) → signature_algorithms(0x000d) → sct(0x0012) →
-	// key_share(0x0033) → psk_modes(0x002d) → supported_versions(0x002b) → padding(0x0015)
-	extensions := []utls.TLSExtension{
-		// SNI — HelloCustom 模式下必须显式添加，utls 从 Config.ServerName 填充
-		&utls.SNIExtension{},
-		buildECHOuterExtension(mode, shape, payloadMode, profile),
-		&utls.ExtendedMasterSecretExtension{},                                                        // 0x0017
-		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},                // 0xff01
-		&utls.SupportedCurvesExtension{Curves: curves},                                               // 0x000a
-		&utls.SupportedPointsExtension{SupportedPoints: pointFormats},                                // 0x000b
-		&utls.SessionTicketExtension{},                                                               // 0x0023
-		&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},                                     // 0x0010
-		&utls.StatusRequestExtension{},                                                               // 0x0005
-		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: defaultSignatureAlgorithms}, // 0x000d
-		&utls.SCTExtension{},                                                                         // 0x0012
-		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
-			{Group: utls.X25519},
-		}}, // 0x0033
-		&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}}, // 0x002d
-		&utls.SupportedVersionsExtension{Versions: []uint16{
-			utls.VersionTLS13,
-			utls.VersionTLS12,
-		}}, // 0x002b
-	}
-
-	if shouldIncludePadding(mode, shape) {
-		extensions = append(extensions, buildPaddingExtension(mode, shape)) // 0x0015
-	}
+	extensions = append(extensions,
+		&utls.GenericExtension{Id: 22, Data: []byte{}},                                               // 22 encrypt_then_mac
+		&utls.ExtendedMasterSecretExtension{},                                                        // 23
+		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: defaultSignatureAlgorithms}, // 13
+		&utls.SupportedVersionsExtension{Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12}},   // 43
+		&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},                          // 45
+		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{{Group: utls.X25519}}},                    // 51
+	)
 
 	return &utls.ClientHelloSpec{
 		CipherSuites:       cipherSuites,
@@ -551,6 +653,15 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		Extensions:         extensions,
 		TLSVersMax:         utls.VersionTLS13,
 		TLSVersMin:         utls.VersionTLS10,
+	}
+}
+
+func shouldIncludeALPN(scope string) bool {
+	switch scope {
+	case "mcp_servers", "oauth_usage":
+		return false
+	default:
+		return true
 	}
 }
 
@@ -893,22 +1004,18 @@ func templatedECHPayload(length int) []byte {
 
 func normalizeShapeMode(mode string) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	switch mode {
-	case "observed_v1", "random":
+	if mode == "npm" {
 		return mode
-	default:
-		return "observed_v1"
 	}
+	return "npm"
 }
 
 func normalizeECHPayloadMode(mode string) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	switch mode {
-	case "templated", "random", "oauth_outer":
+	if mode == "npm" {
 		return mode
-	default:
-		return "templated"
 	}
+	return "npm"
 }
 
 func getShapeWeights(profile *Profile) TLSShapeWeights {
@@ -954,10 +1061,8 @@ func profileSchedulerKey(profile *Profile, mode, shapeMode string, windowSize in
 
 func normalizeMode(mode string) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	switch mode {
-	case "fixed", "dynamic", "mixed":
+	if mode == "npm" {
 		return mode
-	default:
-		return "mixed"
 	}
+	return "npm"
 }

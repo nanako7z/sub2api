@@ -277,33 +277,12 @@ func (s *HTTPUpstreamSuite) TestIdleTTLDoesNotEvictActive() {
 	require.True(s.T(), hasEntry(svc, entry1), "有活跃请求时不应回收")
 }
 
-func (s *HTTPUpstreamSuite) TestShouldUseAnthropicOAuthRealECH() {
-	req, err := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages?beta=true", nil)
-	require.NoError(s.T(), err)
-	req.Header.Set("anthropic-beta", "prompt-caching-2024-07-31, oauth-2025-04-20")
-	require.True(s.T(), shouldUseAnthropicOAuthRealECH(req))
-}
-
-func (s *HTTPUpstreamSuite) TestShouldUseAnthropicOAuthRealECH_FalseWhenHostOrBetaMismatch() {
-	req1, err := http.NewRequest(http.MethodPost, "https://api.anthropic.com/v1/messages?beta=true", nil)
-	require.NoError(s.T(), err)
-	req1.Header.Set("anthropic-beta", "prompt-caching-2024-07-31")
-	require.False(s.T(), shouldUseAnthropicOAuthRealECH(req1))
-
-	req2, err := http.NewRequest(http.MethodPost, "https://example.com/v1/messages", nil)
-	require.NoError(s.T(), err)
-	req2.Header.Set("anthropic-beta", "oauth-2025-04-20")
-	require.False(s.T(), shouldUseAnthropicOAuthRealECH(req2))
-}
-
-func (s *HTTPUpstreamSuite) TestCloneProfileForAnthropicOAuth_Configured() {
+func (s *HTTPUpstreamSuite) TestCloneProfileForNPM_Configured() {
 	base := &tlsfingerprint.Profile{Name: "base"}
-	cp := cloneProfileForAnthropicOAuth(base, "messages")
+	cp := cloneProfileForNPM(base, "messages")
 	require.NotNil(s.T(), cp)
-	require.Equal(s.T(), "oauth_outer", cp.ECHPayloadMode)
 	require.Equal(s.T(), "messages", cp.ECHScopeKey)
-	require.Equal(s.T(), "oauth_ech:messages", cp.ClientCacheKey)
-	require.Equal(s.T(), anthropicOAuthECHConfigList, cp.ECHConfigList)
+	require.Equal(s.T(), "npm:messages", cp.ClientCacheKey)
 	require.NotSame(s.T(), base, cp)
 }
 

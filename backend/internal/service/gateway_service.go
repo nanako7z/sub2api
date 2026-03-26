@@ -54,6 +54,7 @@ const (
 	defaultModelsListCacheTTL    = 15 * time.Second
 	defaultMCPPrefetchSessionTTL = 10 * time.Minute
 	defaultMCPPrefetchCleanupTTL = 5 * time.Minute
+	mcpSessionDedupeKeyTTL       = 5 * time.Minute
 	postUsageBillingTimeout      = 15 * time.Second
 	debugGatewayBodyEnv          = "SUB2API_DEBUG_GATEWAY_BODY"
 )
@@ -6126,6 +6127,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		applyClaudeCodeMimicHeaders(req, reqStream, claude.EndpointMessages)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
+		passthroughClientRequestID(req, clientHeaders, claude.EndpointMessages)
 
 		// Beta：完整 8-token DefaultBetaHeader + 客户端额外 token，经动态策略过滤
 		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
@@ -6511,6 +6513,15 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool, endpointID st
 	req.Header.Set("accept", profile.Accept)
 	req.Header.Set("accept-encoding", profile.AcceptEncoding)
 	req.Header.Set("anthropic-beta", profile.BetaHeader)
+	if profile.AcceptLanguage != "" {
+		req.Header.Set("accept-language", profile.AcceptLanguage)
+	}
+	if profile.SecFetchMode != "" {
+		req.Header.Set("sec-fetch-mode", profile.SecFetchMode)
+	}
+	if profile.Connection != "" {
+		req.Header.Set("connection", profile.Connection)
+	}
 
 	switch profile.StainlessPolicy {
 	case "minimal":
@@ -6542,6 +6553,23 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool, endpointID st
 
 	if isStream && profile.StreamHeaderPolicy == "helper_stream" {
 		req.Header.Set("x-stainless-helper-method", "stream")
+	}
+}
+
+func passthroughClientRequestID(req *http.Request, clientHeaders http.Header, endpointID string) {
+	if req == nil {
+		return
+	}
+	if clientHeaders != nil {
+		if rid := strings.TrimSpace(clientHeaders.Get("x-client-request-id")); rid != "" {
+			req.Header.Set("x-client-request-id", rid)
+			return
+		}
+	}
+	switch endpointID {
+	case claude.EndpointMessages, claude.EndpointCountTokens:
+		req.Header.Set("x-client-request-id", uuid.NewString())
+	default:
 	}
 }
 
@@ -8837,6 +8865,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		applyClaudeCodeMimicHeaders(req, false, claude.EndpointCountTokens)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
+		passthroughClientRequestID(req, clientHeaders, claude.EndpointCountTokens)
 
 		// count_tokens beta：claude-code + oauth + interleaved-thinking + token-counting
 		requiredBetas := []string{claude.BetaClaudeCode, claude.BetaOAuth, claude.BetaInterleavedThinking, claude.BetaTokenCounting}
@@ -8892,8 +8921,12 @@ func (s *GatewayService) countTokensError(c *gin.Context, status int, errType, m
 	})
 }
 
-func (s *GatewayService) mcpSessionCacheKey(accountID int64) string {
-	return fmt.Sprintf("mcp:session:%d", accountID)
+func (s *GatewayService) mcpSessionCacheKey(accountID int64, sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fmt.Sprintf("mcp:session:%d", accountID)
+	}
+	return fmt.Sprintf("mcp:session:%d:%s", accountID, sessionID)
 }
 
 func (s *GatewayService) mcpTokenGenerationKey(accountID int64) string {
@@ -8915,6 +8948,7 @@ func (s *GatewayService) maybeTriggerMCPServers(
 	if s.mcpTriggerCache == nil {
 		return nil
 	}
+	sessionCacheKey := s.mcpSessionCacheKey(account.ID, outboundCtx.SessionID)
 
 	effectiveReason := reason
 	if v, ok := s.mcpTriggerCache.Get(s.mcpTokenGenerationKey(account.ID)); ok {
@@ -8923,10 +8957,11 @@ func (s *GatewayService) maybeTriggerMCPServers(
 		}
 	}
 
-	if effectiveReason != MCPTriggerAuthFailureRecover && effectiveReason != MCPTriggerMessageAsync {
-		if _, ok := s.mcpTriggerCache.Get(s.mcpSessionCacheKey(account.ID)); ok {
-			return nil
-		}
+	if _, ok := s.mcpTriggerCache.Get(sessionCacheKey); ok {
+		// Sliding TTL: keep this dedupe key alive only when session keeps refreshing it.
+		// If not refreshed for 5 minutes, the key naturally expires.
+		s.mcpTriggerCache.Set(sessionCacheKey, true, mcpSessionDedupeKeyTTL)
+		return nil
 	}
 
 	req, err := s.buildMCPServersRequest(ctx, account, token, tokenType)
@@ -8941,7 +8976,7 @@ func (s *GatewayService) maybeTriggerMCPServers(
 
 	s.mcpTriggerCache.SetDefault(s.mcpTokenGenerationKey(account.ID), outboundCtx.TokenGeneration)
 	if resp.StatusCode < 400 {
-		s.mcpTriggerCache.SetDefault(s.mcpSessionCacheKey(account.ID), true)
+		s.mcpTriggerCache.Set(sessionCacheKey, true, mcpSessionDedupeKeyTTL)
 	}
 
 	logger.LegacyPrintf("service.gateway", "[mcp_trigger] account=%d reason=%s status=%d token_generation=%d proxy_effective=%t endpoint_profile_id=%s",

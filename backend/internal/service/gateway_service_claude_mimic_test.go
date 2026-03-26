@@ -27,6 +27,15 @@ func TestApplyClaudeCodeMimicHeaders_MessagesStream(t *testing.T) {
 	if req.Header.Get("x-stainless-timeout") == "" {
 		t.Fatalf("expected full stainless headers for messages endpoint")
 	}
+	if req.Header.Get("accept-language") != "*" {
+		t.Fatalf("messages should include accept-language=*")
+	}
+	if req.Header.Get("sec-fetch-mode") != "cors" {
+		t.Fatalf("messages should include sec-fetch-mode=cors")
+	}
+	if req.Header.Get("connection") != "keep-alive" {
+		t.Fatalf("messages should include connection=keep-alive")
+	}
 }
 
 func TestApplyClaudeCodeMimicHeaders_CountTokensNoStreamHelper(t *testing.T) {
@@ -61,6 +70,50 @@ func TestApplyClaudeCodeMimicHeaders_MCPServersNoStainless(t *testing.T) {
 	}
 	if req.Header.Get("x-stainless-lang") != "" || req.Header.Get("x-app") != "" {
 		t.Fatalf("mcp_servers should not include stainless family headers")
+	}
+	if req.Header.Get("connection") != "close" {
+		t.Fatalf("mcp_servers should include connection=close")
+	}
+}
+
+func TestPassthroughClientRequestID(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/v1/messages", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	clientHeaders := make(http.Header)
+	clientHeaders.Set("x-client-request-id", "rid-123")
+
+	passthroughClientRequestID(req, clientHeaders, claude.EndpointMessages)
+
+	if got := req.Header.Get("x-client-request-id"); got != "rid-123" {
+		t.Fatalf("x-client-request-id mismatch: got %q want %q", got, "rid-123")
+	}
+}
+
+func TestPassthroughClientRequestID_GenerateWhenMissing(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/v1/messages", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	passthroughClientRequestID(req, http.Header{}, claude.EndpointMessages)
+
+	if got := strings.TrimSpace(req.Header.Get("x-client-request-id")); got == "" {
+		t.Fatalf("x-client-request-id should be generated for messages when missing")
+	}
+}
+
+func TestPassthroughClientRequestID_NoGenerateForMCP(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://example.com/v1/mcp_servers", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	passthroughClientRequestID(req, http.Header{}, claude.EndpointMCPServers)
+
+	if got := strings.TrimSpace(req.Header.Get("x-client-request-id")); got != "" {
+		t.Fatalf("mcp_servers should not auto-generate x-client-request-id, got %q", got)
 	}
 }
 
@@ -113,7 +166,7 @@ func TestResolveMCPPrefetchTTLs(t *testing.T) {
 	}
 }
 
-func TestMaybeTriggerMCPServers_MessageAsyncBypassesSessionDedupe(t *testing.T) {
+func TestMaybeTriggerMCPServers_MessageAsyncTriggersOncePerSession(t *testing.T) {
 	upstream := &anthropicHTTPUpstreamRecorder{
 		resp: &http.Response{
 			StatusCode: http.StatusOK,
@@ -131,7 +184,7 @@ func TestMaybeTriggerMCPServers_MessageAsyncBypassesSessionDedupe(t *testing.T) 
 		Type:        AccountTypeOAuth,
 		Concurrency: 1,
 	}
-	outboundCtx := &AccountOutboundContext{TokenGeneration: 1}
+	outboundCtx := &AccountOutboundContext{TokenGeneration: 1, SessionID: "session-a"}
 
 	// Startup prefetch should be deduped by session cache.
 	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch); err != nil {
@@ -144,14 +197,23 @@ func TestMaybeTriggerMCPServers_MessageAsyncBypassesSessionDedupe(t *testing.T) 
 		t.Fatalf("startup prefetch should be deduped, got callCount=%d want=1", upstream.callCount)
 	}
 
-	// Message async should bypass dedupe and fire every time.
+	// Message async should be deduped within one activated session.
 	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerMessageAsync); err != nil {
 		t.Fatalf("message async #1 failed: %v", err)
 	}
 	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerMessageAsync); err != nil {
 		t.Fatalf("message async #2 failed: %v", err)
 	}
-	if upstream.callCount != 3 {
-		t.Fatalf("message async should bypass dedupe, got callCount=%d want=3", upstream.callCount)
+	if upstream.callCount != 1 {
+		t.Fatalf("message async should be deduped in same session, got callCount=%d want=1", upstream.callCount)
+	}
+
+	// A new session activation should trigger once again.
+	nextSession := &AccountOutboundContext{TokenGeneration: 2, SessionID: "session-b"}
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", nextSession, MCPTriggerMessageAsync); err != nil {
+		t.Fatalf("message async new session failed: %v", err)
+	}
+	if upstream.callCount != 2 {
+		t.Fatalf("new session should trigger once, got callCount=%d want=2", upstream.callCount)
 	}
 }

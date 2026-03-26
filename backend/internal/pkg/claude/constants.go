@@ -2,7 +2,7 @@
 package claude
 
 // Claude Code 客户端相关常量
-const ClaudeCLIVersion = "2.1.79"
+const ClaudeCLIVersion = "2.1.84"
 
 // Beta header 常量
 const (
@@ -23,8 +23,8 @@ const (
 var DroppedBetas = []string{}
 
 // DefaultBetaHeader Claude Code 客户端默认的 anthropic-beta header
-// Captured from Claude Code v2.1.80 /v1/messages request on 2026-03-25.
-const DefaultBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
+// Captured from Claude Code /v1/messages request on 2026-03-26.
+const DefaultBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
 
 // MessageBetaHeaderNoTools /v1/messages 在无工具时的 beta header
 //
@@ -38,7 +38,7 @@ const MessageBetaHeaderNoTools = BetaClaudeCode + "," + BetaOAuth + "," + BetaCo
 const MessageBetaHeaderWithTools = BetaClaudeCode + "," + BetaOAuth + "," + BetaContext1M + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaAdvancedToolUse + "," + BetaEffort
 
 // CountTokensBetaHeader count_tokens 请求使用的 anthropic-beta header
-const CountTokensBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaPromptCachingScope + "," + BetaTokenCounting
+const CountTokensBetaHeader = BetaClaudeCode + "," + BetaOAuth + "," + BetaInterleavedThinking + "," + BetaContextManagement + "," + BetaPromptCachingScope + "," + BetaTokenCounting
 
 // HaikuBetaHeader Haiku 模型使用的 anthropic-beta header（不需要 claude-code beta）
 const HaikuBetaHeader = BetaOAuth + "," + BetaInterleavedThinking
@@ -53,19 +53,19 @@ const APIKeyHaikuBetaHeader = BetaInterleavedThinking
 var DefaultHeaders = map[string]string{
 	// Keep these in sync with recent Claude CLI traffic to reduce the chance
 	// that Claude Code-scoped OAuth credentials are rejected as "non-CLI" usage.
-	// Captured from Claude Code on macOS/arm64 traffic (v2.1.79 observed in recent captures).
-	"User-Agent":                                "claude-cli/" + ClaudeCLIVersion + " (external, sdk-cli)",
+	// Default runtime environment profile. CLI version is controlled by ClaudeCLIVersion.
+	"User-Agent":                                "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
 	"X-Stainless-Lang":                          "js",
 	"X-Stainless-Package-Version":               "0.74.0",
-	"X-Stainless-OS":                            "MacOS",
-	"X-Stainless-Arch":                          "arm64",
+	"X-Stainless-OS":                            "Linux",
+	"X-Stainless-Arch":                          "x64",
 	"X-Stainless-Runtime":                       "node",
 	"X-Stainless-Runtime-Version":               "v24.3.0",
 	"X-Stainless-Retry-Count":                   "0",
 	"X-Stainless-Timeout":                       "600",
 	"X-App":                                     "cli",
 	"Anthropic-Dangerous-Direct-Browser-Access": "true",
-	"Accept-Encoding":                           "gzip, deflate, br, zstd",
+	"Accept-Encoding":                           "br, gzip, deflate",
 }
 
 type EndpointHeaderProfile struct {
@@ -74,6 +74,9 @@ type EndpointHeaderProfile struct {
 	BetaHeader         string
 	Accept             string
 	AcceptEncoding     string
+	AcceptLanguage     string
+	SecFetchMode       string
+	Connection         string
 	StreamHeaderPolicy string // none|helper_stream
 	StainlessPolicy    string // full|minimal|none
 	ForceOfficialHost  bool
@@ -96,7 +99,10 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 			UserAgent:          "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
 			BetaHeader:         CountTokensBetaHeader,
 			Accept:             "application/json",
-			AcceptEncoding:     "gzip, deflate, br, zstd",
+			AcceptEncoding:     "br, gzip, deflate",
+			AcceptLanguage:     "*",
+			SecFetchMode:       "cors",
+			Connection:         "keep-alive",
 			StreamHeaderPolicy: "none",
 			StainlessPolicy:    "minimal",
 			ForceOfficialHost:  false,
@@ -108,6 +114,7 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 			BetaHeader:         MCPServersBetaHeader,
 			Accept:             "application/json, text/plain, */*",
 			AcceptEncoding:     "gzip, compress, deflate, br",
+			Connection:         "close",
 			StreamHeaderPolicy: "none",
 			StainlessPolicy:    "none",
 			ForceOfficialHost:  true,
@@ -119,6 +126,7 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 			BetaHeader:         BetaOAuth,
 			Accept:             "application/json, text/plain, */*",
 			AcceptEncoding:     "gzip, compress, deflate, br",
+			Connection:         "close",
 			StreamHeaderPolicy: "none",
 			StainlessPolicy:    "none",
 			ForceOfficialHost:  true,
@@ -128,10 +136,13 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 	default:
 		return EndpointHeaderProfile{
 			EndpointID:         EndpointMessages,
-			UserAgent:          "claude-cli/" + ClaudeCLIVersion + " (external, sdk-cli)",
+			UserAgent:          "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
 			BetaHeader:         DefaultBetaHeader,
 			Accept:             "application/json",
-			AcceptEncoding:     "gzip, deflate, br, zstd",
+			AcceptEncoding:     "br, gzip, deflate",
+			AcceptLanguage:     "*",
+			SecFetchMode:       "cors",
+			Connection:         "keep-alive",
 			StreamHeaderPolicy: "helper_stream",
 			StainlessPolicy:    "full",
 			ForceOfficialHost:  false,
