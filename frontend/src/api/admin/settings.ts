@@ -98,6 +98,10 @@ export interface SystemSettings {
 
   // Partner system
   partner_enabled: boolean
+
+  // Gateway forwarding behavior
+  enable_fingerprint_unification: boolean
+  enable_metadata_passthrough: boolean
 }
 
 export interface UpdateSettingsRequest {
@@ -162,6 +166,8 @@ export interface UpdateSettingsRequest {
   referral_max_commission_per_user?: number
   balance_consumption_priority?: string
   partner_enabled?: boolean
+  enable_fingerprint_unification?: boolean
+  enable_metadata_passthrough?: boolean
 }
 
 /**

@@ -2218,6 +2218,9 @@ const form = reactive<SettingsForm>({
   balance_consumption_priority: 'normal_first' as string,
   // Partner system
   partner_enabled: false,
+  // Gateway forwarding behavior
+  enable_fingerprint_unification: true,
+  enable_metadata_passthrough: false,
   // Cloudflare Turnstile
   turnstile_enabled: false,
   turnstile_site_key: '',
@@ -2562,7 +2565,9 @@ async function saveSettings() {
       referral_commission_rate: form.referral_commission_rate,
       referral_max_commission_per_user: form.referral_max_commission_per_user,
       balance_consumption_priority: form.balance_consumption_priority,
-      partner_enabled: form.partner_enabled
+      partner_enabled: form.partner_enabled,
+      enable_fingerprint_unification: form.enable_fingerprint_unification,
+      enable_metadata_passthrough: form.enable_metadata_passthrough
     }
     const updated = await adminAPI.settings.updateSettings(payload)
     Object.assign(form, updated)

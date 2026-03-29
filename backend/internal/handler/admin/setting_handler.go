@@ -137,6 +137,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ReferralMaxCommissionPerUser:         settings.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:           settings.BalanceConsumptionPriority,
 		PartnerEnabled:                      settings.PartnerEnabled,
+		EnableFingerprintUnification:         settings.EnableFingerprintUnification,
+		EnableMetadataPassthrough:            settings.EnableMetadataPassthrough,
 	})
 }
 
@@ -229,6 +231,10 @@ type UpdateSettingsRequest struct {
 
 	// 伙伴计划设置
 	PartnerEnabled bool `json:"partner_enabled"`
+
+	// Gateway forwarding behavior
+	EnableFingerprintUnification *bool `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough    *bool `json:"enable_metadata_passthrough"`
 }
 
 // UpdateSettings 更新系统设置
@@ -609,6 +615,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ReferralMaxCommissionPerUser:     req.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:       req.BalanceConsumptionPriority,
 		PartnerEnabled:                  req.PartnerEnabled,
+		EnableFingerprintUnification: func() bool {
+			if req.EnableFingerprintUnification != nil {
+				return *req.EnableFingerprintUnification
+			}
+			return previousSettings.EnableFingerprintUnification
+		}(),
+		EnableMetadataPassthrough: func() bool {
+			if req.EnableMetadataPassthrough != nil {
+				return *req.EnableMetadataPassthrough
+			}
+			return previousSettings.EnableMetadataPassthrough
+		}(),
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -719,6 +737,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ReferralMaxCommissionPerUser:         updatedSettings.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:           updatedSettings.BalanceConsumptionPriority,
 		PartnerEnabled:                      updatedSettings.PartnerEnabled,
+		EnableFingerprintUnification:         updatedSettings.EnableFingerprintUnification,
+		EnableMetadataPassthrough:            updatedSettings.EnableMetadataPassthrough,
 	})
 }
 

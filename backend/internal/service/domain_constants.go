@@ -253,6 +253,10 @@ const (
 	// =========================
 
 	SettingKeyPartnerEnabled = "partner_enabled" // 是否启用合作伙伴计划
+
+	// Gateway forwarding behavior
+	SettingKeyEnableFingerprintUnification = "enable_fingerprint_unification" // 是否统一 OAuth 账号指纹头
+	SettingKeyEnableMetadataPassthrough    = "enable_metadata_passthrough"    // 是否透传 metadata.user_id
 )
 
 // Balance consumption priority constants

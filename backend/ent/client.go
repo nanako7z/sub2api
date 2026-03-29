@@ -27,9 +27,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
-	"github.com/Wei-Shaw/sub2api/ent/referralcommission"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -70,12 +70,12 @@ type Client struct {
 	Proxy *ProxyClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
-	// ReferralCommission is the client for interacting with the ReferralCommission builders.
-	ReferralCommission *ReferralCommissionClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
+	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
+	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
 	UsageCleanupTask *UsageCleanupTaskClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -113,9 +113,9 @@ func (c *Client) init() {
 	c.PromoCodeUsage = NewPromoCodeUsageClient(c.config)
 	c.Proxy = NewProxyClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
-	c.ReferralCommission = NewReferralCommissionClient(c.config)
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
+	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.User = NewUserClient(c.config)
@@ -227,9 +227,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PromoCodeUsage:          NewPromoCodeUsageClient(cfg),
 		Proxy:                   NewProxyClient(cfg),
 		RedeemCode:              NewRedeemCodeClient(cfg),
-		ReferralCommission:      NewReferralCommissionClient(cfg),
 		SecuritySecret:          NewSecuritySecretClient(cfg),
 		Setting:                 NewSettingClient(cfg),
+		TLSFingerprintProfile:   NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:        NewUsageCleanupTaskClient(cfg),
 		UsageLog:                NewUsageLogClient(cfg),
 		User:                    NewUserClient(cfg),
@@ -268,9 +268,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PromoCodeUsage:          NewPromoCodeUsageClient(cfg),
 		Proxy:                   NewProxyClient(cfg),
 		RedeemCode:              NewRedeemCodeClient(cfg),
-		ReferralCommission:      NewReferralCommissionClient(cfg),
 		SecuritySecret:          NewSecuritySecretClient(cfg),
 		Setting:                 NewSettingClient(cfg),
+		TLSFingerprintProfile:   NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:        NewUsageCleanupTaskClient(cfg),
 		UsageLog:                NewUsageLogClient(cfg),
 		User:                    NewUserClient(cfg),
@@ -309,8 +309,8 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
 		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.ReferralCommission,
-		c.SecuritySecret, c.Setting, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
@@ -324,8 +324,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
 		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord, c.PromoCode,
-		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.ReferralCommission,
-		c.SecuritySecret, c.Setting, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
@@ -360,12 +360,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Proxy.mutate(ctx, m)
 	case *RedeemCodeMutation:
 		return c.RedeemCode.mutate(ctx, m)
-	case *ReferralCommissionMutation:
-		return c.ReferralCommission.mutate(ctx, m)
 	case *SecuritySecretMutation:
 		return c.SecuritySecret.mutate(ctx, m)
 	case *SettingMutation:
 		return c.Setting.mutate(ctx, m)
+	case *TLSFingerprintProfileMutation:
+		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
 		return c.UsageCleanupTask.mutate(ctx, m)
 	case *UsageLogMutation:
@@ -2356,155 +2356,6 @@ func (c *RedeemCodeClient) mutate(ctx context.Context, m *RedeemCodeMutation) (V
 	}
 }
 
-// ReferralCommissionClient is a client for the ReferralCommission schema.
-type ReferralCommissionClient struct {
-	config
-}
-
-// NewReferralCommissionClient returns a client for the ReferralCommission from the given config.
-func NewReferralCommissionClient(c config) *ReferralCommissionClient {
-	return &ReferralCommissionClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `referralcommission.Hooks(f(g(h())))`.
-func (c *ReferralCommissionClient) Use(hooks ...Hook) {
-	c.hooks.ReferralCommission = append(c.hooks.ReferralCommission, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `referralcommission.Intercept(f(g(h())))`.
-func (c *ReferralCommissionClient) Intercept(interceptors ...Interceptor) {
-	c.inters.ReferralCommission = append(c.inters.ReferralCommission, interceptors...)
-}
-
-// Create returns a builder for creating a ReferralCommission entity.
-func (c *ReferralCommissionClient) Create() *ReferralCommissionCreate {
-	mutation := newReferralCommissionMutation(c.config, OpCreate)
-	return &ReferralCommissionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of ReferralCommission entities.
-func (c *ReferralCommissionClient) CreateBulk(builders ...*ReferralCommissionCreate) *ReferralCommissionCreateBulk {
-	return &ReferralCommissionCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *ReferralCommissionClient) MapCreateBulk(slice any, setFunc func(*ReferralCommissionCreate, int)) *ReferralCommissionCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &ReferralCommissionCreateBulk{err: fmt.Errorf("calling to ReferralCommissionClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*ReferralCommissionCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &ReferralCommissionCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for ReferralCommission.
-func (c *ReferralCommissionClient) Update() *ReferralCommissionUpdate {
-	mutation := newReferralCommissionMutation(c.config, OpUpdate)
-	return &ReferralCommissionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *ReferralCommissionClient) UpdateOne(_m *ReferralCommission) *ReferralCommissionUpdateOne {
-	mutation := newReferralCommissionMutation(c.config, OpUpdateOne, withReferralCommission(_m))
-	return &ReferralCommissionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *ReferralCommissionClient) UpdateOneID(id int64) *ReferralCommissionUpdateOne {
-	mutation := newReferralCommissionMutation(c.config, OpUpdateOne, withReferralCommissionID(id))
-	return &ReferralCommissionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for ReferralCommission.
-func (c *ReferralCommissionClient) Delete() *ReferralCommissionDelete {
-	mutation := newReferralCommissionMutation(c.config, OpDelete)
-	return &ReferralCommissionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *ReferralCommissionClient) DeleteOne(_m *ReferralCommission) *ReferralCommissionDeleteOne {
-	return c.DeleteOneID(_m.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *ReferralCommissionClient) DeleteOneID(id int64) *ReferralCommissionDeleteOne {
-	builder := c.Delete().Where(referralcommission.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &ReferralCommissionDeleteOne{builder}
-}
-
-// Query returns a query builder for ReferralCommission.
-func (c *ReferralCommissionClient) Query() *ReferralCommissionQuery {
-	return &ReferralCommissionQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeReferralCommission},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a ReferralCommission entity by its id.
-func (c *ReferralCommissionClient) Get(ctx context.Context, id int64) (*ReferralCommission, error) {
-	return c.Query().Where(referralcommission.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *ReferralCommissionClient) GetX(ctx context.Context, id int64) *ReferralCommission {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// QueryReferrer queries the referrer edge of a ReferralCommission.
-func (c *ReferralCommissionClient) QueryReferrer(_m *ReferralCommission) *UserQuery {
-	query := (&UserClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := _m.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(referralcommission.Table, referralcommission.FieldID, id),
-			sqlgraph.To(user.Table, user.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, referralcommission.ReferrerTable, referralcommission.ReferrerColumn),
-		)
-		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// Hooks returns the client hooks.
-func (c *ReferralCommissionClient) Hooks() []Hook {
-	return c.hooks.ReferralCommission
-}
-
-// Interceptors returns the client interceptors.
-func (c *ReferralCommissionClient) Interceptors() []Interceptor {
-	return c.inters.ReferralCommission
-}
-
-func (c *ReferralCommissionClient) mutate(ctx context.Context, m *ReferralCommissionMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&ReferralCommissionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&ReferralCommissionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&ReferralCommissionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&ReferralCommissionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown ReferralCommission mutation op: %q", m.Op())
-	}
-}
-
 // SecuritySecretClient is a client for the SecuritySecret schema.
 type SecuritySecretClient struct {
 	config
@@ -2768,6 +2619,139 @@ func (c *SettingClient) mutate(ctx context.Context, m *SettingMutation) (Value, 
 		return (&SettingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Setting mutation op: %q", m.Op())
+	}
+}
+
+// TLSFingerprintProfileClient is a client for the TLSFingerprintProfile schema.
+type TLSFingerprintProfileClient struct {
+	config
+}
+
+// NewTLSFingerprintProfileClient returns a client for the TLSFingerprintProfile from the given config.
+func NewTLSFingerprintProfileClient(c config) *TLSFingerprintProfileClient {
+	return &TLSFingerprintProfileClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `tlsfingerprintprofile.Hooks(f(g(h())))`.
+func (c *TLSFingerprintProfileClient) Use(hooks ...Hook) {
+	c.hooks.TLSFingerprintProfile = append(c.hooks.TLSFingerprintProfile, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `tlsfingerprintprofile.Intercept(f(g(h())))`.
+func (c *TLSFingerprintProfileClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TLSFingerprintProfile = append(c.inters.TLSFingerprintProfile, interceptors...)
+}
+
+// Create returns a builder for creating a TLSFingerprintProfile entity.
+func (c *TLSFingerprintProfileClient) Create() *TLSFingerprintProfileCreate {
+	mutation := newTLSFingerprintProfileMutation(c.config, OpCreate)
+	return &TLSFingerprintProfileCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TLSFingerprintProfile entities.
+func (c *TLSFingerprintProfileClient) CreateBulk(builders ...*TLSFingerprintProfileCreate) *TLSFingerprintProfileCreateBulk {
+	return &TLSFingerprintProfileCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TLSFingerprintProfileClient) MapCreateBulk(slice any, setFunc func(*TLSFingerprintProfileCreate, int)) *TLSFingerprintProfileCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TLSFingerprintProfileCreateBulk{err: fmt.Errorf("calling to TLSFingerprintProfileClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TLSFingerprintProfileCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TLSFingerprintProfileCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TLSFingerprintProfile.
+func (c *TLSFingerprintProfileClient) Update() *TLSFingerprintProfileUpdate {
+	mutation := newTLSFingerprintProfileMutation(c.config, OpUpdate)
+	return &TLSFingerprintProfileUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TLSFingerprintProfileClient) UpdateOne(_m *TLSFingerprintProfile) *TLSFingerprintProfileUpdateOne {
+	mutation := newTLSFingerprintProfileMutation(c.config, OpUpdateOne, withTLSFingerprintProfile(_m))
+	return &TLSFingerprintProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TLSFingerprintProfileClient) UpdateOneID(id int64) *TLSFingerprintProfileUpdateOne {
+	mutation := newTLSFingerprintProfileMutation(c.config, OpUpdateOne, withTLSFingerprintProfileID(id))
+	return &TLSFingerprintProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TLSFingerprintProfile.
+func (c *TLSFingerprintProfileClient) Delete() *TLSFingerprintProfileDelete {
+	mutation := newTLSFingerprintProfileMutation(c.config, OpDelete)
+	return &TLSFingerprintProfileDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TLSFingerprintProfileClient) DeleteOne(_m *TLSFingerprintProfile) *TLSFingerprintProfileDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TLSFingerprintProfileClient) DeleteOneID(id int64) *TLSFingerprintProfileDeleteOne {
+	builder := c.Delete().Where(tlsfingerprintprofile.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TLSFingerprintProfileDeleteOne{builder}
+}
+
+// Query returns a query builder for TLSFingerprintProfile.
+func (c *TLSFingerprintProfileClient) Query() *TLSFingerprintProfileQuery {
+	return &TLSFingerprintProfileQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTLSFingerprintProfile},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TLSFingerprintProfile entity by its id.
+func (c *TLSFingerprintProfileClient) Get(ctx context.Context, id int64) (*TLSFingerprintProfile, error) {
+	return c.Query().Where(tlsfingerprintprofile.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TLSFingerprintProfileClient) GetX(ctx context.Context, id int64) *TLSFingerprintProfile {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TLSFingerprintProfileClient) Hooks() []Hook {
+	return c.hooks.TLSFingerprintProfile
+}
+
+// Interceptors returns the client interceptors.
+func (c *TLSFingerprintProfileClient) Interceptors() []Interceptor {
+	return c.inters.TLSFingerprintProfile
+}
+
+func (c *TLSFingerprintProfileClient) mutate(ctx context.Context, m *TLSFingerprintProfileMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TLSFingerprintProfileCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TLSFingerprintProfileUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TLSFingerprintProfileUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TLSFingerprintProfileDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TLSFingerprintProfile mutation op: %q", m.Op())
 	}
 }
 
@@ -3362,54 +3346,6 @@ func (c *UserClient) QueryPromoCodeUsages(_m *User) *PromoCodeUsageQuery {
 			sqlgraph.From(user.Table, user.FieldID, id),
 			sqlgraph.To(promocodeusage.Table, promocodeusage.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.PromoCodeUsagesTable, user.PromoCodeUsagesColumn),
-		)
-		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryReferredUsers queries the referred_users edge of a User.
-func (c *UserClient) QueryReferredUsers(_m *User) *UserQuery {
-	query := (&UserClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := _m.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(user.Table, user.FieldID, id),
-			sqlgraph.To(user.Table, user.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferredUsersTable, user.ReferredUsersColumn),
-		)
-		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryReferrer queries the referrer edge of a User.
-func (c *UserClient) QueryReferrer(_m *User) *UserQuery {
-	query := (&UserClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := _m.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(user.Table, user.FieldID, id),
-			sqlgraph.To(user.Table, user.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, user.ReferrerTable, user.ReferrerColumn),
-		)
-		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
-		return fromV, nil
-	}
-	return query
-}
-
-// QueryReferralCommissions queries the referral_commissions edge of a User.
-func (c *UserClient) QueryReferralCommissions(_m *User) *ReferralCommissionQuery {
-	query := (&ReferralCommissionClient{config: c.config}).Query()
-	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
-		id := _m.ID
-		step := sqlgraph.NewStep(
-			sqlgraph.From(user.Table, user.FieldID, id),
-			sqlgraph.To(referralcommission.Table, referralcommission.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferralCommissionsTable, user.ReferralCommissionsColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -4096,14 +4032,14 @@ type (
 	hooks struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead,
 		ErrorPassthroughRule, Group, IdempotencyRecord, PromoCode, PromoCodeUsage,
-		Proxy, RedeemCode, ReferralCommission, SecuritySecret, Setting,
+		Proxy, RedeemCode, SecuritySecret, Setting, TLSFingerprintProfile,
 		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
 		UserAttributeValue, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead,
 		ErrorPassthroughRule, Group, IdempotencyRecord, PromoCode, PromoCodeUsage,
-		Proxy, RedeemCode, ReferralCommission, SecuritySecret, Setting,
+		Proxy, RedeemCode, SecuritySecret, Setting, TLSFingerprintProfile,
 		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
 		UserAttributeValue, UserSubscription []ent.Interceptor
 	}

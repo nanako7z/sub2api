@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/util/soraerror"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
@@ -69,8 +70,7 @@ type AccountTestService struct {
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
-	identityService           *IdentityService
-	settingService            *SettingService
+	tlsFPProfileService       *TLSFingerprintProfileService
 	soraTestGuardMu           sync.Mutex
 	soraTestLastRun           map[int64]time.Time
 	soraTestCooldown          time.Duration
@@ -85,8 +85,7 @@ func NewAccountTestService(
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
-	identityService *IdentityService,
-	settingService *SettingService,
+	tlsFPProfileService *TLSFingerprintProfileService,
 ) *AccountTestService {
 	return &AccountTestService{
 		accountRepo:               accountRepo,
@@ -94,38 +93,10 @@ func NewAccountTestService(
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
-		identityService:           identityService,
-		settingService:            settingService,
+		tlsFPProfileService:       tlsFPProfileService,
 		soraTestLastRun:           make(map[int64]time.Time),
 		soraTestCooldown:          defaultSoraTestCooldown,
 	}
-}
-
-// getBetaPolicyFilterSet 获取 beta 策略过滤集，与 GatewayService.getBetaPolicyFilterSet 逻辑一致
-func (s *AccountTestService) getBetaPolicyFilterSet(ctx context.Context, account *Account) map[string]struct{} {
-	if s.settingService == nil {
-		return nil
-	}
-	settings, err := s.settingService.GetBetaPolicySettings(ctx)
-	if err != nil || settings == nil {
-		return nil
-	}
-	isOAuth := account.IsOAuth()
-	isBedrock := account.IsBedrock()
-	var filterSet map[string]struct{}
-	for _, rule := range settings.Rules {
-		if rule.Action != BetaPolicyActionFilter {
-			continue
-		}
-		if !betaPolicyScopeMatches(rule.Scope, isOAuth, isBedrock) {
-			continue
-		}
-		if filterSet == nil {
-			filterSet = make(map[string]struct{})
-		}
-		filterSet[rule.BetaToken] = struct{}{}
-	}
-	return filterSet
 }
 
 func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error) {
@@ -195,8 +166,9 @@ func createTestPayload(modelID string) (map[string]any, error) {
 		"metadata": map[string]string{
 			"user_id": sessionID,
 		},
-		"max_tokens": 1024,
-		"stream":     true,
+		"max_tokens":  1024,
+		"temperature": 1,
+		"stream":      true,
 	}, nil
 }
 
@@ -303,52 +275,27 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 
-	// OAuth 账号：重写 metadata.user_id（与网关转发路径一致）
-	if account.IsOAuth() && s.identityService != nil {
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
-		if err == nil {
-			accountUUID := account.GetExtraString("account_uuid")
-			if accountUUID != "" && fp.ClientID != "" {
-				if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, payloadBytes, account, accountUUID, fp.ClientID, claude.DefaultHeaders["User-Agent"]); err == nil && len(newBody) > 0 {
-					payloadBytes = newBody
-				}
-			}
-		}
-	}
-
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create request")
 	}
 
-	// 设置认证头
-	if useBearer {
-		req.Header.Set("Authorization", "Bearer "+authToken)
-	} else {
-		req.Header.Set("x-api-key", authToken)
+	// Set common headers
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	// Apply Claude Code client headers
+	for key, value := range claude.DefaultHeaders {
+		req.Header.Set(key, value)
 	}
 
-	// 构建 beta 策略过滤集（与网关路径一致）
-	policyFilterSet := s.getBetaPolicyFilterSet(ctx, account)
-	effectiveDropSet := mergeDropSets(policyFilterSet)
-
+	// Set authentication header
 	if useBearer {
-		// OAuth 账号：完整 Claude Code 伪装头（与 applyClaudeCodeMimicHeaders 一致）
-		applyClaudeCodeMimicHeaders(req, true, claude.EndpointMessages)
-		req.Header.Set("content-type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-
-		// Beta：DefaultBetaHeader 经动态策略过滤
-		requiredBetas := strings.Split(claude.DefaultBetaHeader, ",")
-		req.Header.Set("anthropic-beta", mergeAnthropicBetaDropping(requiredBetas, "", effectiveDropSet))
+		req.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
+		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
-		// API Key 账号：最小伪装头 + 策略过滤
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-		for key, value := range claude.DefaultHeaders {
-			req.Header.Set(key, value)
-		}
-		req.Header.Set("anthropic-beta", stripBetaTokensWithSet(claude.APIKeyBetaHeader, effectiveDropSet))
+		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+		req.Header.Set("x-api-key", authToken)
 	}
 
 	// Get proxy URL
@@ -357,7 +304,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -447,7 +394,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, false)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -577,7 +524,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -667,7 +614,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, account.IsTLSFingerprintEnabled())
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -938,9 +885,9 @@ func (s *AccountTestService) testSoraAccountConnection(c *gin.Context, account *
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	enableSoraTLSFingerprint := s.shouldEnableSoraTLSFingerprint()
+	soraTLSProfile := s.resolveSoraTLSProfile()
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, enableSoraTLSFingerprint)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, soraTLSProfile)
 	if err != nil {
 		recorder.addStep("me", "failed", 0, "network_error", err.Error())
 		s.emitSoraProbeSummary(c, recorder)
@@ -1005,7 +952,7 @@ func (s *AccountTestService) testSoraAccountConnection(c *gin.Context, account *
 		subReq.Header.Set("Origin", "https://sora.chatgpt.com")
 		subReq.Header.Set("Referer", "https://sora.chatgpt.com/")
 
-		subResp, subErr := s.httpUpstream.DoWithTLS(subReq, proxyURL, account.ID, account.Concurrency, enableSoraTLSFingerprint)
+		subResp, subErr := s.httpUpstream.DoWithTLS(subReq, proxyURL, account.ID, account.Concurrency, soraTLSProfile)
 		if subErr != nil {
 			recorder.addStep("subscription", "failed", 0, "network_error", subErr.Error())
 			s.sendEvent(c, TestEvent{Type: "content", Text: fmt.Sprintf("Subscription check skipped: %s", subErr.Error())})
@@ -1034,7 +981,7 @@ func (s *AccountTestService) testSoraAccountConnection(c *gin.Context, account *
 	}
 
 	// 追加 Sora2 能力探测（对齐 sora2api 的测试思路）：邀请码 + 剩余额度。
-	s.testSora2Capabilities(c, ctx, account, authToken, proxyURL, enableSoraTLSFingerprint, recorder)
+	s.testSora2Capabilities(c, ctx, account, authToken, proxyURL, soraTLSProfile, recorder)
 
 	s.emitSoraProbeSummary(c, recorder)
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
@@ -1047,7 +994,7 @@ func (s *AccountTestService) testSora2Capabilities(
 	account *Account,
 	authToken string,
 	proxyURL string,
-	enableTLSFingerprint bool,
+	tlsProfile *tlsfingerprint.Profile,
 	recorder *soraProbeRecorder,
 ) {
 	inviteStatus, inviteHeader, inviteBody, err := s.fetchSoraTestEndpoint(
@@ -1056,7 +1003,7 @@ func (s *AccountTestService) testSora2Capabilities(
 		authToken,
 		soraInviteMineURL,
 		proxyURL,
-		enableTLSFingerprint,
+		tlsProfile,
 	)
 	if err != nil {
 		if recorder != nil {
@@ -1073,7 +1020,7 @@ func (s *AccountTestService) testSora2Capabilities(
 			authToken,
 			soraBootstrapURL,
 			proxyURL,
-			enableTLSFingerprint,
+			tlsProfile,
 		)
 		if bootstrapErr == nil && bootstrapStatus == http.StatusOK {
 			if recorder != nil {
@@ -1086,7 +1033,7 @@ func (s *AccountTestService) testSora2Capabilities(
 				authToken,
 				soraInviteMineURL,
 				proxyURL,
-				enableTLSFingerprint,
+				tlsProfile,
 			)
 			if err != nil {
 				if recorder != nil {
@@ -1138,7 +1085,7 @@ func (s *AccountTestService) testSora2Capabilities(
 		authToken,
 		soraRemainingURL,
 		proxyURL,
-		enableTLSFingerprint,
+		tlsProfile,
 	)
 	if remainingErr != nil {
 		if recorder != nil {
@@ -1179,7 +1126,7 @@ func (s *AccountTestService) fetchSoraTestEndpoint(
 	authToken string,
 	url string,
 	proxyURL string,
-	enableTLSFingerprint bool,
+	tlsProfile *tlsfingerprint.Profile,
 ) (int, http.Header, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -1192,7 +1139,7 @@ func (s *AccountTestService) fetchSoraTestEndpoint(
 	req.Header.Set("Origin", "https://sora.chatgpt.com")
 	req.Header.Set("Referer", "https://sora.chatgpt.com/")
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, enableTLSFingerprint)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -1281,11 +1228,12 @@ func parseSoraRemainingSummary(body []byte) string {
 	return strings.Join(parts, " | ")
 }
 
-func (s *AccountTestService) shouldEnableSoraTLSFingerprint() bool {
-	if s == nil || s.cfg == nil {
-		return true
+func (s *AccountTestService) resolveSoraTLSProfile() *tlsfingerprint.Profile {
+	if s == nil || s.cfg == nil || !s.cfg.Sora.Client.DisableTLSFingerprint {
+		// Sora TLS fingerprint enabled — use built-in default profile
+		return &tlsfingerprint.Profile{Name: "Built-in Default (Sora)"}
 	}
-	return !s.cfg.Sora.Client.DisableTLSFingerprint
+	return nil // disabled
 }
 
 func isCloudflareChallengeResponse(statusCode int, headers http.Header, body []byte) bool {

@@ -2329,6 +2329,12 @@ export default {
           umqModeThrottle: 'Throttle',
           umqModeSerialize: 'Serialize',
         },
+        tlsFingerprint: {
+          label: 'TLS Fingerprint Simulation',
+          hint: 'Simulate Node.js/Claude Code client TLS fingerprint',
+          defaultProfile: 'Built-in Default',
+          randomProfile: 'Random'
+        },
         sessionIdMasking: {
           label: 'Session ID Masking',
           hint: 'When enabled, fixes the session ID in metadata.user_id for 15 minutes, making upstream think requests come from the same session'
@@ -4301,6 +4307,14 @@ export default {
         description: 'Configure partner referral rewards and commission rules',
         enablePartner: 'Enable Partner Plan',
         enablePartnerHint: 'Allow partners to refer new users via referral codes',
+      },
+      gatewayForwarding: {
+        title: 'Request Forwarding',
+        description: 'Control how requests are forwarded to upstream OAuth accounts',
+        fingerprintUnification: 'Fingerprint Unification',
+        fingerprintUnificationHint: 'Unify X-Stainless-* headers across users sharing the same OAuth account. Disabling passes through each client\'s original headers.',
+        metadataPassthrough: 'Metadata Passthrough',
+        metadataPassthroughHint: 'Pass through client\'s original metadata.user_id without rewriting. May improve upstream cache hit rates.',
       },
       site: {
         title: 'Site Settings',

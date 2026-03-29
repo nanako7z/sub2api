@@ -537,6 +537,10 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	// 伙伴计划设置
 	updates[SettingKeyPartnerEnabled] = strconv.FormatBool(settings.PartnerEnabled)
 
+	// Gateway forwarding behavior
+	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
+	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
+
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
 		// 先使 inflight singleflight 失效，再刷新缓存，缩小旧值覆盖新值的竞态窗口
@@ -973,6 +977,14 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// 伙伴计划设置
 	result.PartnerEnabled = settings[SettingKeyPartnerEnabled] == "true"
+
+	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false)
+	if v, ok := settings[SettingKeyEnableFingerprintUnification]; ok && v != "" {
+		result.EnableFingerprintUnification = v == "true"
+	} else {
+		result.EnableFingerprintUnification = true
+	}
+	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 
 	return result
 }

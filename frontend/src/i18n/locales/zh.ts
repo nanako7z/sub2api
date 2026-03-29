@@ -2473,6 +2473,12 @@ export default {
           umqModeThrottle: '软性限速',
           umqModeSerialize: '串行队列',
         },
+        tlsFingerprint: {
+          label: 'TLS 指纹模拟',
+          hint: '模拟 Node.js/Claude Code 客户端的 TLS 指纹',
+          defaultProfile: '内置默认',
+          randomProfile: '随机'
+        },
         sessionIdMasking: {
           label: '会话 ID 伪装',
           hint: '启用后将在 15 分钟内固定 metadata.user_id 中的 session ID，使上游认为请求来自同一会话'
@@ -4464,6 +4470,14 @@ export default {
         description: '配置线下推广合作伙伴的积分和奖励规则',
         enablePartner: '启用伙伴计划',
         enablePartnerHint: '允许通过合作伙伴推荐码引导新用户注册',
+      },
+      gatewayForwarding: {
+        title: '请求转发行为',
+        description: '控制请求转发到上游 OAuth 账号时的行为',
+        fingerprintUnification: '指纹统一化',
+        fingerprintUnificationHint: '统一共享同一 OAuth 账号的用户的 X-Stainless-* 请求头。关闭后透传客户端原始请求头。',
+        metadataPassthrough: 'Metadata 透传',
+        metadataPassthroughHint: '透传客户端原始 metadata.user_id，不进行重写。可能提高上游缓存命中率。',
       },
       site: {
         title: '站点设置',

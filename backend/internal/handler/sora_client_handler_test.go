@@ -951,18 +951,6 @@ func (r *stubUserRepoForHandler) DisableTotp(context.Context, int64) error      
 func (r *stubUserRepoForHandler) AddGroupToAllowedGroups(context.Context, int64, int64) error {
 	return nil
 }
-func (r *stubUserRepoForHandler) UpdateGiftBalance(context.Context, int64, float64) error {
-	return nil
-}
-func (r *stubUserRepoForHandler) DeductBalanceSplit(_ context.Context, _ int64, _ float64, _ string) (*service.BalanceSplitResult, error) {
-	return &service.BalanceSplitResult{}, nil
-}
-func (r *stubUserRepoForHandler) GetByReferralCode(context.Context, string) (*service.User, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (r *stubUserRepoForHandler) SetReferralCode(context.Context, int64, string) error { return nil }
-func (r *stubUserRepoForHandler) SetReferrer(context.Context, int64, int64) error      { return nil }
-func (r *stubUserRepoForHandler) SetPartnerID(context.Context, int64, int64) error     { return nil }
 
 // ==================== NewSoraClientHandler ====================
 
@@ -2236,7 +2224,7 @@ func (s *stubSoraClientForHandler) GetVideoTask(_ context.Context, _ *service.Ac
 func newMinimalGatewayService(accountRepo service.AccountRepository) *service.GatewayService {
 	return service.NewGatewayService(
 		accountRepo, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 }
 

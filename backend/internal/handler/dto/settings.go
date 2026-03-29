@@ -106,6 +106,10 @@ type SystemSettings struct {
 
 	// 伙伴计划设置
 	PartnerEnabled bool `json:"partner_enabled"`
+
+	// Gateway forwarding behavior
+	EnableFingerprintUnification bool `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough    bool `json:"enable_metadata_passthrough"`
 }
 
 type DefaultSubscriptionSetting struct {

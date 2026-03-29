@@ -65,7 +65,7 @@
           <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
         </div>
 
-        <!-- Model Restriction Section (不适用于 Antigravity) -->
+        <!-- Model Restriction Section (不适用�?Antigravity) -->
         <div v-if="account.platform !== 'antigravity'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
 
@@ -680,7 +680,7 @@
           <div v-else class="space-y-3">
             <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
-              <span class="text-gray-400">→</span>
+              <span class="text-gray-400">�?/span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
               <button type="button" @click="modelMappings.splice(index, 1)" class="text-red-500 hover:text-red-700">
                 <Icon name="trash" size="sm" />
@@ -1068,7 +1068,7 @@
         <p class="input-hint">{{ t('admin.accounts.expiresAtHint') }}</p>
       </div>
 
-      <!-- OpenAI 自动透传开关（OAuth/API Key） -->
+      <!-- OpenAI 自动透传开关（OAuth/API Key�?-->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -1098,7 +1098,7 @@
         </div>
       </div>
 
-      <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
+      <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough�?-->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -1119,7 +1119,7 @@
         </div>
       </div>
 
-      <!-- Anthropic API Key 自动透传开关 -->
+      <!-- Anthropic API Key 自动透传开�?-->
       <div
         v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -1179,7 +1179,7 @@
         />
       </div>
 
-      <!-- OpenAI OAuth Codex 官方客户端限制开关 -->
+      <!-- OpenAI OAuth Codex 官方客户端限制开�?-->
       <div
         v-if="account?.platform === 'openai' && account?.type === 'oauth'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
@@ -1458,7 +1458,7 @@
 
           </div>
 
-          <!-- 用户消息限速模式（独立于 RPM 开关，始终可见） -->
+          <!-- 用户消息限速模式（独立�?RPM 开关，始终可见�?-->
           <div class="mt-4">
             <label class="input-label">{{ t('admin.accounts.quotaControl.rpmLimit.userMsgQueue') }}</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 mb-2">
@@ -1476,6 +1476,40 @@
                 {{ opt.label }}
               </button>
             </div>
+          </div>
+        </div>
+
+        <!-- TLS Fingerprint -->
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+          <div v-if="tlsFingerprintEnabled" class="mt-3">
+            <select v-model="tlsFingerprintProfileId" class="input">
+              <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
+              <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+              <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
           </div>
         </div>
 
@@ -1572,7 +1606,7 @@
             >
               ?
             </span>
-            <!-- Tooltip（向下显示避免被弹窗裁剪） -->
+            <!-- Tooltip（向下显示避免被弹窗裁剪�?-->
             <div
               class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
             >
@@ -1612,7 +1646,7 @@
         </div>
       </div>
 
-      <!-- Group Selection - 仅标准模式显示 -->
+      <!-- Group Selection - 仅标准模式显�?-->
       <GroupSelector
         v-if="!authStore.isSimpleMode"
         v-model="form.group_ids"
@@ -1813,12 +1847,14 @@ const umqModeOptions = computed(() => [
   { value: 'throttle', label: t('admin.accounts.quotaControl.rpmLimit.umqModeThrottle') },
   { value: 'serialize', label: t('admin.accounts.quotaControl.rpmLimit.umqModeSerialize') },
 ])
+const tlsFingerprintEnabled = ref(false)
+const tlsFingerprintProfileId = ref<number | null>(null)
+const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
 
-// OpenAI 自动透传开关（OAuth/API Key）
-const openaiPassthroughEnabled = ref(false)
+// OpenAI 自动透传开关（OAuth/API Key�?const openaiPassthroughEnabled = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -1834,8 +1870,7 @@ const editWeeklyResetHour = ref<number | null>(null)
 const editResetTimezone = ref<string | null>(null)
 const openAIWSModeOptions = computed(() => [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
-  // TODO: ctx_pool 选项暂时隐藏，待测试完成后恢复
-  // { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
+  // TODO: ctx_pool 选项暂时隐藏，待测试完成后恢�?  // { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
   { value: OPENAI_WS_MODE_PASSTHROUGH, label: t('admin.accounts.openai.wsModePassthrough') }
 ])
 const openaiResponsesWebSocketV2Mode = computed({
@@ -2041,7 +2076,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editResetTimezone.value = null
   }
 
-  // Load antigravity model mapping (Antigravity 只支持映射模式)
+  // Load antigravity model mapping (Antigravity 只支持映射模�?
   if (newAccount.platform === 'antigravity') {
     const credentials = newAccount.credentials as Record<string, unknown> | undefined
 
@@ -2049,14 +2084,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     antigravityModelRestrictionMode.value = 'mapping'
     antigravityWhitelistModels.value = []
 
-    // 从 model_mapping 读取映射配置
+    // �?model_mapping 读取映射配置
     const rawAgMapping = credentials?.model_mapping as Record<string, string> | undefined
     if (rawAgMapping && typeof rawAgMapping === 'object') {
       const entries = Object.entries(rawAgMapping)
-      // 无论是白名单样式(key===value)还是真正的映射，都统一转换为映射列表
-      antigravityModelMappings.value = entries.map(([from, to]) => ({ from, to }))
+      // 无论是白名单样式(key===value)还是真正的映射，都统一转换为映射列�?      antigravityModelMappings.value = entries.map(([from, to]) => ({ from, to }))
     } else {
-      // 兼容旧数据：从 model_whitelist 读取，转换为映射格式
+      // 兼容旧数据：�?model_whitelist 读取，转换为映射格式
       const rawWhitelist = credentials?.model_whitelist
       if (Array.isArray(rawWhitelist) && rawWhitelist.length > 0) {
         antigravityModelMappings.value = rawWhitelist
@@ -2075,6 +2109,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 
   // Load quota control settings (Anthropic OAuth/SetupToken only)
   loadQuotaControlSettings(newAccount)
+  if (newAccount.platform === 'anthropic' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token')) {
+    adminAPI.tlsFingerprintProfiles.list()
+      .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
+      .catch(() => { tlsFingerprintProfiles.value = [] })
+  } else {
+    tlsFingerprintProfiles.value = []
+  }
 
   loadTempUnschedRules(credentials)
 
@@ -2429,6 +2470,8 @@ function loadQuotaControlSettings(account: Account) {
   rpmStrategy.value = 'tiered'
   rpmStickyBuffer.value = null
   userMsgQueueMode.value = ''
+  tlsFingerprintEnabled.value = false
+  tlsFingerprintProfileId.value = null
   sessionIdMaskingEnabled.value = false
   cacheTTLOverrideEnabled.value = false
   cacheTTLOverrideTarget.value = '5m'
@@ -2461,6 +2504,12 @@ function loadQuotaControlSettings(account: Account) {
 
   // UMQ mode（独立于 RPM 加载，防止编辑无 RPM 账号时丢失已有配置）
   userMsgQueueMode.value = account.user_msg_queue_mode ?? ''
+
+  // Load TLS fingerprint setting
+  if (account.enable_tls_fingerprint === true) {
+    tlsFingerprintEnabled.value = true
+  }
+  tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
 
   // Load session ID masking setting
   if (account.session_id_masking_enabled === true) {
@@ -2627,15 +2676,14 @@ const handleSubmit = async () => {
 
   const updatePayload: Record<string, unknown> = { ...form }
   try {
-    // 后端期望 proxy_id: 0 表示清除代理，而不是 null
+    // 后端期望 proxy_id: 0 表示清除代理，而不�?null
     if (updatePayload.proxy_id === null) {
       updatePayload.proxy_id = 0
     }
     if (form.expires_at === null) {
       updatePayload.expires_at = 0
     }
-    // load_factor: 空值/NaN/0/负数 时发送 0（后端约定 <= 0 = 清除）
-    const lf = form.load_factor
+    // load_factor: 空�?NaN/0/负数 时发�?0（后端约�?<= 0 = 清除�?    const lf = form.load_factor
     if (lf == null || Number.isNaN(lf) || lf <= 0) {
       updatePayload.load_factor = 0
     }
@@ -2665,8 +2713,7 @@ const handleSubmit = async () => {
         return
       }
 
-      // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
-      if (shouldApplyModelMapping) {
+      // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑�?      if (shouldApplyModelMapping) {
         const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
         if (modelMapping) {
           newCredentials.model_mapping = modelMapping
@@ -2806,18 +2853,15 @@ const handleSubmit = async () => {
     }
 
     // Antigravity: persist model mapping to credentials (applies to all antigravity types)
-    // Antigravity 只支持映射模式
-    if (props.account.platform === 'antigravity') {
+    // Antigravity 只支持映射模�?    if (props.account.platform === 'antigravity') {
       const currentCredentials = (updatePayload.credentials as Record<string, unknown>) ||
         ((props.account.credentials as Record<string, unknown>) || {})
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
 
-      // 移除旧字段
-      delete newCredentials.model_whitelist
+      // 移除旧字�?      delete newCredentials.model_whitelist
       delete newCredentials.model_mapping
 
-      // 只使用映射模式
-      const antigravityModelMapping = buildModelMappingObject(
+      // 只使用映射模�?      const antigravityModelMapping = buildModelMappingObject(
         'mapping',
         [],
         antigravityModelMappings.value
@@ -2887,16 +2931,25 @@ const handleSubmit = async () => {
         delete newExtra.rpm_sticky_buffer
       }
 
-      // UMQ mode（独立于 RPM 保存）
-      if (userMsgQueueMode.value) {
+      // UMQ mode（独立于 RPM 保存�?      if (userMsgQueueMode.value) {
         newExtra.user_msg_queue_mode = userMsgQueueMode.value
       } else {
         delete newExtra.user_msg_queue_mode
       }
-      delete newExtra.user_msg_queue_enabled  // 清理旧字段
+      delete newExtra.user_msg_queue_enabled  // �������ֶ�
 
-      delete newExtra.enable_tls_fingerprint  // 清理旧字段（OAuth 已强制开启）
-
+      // TLS fingerprint setting
+      if (tlsFingerprintEnabled.value) {
+        newExtra.enable_tls_fingerprint = true
+        if (tlsFingerprintProfileId.value) {
+          newExtra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
+        } else {
+          delete newExtra.tls_fingerprint_profile_id
+        }
+      } else {
+        delete newExtra.enable_tls_fingerprint
+        delete newExtra.tls_fingerprint_profile_id
+      }
       // Session ID masking setting
       if (sessionIdMaskingEnabled.value) {
         newExtra.session_id_masking_enabled = true
@@ -2953,8 +3006,7 @@ const handleSubmit = async () => {
         if (codexCLIOnlyEnabled.value) {
           newExtra.codex_cli_only = true
         } else if (hadCodexCLIOnlyEnabled) {
-          // 关闭时显式写 false，避免 extra 为空被后端忽略导致旧值无法清除
-          newExtra.codex_cli_only = false
+          // 关闭时显式写 false，避�?extra 为空被后端忽略导致旧值无法清�?          newExtra.codex_cli_only = false
         } else {
           delete newExtra.codex_cli_only
         }
@@ -3041,3 +3093,4 @@ const handleMixedChannelCancel = () => {
   clearMixedChannelDialog()
 }
 </script>
+

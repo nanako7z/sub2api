@@ -53,7 +53,6 @@ func TestAPIContracts(t *testing.T) {
 					"username": "alice",
 					"role": "user",
 					"balance": 12.5,
-					"gift_balance": 0,
 					"concurrency": 5,
 					"status": "active",
 					"allowed_groups": null,
@@ -537,18 +536,12 @@ func TestAPIContracts(t *testing.T) {
 					"hide_ccs_import_button": false,
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
-					"purchase_subscription_new_tab": false,
 					"min_claude_code_version": "",
 					"max_claude_code_version": "",
 					"allow_ungrouped_key_scheduling": false,
 					"backend_mode_enabled": false,
-					"balance_consumption_priority": "normal_first",
-					"referral_enabled": false,
-					"referral_commission_rate": 0,
-					"referral_signup_bonus": 0,
-					"referral_referrer_bonus": 0,
-					"referral_max_commission_per_user": 0,
-					"partner_enabled": false,
+					"enable_fingerprint_unification": true,
+					"enable_metadata_passthrough": false,
 					"custom_menu_items": [],
 					"custom_endpoints": []
 				}
@@ -659,7 +652,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingService := service.NewSettingService(settingRepo, cfg)
 
 	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, nil, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil, nil)
+	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil)
@@ -836,30 +829,6 @@ func (r *stubUserRepo) EnableTotp(ctx context.Context, userID int64) error {
 
 func (r *stubUserRepo) DisableTotp(ctx context.Context, userID int64) error {
 	return errors.New("not implemented")
-}
-
-func (r *stubUserRepo) UpdateGiftBalance(ctx context.Context, id int64, amount float64) error {
-	return nil
-}
-
-func (r *stubUserRepo) DeductBalanceSplit(ctx context.Context, id int64, amount float64, priority string) (*service.BalanceSplitResult, error) {
-	return nil, nil
-}
-
-func (r *stubUserRepo) GetByReferralCode(ctx context.Context, code string) (*service.User, error) {
-	return nil, nil
-}
-
-func (r *stubUserRepo) SetReferralCode(ctx context.Context, userID int64, code string) error {
-	return nil
-}
-
-func (r *stubUserRepo) SetReferrer(ctx context.Context, userID int64, referrerID int64) error {
-	return nil
-}
-
-func (r *stubUserRepo) SetPartnerID(ctx context.Context, userID int64, partnerID int64) error {
-	return nil
 }
 
 type stubApiKeyCache struct{}
@@ -1253,7 +1222,7 @@ func (stubRedeemCodeRepo) List(ctx context.Context, params pagination.Pagination
 	return nil, nil, errors.New("not implemented")
 }
 
-func (stubRedeemCodeRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search, sortBy, sortOrder string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
+func (stubRedeemCodeRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
@@ -1841,17 +1810,6 @@ func (r *stubUsageLogRepo) GetAccountUsageStats(ctx context.Context, accountID i
 func (r *stubUsageLogRepo) GetStatsWithFilters(ctx context.Context, filters usagestats.UsageLogFilters) (*usagestats.UsageStats, error) {
 	return nil, errors.New("not implemented")
 }
-func (r *stubUsageLogRepo) GetUserCacheHitRateTrendByUsage(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
-	return nil, nil
-}
-func (r *stubUsageLogRepo) GetUserCacheHitRateTrendLowest(ctx context.Context, startTime, endTime time.Time, granularity string, minRequests int, limit int) ([]usagestats.UserCacheHitRateTrendPoint, error) {
-	return nil, nil
-}
-
-func (r *stubUsageLogRepo) GetSpendingTrend(ctx context.Context, startTime, endTime time.Time, granularity string) ([]usagestats.SpendingTrendPoint, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (r *stubUsageLogRepo) GetAllGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
 	return nil, errors.New("not implemented")
 }
