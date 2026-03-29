@@ -1854,7 +1854,8 @@ const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
 
-// OpenAI 自动透传开关（OAuth/API Key�?const openaiPassthroughEnabled = ref(false)
+// OpenAI auto passthrough toggle (OAuth/API Key)
+const openaiPassthroughEnabled = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -2683,7 +2684,8 @@ const handleSubmit = async () => {
     if (form.expires_at === null) {
       updatePayload.expires_at = 0
     }
-    // load_factor: 空�?NaN/0/负数 时发�?0（后端约�?<= 0 = 清除�?    const lf = form.load_factor
+    // load_factor: empty/NaN/<=0 sends 0 (backend treats <=0 as clear)
+    const lf = form.load_factor
     if (lf == null || Number.isNaN(lf) || lf <= 0) {
       updatePayload.load_factor = 0
     }
@@ -2713,7 +2715,8 @@ const handleSubmit = async () => {
         return
       }
 
-      // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑�?      if (shouldApplyModelMapping) {
+      // Add model mapping if configured (OpenAI passthrough keeps existing mapping)
+      if (shouldApplyModelMapping) {
         const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
         if (modelMapping) {
           newCredentials.model_mapping = modelMapping
@@ -2853,15 +2856,18 @@ const handleSubmit = async () => {
     }
 
     // Antigravity: persist model mapping to credentials (applies to all antigravity types)
-    // Antigravity 只支持映射模�?    if (props.account.platform === 'antigravity') {
+    // Antigravity only supports mapping mode
+    if (props.account.platform === 'antigravity') {
       const currentCredentials = (updatePayload.credentials as Record<string, unknown>) ||
         ((props.account.credentials as Record<string, unknown>) || {})
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
 
-      // 移除旧字�?      delete newCredentials.model_whitelist
+      // Remove legacy fields
+      delete newCredentials.model_whitelist
       delete newCredentials.model_mapping
 
-      // 只使用映射模�?      const antigravityModelMapping = buildModelMappingObject(
+      // Use mapping mode only
+      const antigravityModelMapping = buildModelMappingObject(
         'mapping',
         [],
         antigravityModelMappings.value
@@ -2931,7 +2937,8 @@ const handleSubmit = async () => {
         delete newExtra.rpm_sticky_buffer
       }
 
-      // UMQ mode（独立于 RPM 保存�?      if (userMsgQueueMode.value) {
+      // UMQ mode (persisted independently of RPM settings)
+      if (userMsgQueueMode.value) {
         newExtra.user_msg_queue_mode = userMsgQueueMode.value
       } else {
         delete newExtra.user_msg_queue_mode
@@ -3006,7 +3013,8 @@ const handleSubmit = async () => {
         if (codexCLIOnlyEnabled.value) {
           newExtra.codex_cli_only = true
         } else if (hadCodexCLIOnlyEnabled) {
-          // 关闭时显式写 false，避�?extra 为空被后端忽略导致旧值无法清�?          newExtra.codex_cli_only = false
+          // Write explicit false when disabling to avoid stale value in backend
+          newExtra.codex_cli_only = false
         } else {
           delete newExtra.codex_cli_only
         }
