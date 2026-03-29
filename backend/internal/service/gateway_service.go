@@ -705,6 +705,7 @@ type GatewayService struct {
 	modelsListCache       *gocache.Cache
 	modelsListCacheTTL    time.Duration
 	mcpTriggerCache       *gocache.Cache
+	tlsFPProfileService   *TLSFingerprintProfileService
 	settingService        *SettingService
 	referralService       *ReferralService
 	partnerService        *PartnerService
@@ -736,6 +737,7 @@ func NewGatewayService(
 	sessionLimitCache SessionLimitCache,
 	rpmCache RPMCache,
 	digestStore *DigestSessionStore,
+	tlsFPProfileService *TLSFingerprintProfileService,
 	settingService *SettingService,
 	referralService *ReferralService,
 	partnerService *PartnerService,
@@ -768,6 +770,7 @@ func NewGatewayService(
 		sessionLimitCache:    sessionLimitCache,
 		rpmCache:             rpmCache,
 		userGroupRateCache:   gocache.New(userGroupRateTTL, time.Minute),
+		tlsFPProfileService:  tlsFPProfileService,
 		settingService:       settingService,
 		referralService:      referralService,
 		partnerService:       partnerService,

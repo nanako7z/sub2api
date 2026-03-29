@@ -68,7 +68,7 @@ func NewRegistryFromConfig(cfg *config.TLSFingerprintConfig) *Registry {
 			EnableGREASE:    profileCfg.EnableGREASE,
 			CipherSuites:    profileCfg.CipherSuites,
 			Curves:          profileCfg.Curves,
-			PointFormats:    profileCfg.PointFormats,
+			PointFormats:    pointFormatsFromConfig(profileCfg.PointFormats),
 		}
 
 		// If the profile has empty values, they will use defaults in dialer
@@ -125,6 +125,21 @@ func shapeWeightsFromConfig(w config.TLSShapeWeightsConfig) TLSShapeWeights {
 	}
 	if out.ECH186Padding41+out.ECH218Padding9+out.ECH250Padding0+out.ECH282Padding0 <= 0 {
 		return defaultTLSShapeWeights
+	}
+	return out
+}
+
+func pointFormatsFromConfig(in []uint16) []uint8 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]uint8, 0, len(in))
+	for _, v := range in {
+		if v > 255 {
+			slog.Warn("tls_registry_invalid_point_format", "value", v)
+			continue
+		}
+		out = append(out, uint8(v))
 	}
 	return out
 }

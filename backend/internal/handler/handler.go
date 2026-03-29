@@ -28,6 +28,7 @@ type AdminHandlers struct {
 	UserAttribute         *admin.UserAttributeHandler
 	ErrorPassthrough      *admin.ErrorPassthroughHandler
 	TLSFingerprintProfile *admin.TLSFingerprintProfileHandler
+	Partner               *admin.PartnerHandler
 	APIKey                *admin.AdminAPIKeyHandler
 	ScheduledTest         *admin.ScheduledTestHandler
 }
@@ -48,6 +49,7 @@ type Handlers struct {
 	SoraClient    *SoraClientHandler
 	Setting       *SettingHandler
 	Totp          *TotpHandler
+	Referral      *ReferralHandler
 }
 
 // BuildInfo contains build-time information

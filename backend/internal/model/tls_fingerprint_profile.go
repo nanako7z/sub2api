@@ -39,16 +39,24 @@ func (p *TLSFingerprintProfile) Validate() error {
 // 空切片字段会在 dialer 中 fallback 到内置默认值
 func (p *TLSFingerprintProfile) ToTLSProfile() *tlsfingerprint.Profile {
 	return &tlsfingerprint.Profile{
-		Name:                p.Name,
-		EnableGREASE:        p.EnableGREASE,
-		CipherSuites:        p.CipherSuites,
-		Curves:              p.Curves,
-		PointFormats:        p.PointFormats,
-		SignatureAlgorithms: p.SignatureAlgorithms,
-		ALPNProtocols:       p.ALPNProtocols,
-		SupportedVersions:   p.SupportedVersions,
-		KeyShareGroups:      p.KeyShareGroups,
-		PSKModes:            p.PSKModes,
-		Extensions:          p.Extensions,
+		Name:         p.Name,
+		EnableGREASE: p.EnableGREASE,
+		CipherSuites: p.CipherSuites,
+		Curves:       p.Curves,
+		PointFormats: toUint8Slice(p.PointFormats),
 	}
+}
+
+func toUint8Slice(in []uint16) []uint8 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]uint8, 0, len(in))
+	for _, v := range in {
+		if v > 255 {
+			continue
+		}
+		out = append(out, uint8(v))
+	}
+	return out
 }

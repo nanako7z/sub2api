@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
@@ -67,9 +68,9 @@ func sendReq(
 	account *service.Account,
 	proxyURL string,
 	req *http.Request,
-	enableTLSFingerprint bool,
+	tlsProfile *tlsfingerprint.Profile,
 ) {
-	resp, err := upstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, enableTLSFingerprint)
+	resp, err := upstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsProfile)
 	if err != nil {
 		fmt.Printf("[probe] %s %s -> request error: %v\n", req.Method, req.URL.String(), err)
 		return
@@ -112,6 +113,10 @@ func main() {
 
 	for i := 0; i < *repeat; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		var tlsProfile *tlsfingerprint.Profile
+		if *tlsFP {
+			tlsProfile = tlsfingerprint.GlobalRegistry().GetDefaultProfile()
+		}
 
 		msgReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages?beta=true", bytes.NewReader(messageBody))
 		if err == nil {
@@ -121,7 +126,7 @@ func main() {
 			msgReq.Header.Set("authorization", "Bearer invalid-oauth-token")
 			msgReq.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
 			msgReq.Header.Set("x-client-request-id", resolveClientRequestID(*clientRequestID))
-			sendReq(ctx, upstream, account, *proxyURL, msgReq, *tlsFP)
+			sendReq(ctx, upstream, account, *proxyURL, msgReq, tlsProfile)
 		}
 
 		ctReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages/count_tokens?beta=true", bytes.NewReader(countBody))
@@ -131,7 +136,7 @@ func main() {
 			ctReq.Header.Set("anthropic-version", "2023-06-01")
 			ctReq.Header.Set("authorization", "Bearer invalid-oauth-token")
 			ctReq.Header.Set("x-client-request-id", resolveClientRequestID(*clientRequestID))
-			sendReq(ctx, upstream, account, *proxyURL, ctReq, *tlsFP)
+			sendReq(ctx, upstream, account, *proxyURL, ctReq, tlsProfile)
 		}
 
 		mcpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/mcp_servers?limit=1000", nil)
@@ -140,15 +145,15 @@ func main() {
 			mcpReq.Header.Set("content-type", "application/json")
 			mcpReq.Header.Set("anthropic-version", "2023-06-01")
 			mcpReq.Header.Set("authorization", "Bearer invalid-oauth-token")
-			sendReq(ctx, upstream, account, *proxyURL, mcpReq, *tlsFP)
+			sendReq(ctx, upstream, account, *proxyURL, mcpReq, tlsProfile)
 		}
 
 		usageFetcher := repository.NewClaudeUsageFetcher(upstream)
 		_, usageErr := usageFetcher.FetchUsageWithOptions(ctx, &service.ClaudeUsageFetchOptions{
-			AccessToken:          "invalid-oauth-token",
-			ProxyURL:             *proxyURL,
-			EnableTLSFingerprint: *tlsFP,
-			AccountID:            account.ID,
+			AccessToken: "invalid-oauth-token",
+			ProxyURL:    *proxyURL,
+			TLSProfile:  tlsProfile,
+			AccountID:   account.ID,
 		})
 		if usageErr != nil {
 			fmt.Printf("[probe] GET /api/oauth/usage -> expected error: %v\n", usageErr)
