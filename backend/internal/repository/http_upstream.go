@@ -164,22 +164,22 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 }
 
 // DoWithTLS 执行带 TLS 指纹伪装的 HTTP 请求
-// 根据 enableTLSFingerprint 参数决定是否使用 TLS 指纹
+// 根据 profile 参数决定是否启用 TLS 指纹及使用哪套模板
 //
 // 参数:
 //   - req: HTTP 请求对象
 //   - proxyURL: 代理地址，空字符串表示直连
 //   - accountID: 账户 ID，用于账户级隔离和 TLS 指纹模板选择
 //   - accountConcurrency: 账户并发限制，用于动态调整连接池大小
-//   - enableTLSFingerprint: 是否启用 TLS 指纹伪装
+//   - profile: TLS 指纹模板；nil 表示不启用 TLS 指纹
 //
 // TLS 指纹说明:
-//   - 当 enableTLSFingerprint=true 时，使用 utls 库模拟 Claude CLI 的 TLS 指纹
-//   - 指纹模板根据 accountID % len(profiles) 自动选择
+//   - profile != nil 时，使用 utls 模拟对应 TLS 指纹
+//   - profile == nil 时，回退为标准 HTTP 请求
 //   - 支持直连、HTTP/HTTPS 代理、SOCKS5 代理三种场景
-func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, enableTLSFingerprint bool) (*http.Response, error) {
-	// 如果未启用 TLS 指纹，直接使用标准请求路径
-	if !enableTLSFingerprint {
+func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+	// 未提供 profile 时，直接使用标准请求路径
+	if profile == nil {
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
 	}
 
@@ -198,25 +198,19 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 		return nil, err
 	}
 
-	// 获取 TLS 指纹 Profile
-	registry := tlsfingerprint.GlobalRegistry()
-	profile := registry.GetProfileByAccountID(accountID)
-	if profile == nil {
-		// 如果获取不到 profile，回退到普通请求
-		slog.Debug("tls_fingerprint_no_profile", "account_id", accountID, "fallback", "standard_request")
-		return s.Do(req, proxyURL, accountID, accountConcurrency)
-	}
+	// clone 一份避免修改调用方传入的 profile
+	p := profile
 	if req != nil && req.URL != nil && strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), anthropicAPIHost) {
 		scope := anthropicOAuthEndpointScope(req)
-		profile = cloneProfileForNPM(profile, scope)
+		p = cloneProfileForNPM(profile, scope)
 	}
 
-	slog.Debug("tls_fingerprint_using_profile", "account_id", accountID, "profile", profile.Name, "grease", profile.EnableGREASE)
+	slog.Debug("tls_fingerprint_using_profile", "account_id", accountID, "profile", p.Name, "grease", p.EnableGREASE)
 
 	// 获取或创建带 TLS 指纹的客户端
 	useRawWriteLayer := req != nil && req.URL != nil &&
 		strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), anthropicAPIHost)
-	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, profile, useRawWriteLayer)
+	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, p, useRawWriteLayer)
 	if err != nil {
 		slog.Debug("tls_fingerprint_acquire_client_failed", "account_id", accountID, "error", err)
 		return nil, err
