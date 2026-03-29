@@ -966,6 +966,7 @@ export default {
       totalAccounts: '账号总数',
       activeAccounts: '活跃账号',
       todayRequests: '今日请求',
+      newUsersToday: '今日新增用户',
       totalRequests: '总请求数',
       todayCost: '今日消费',
       totalCost: '总消费',
@@ -978,6 +979,10 @@ export default {
       cacheToday: '今日缓存',
       performance: '性能指标',
       avgResponse: '平均响应',
+      active: '活跃',
+      ok: '正常',
+      err: '异常',
+      create: '创建',
       averageTime: '平均时间',
       timeRange: '时间范围',
       granularity: '粒度',
@@ -988,6 +993,7 @@ export default {
       metricTokens: '按 Token',
       metricActualCost: '按实际消费',
       tokenUsageTrend: 'Token 使用趋势',
+      userUsageTrend: '用户使用趋势（Top 12）',
       noDataAvailable: '暂无数据',
       model: '模型',
       group: '分组',
@@ -1819,6 +1825,14 @@ export default {
         tooltip: '启用后，当请求包含 MCP 工具时，会在 system prompt 中注入 XML 格式调用协议提示词。关闭此选项可避免对某些客户端造成干扰。',
         enabled: '已启用',
         disabled: '已禁用'
+      },
+      claudeMaxSimulation: {
+        title: 'Claude Max 用量模拟',
+        tooltip:
+          '启用后，对于上游未返回 cache-write 用量的 Claude 请求，系统会在保持总 token 不变的前提下，确定性映射为少量输入 + 1 小时缓存创建用量。',
+        enabled: '启用（模拟 1 小时缓存）',
+        disabled: '禁用',
+        hint: '仅调整 usage 计费日志中的 token 分类，不会持久化每次请求的映射状态。'
       },
       supportedScopes: {
         title: '支持的模型系列',
@@ -4670,11 +4684,12 @@ export default {
         deleteConfirm: '确定删除存储配置 {profileID} 吗？',
         columns: {
           profile: '配置',
-          profileId: 'Profile ID',
+          profileId: '配置 ID',
           name: '名称',
           provider: '存储类型',
           active: '生效状态',
           endpoint: '端点',
+          bucket: '存储桶',
           storagePath: '存储路径',
           capacityUsage: '容量 / 已用',
           capacityUnlimited: '无限制',
@@ -4802,6 +4817,56 @@ export default {
       failedToSave: '保存设置失败',
       failedToTestSmtp: 'SMTP 连接测试失败',
       failedToSendTestEmail: '发送测试邮件失败'
+    },
+
+    tlsFingerprintProfiles: {
+      title: 'TLS 模板',
+      description: '管理 OAuth 账号可选的 TLS 指纹模板',
+      createProfile: '新建模板',
+      editProfile: '编辑模板',
+      deleteProfile: '删除模板',
+      noProfiles: '暂无 TLS 模板',
+      createFirstProfile: '创建第一个 TLS 模板',
+      loadFailed: '加载 TLS 模板失败',
+      saveFailed: '保存 TLS 模板失败',
+      createSuccess: 'TLS 模板创建成功',
+      updateSuccess: 'TLS 模板更新成功',
+      deleteSuccess: 'TLS 模板删除成功',
+      deleteFailed: '删除 TLS 模板失败',
+      deleteConfirmMessage: '确定要删除模板“{name}”吗？',
+      columns: {
+        name: '名称',
+        description: '描述',
+        grease: 'GREASE',
+        alpn: 'ALPN',
+        actions: '操作'
+      },
+      form: {
+        pasteYaml: '粘贴 YAML 模板',
+        pasteYamlPlaceholder: '粘贴采集器导出的 YAML 内容...',
+        parseYaml: '解析 YAML',
+        pasteYamlHint: '可从以下地址采集：',
+        openCollector: 'TLS 采集器',
+        yamlParsed: 'YAML 解析成功',
+        yamlParseFailed: 'YAML 解析失败',
+        name: '模板名称',
+        namePlaceholder: '例如：Windows 上的 Chrome 136',
+        description: '描述',
+        descriptionPlaceholder: '可选，填写模板说明',
+        enableGrease: '启用 GREASE',
+        enableGreaseHint: '在 ClientHello 中启用 GREASE 扩展行为',
+        cipherSuites: 'Cipher Suites',
+        cipherSuitesHint: '每行一个 Cipher Suite',
+        curves: 'Curves',
+        curvesHint: '每行一个曲线/分组',
+        signatureAlgorithms: 'Signature Algorithms',
+        supportedVersions: '支持的 TLS 版本',
+        keyShareGroups: 'Key Share Groups',
+        extensions: 'Extensions',
+        pointFormats: 'EC Point Formats',
+        pskModes: 'PSK Key Exchange Modes',
+        alpnProtocols: 'ALPN 协议'
+      }
     },
 
     // Error Passthrough Rules

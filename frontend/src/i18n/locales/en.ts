@@ -4511,6 +4511,7 @@ export default {
           provider: 'Type',
           active: 'Active',
           endpoint: 'Endpoint',
+          bucket: 'Bucket',
           storagePath: 'Storage Path',
           capacityUsage: 'Capacity / Used',
           capacityUnlimited: 'Unlimited',
@@ -4638,6 +4639,57 @@ export default {
       failedToSave: 'Failed to save settings',
       failedToTestSmtp: 'SMTP connection test failed',
       failedToSendTestEmail: 'Failed to send test email'
+    },
+
+    // Error Passthrough Rules
+    tlsFingerprintProfiles: {
+      title: 'TLS Profile',
+      description: 'Manage optional TLS fingerprint profile templates for OAuth accounts',
+      createProfile: 'Create Profile',
+      editProfile: 'Edit Profile',
+      deleteProfile: 'Delete Profile',
+      noProfiles: 'No TLS profile configured',
+      createFirstProfile: 'Create your first TLS profile',
+      loadFailed: 'Failed to load TLS profiles',
+      saveFailed: 'Failed to save TLS profile',
+      createSuccess: 'TLS profile created successfully',
+      updateSuccess: 'TLS profile updated successfully',
+      deleteSuccess: 'TLS profile deleted successfully',
+      deleteFailed: 'Failed to delete TLS profile',
+      deleteConfirmMessage: 'Are you sure you want to delete profile "{name}"?',
+      columns: {
+        name: 'Name',
+        description: 'Description',
+        grease: 'GREASE',
+        alpn: 'ALPN',
+        actions: 'Actions'
+      },
+      form: {
+        pasteYaml: 'Paste YAML Profile',
+        pasteYamlPlaceholder: 'Paste the YAML from collector output...',
+        parseYaml: 'Parse YAML',
+        pasteYamlHint: 'Collect from',
+        openCollector: 'TLS Collector',
+        yamlParsed: 'YAML parsed successfully',
+        yamlParseFailed: 'Failed to parse YAML',
+        name: 'Profile Name',
+        namePlaceholder: 'e.g. Chrome 136 on Windows',
+        description: 'Description',
+        descriptionPlaceholder: 'Optional description for this profile',
+        enableGrease: 'Enable GREASE',
+        enableGreaseHint: 'Enable GREASE extension behavior in ClientHello',
+        cipherSuites: 'Cipher Suites',
+        cipherSuitesHint: 'One cipher suite per line',
+        curves: 'Curves',
+        curvesHint: 'One curve/group per line',
+        signatureAlgorithms: 'Signature Algorithms',
+        supportedVersions: 'Supported TLS Versions',
+        keyShareGroups: 'Key Share Groups',
+        extensions: 'Extensions',
+        pointFormats: 'EC Point Formats',
+        pskModes: 'PSK Key Exchange Modes',
+        alpnProtocols: 'ALPN Protocols'
+      }
     },
 
     // Error Passthrough Rules
