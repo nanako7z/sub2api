@@ -2089,7 +2089,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const rawAgMapping = credentials?.model_mapping as Record<string, string> | undefined
     if (rawAgMapping && typeof rawAgMapping === 'object') {
       const entries = Object.entries(rawAgMapping)
-      // 无论是白名单样式(key===value)还是真正的映射，都统一转换为映射列�?      antigravityModelMappings.value = entries.map(([from, to]) => ({ from, to }))
+      // Normalize both whitelist-style (key===value) and mapping-style data into mapping rows
+      antigravityModelMappings.value = entries.map(([from, to]) => ({ from, to }))
     } else {
       // 兼容旧数据：�?model_whitelist 读取，转换为映射格式
       const rawWhitelist = credentials?.model_whitelist
