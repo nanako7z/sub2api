@@ -231,7 +231,59 @@ func TestShouldEnablePreSharedKey(t *testing.T) {
 	}
 }
 
+func TestBuildClientHelloSpec_Extension41ScopeDriven(t *testing.T) {
+	resetPSKSessionCacheRegistryForTest()
+	defer resetPSKSessionCacheRegistryForTest()
+
+	hasPSKExt := func(spec *utls.ClientHelloSpec) bool {
+		for _, ext := range spec.Extensions {
+			if _, ok := ext.(*utls.UtlsPreSharedKeyExtension); ok {
+				return true
+			}
+		}
+		return false
+	}
+
+	msgProfile := &Profile{
+		ECHScopeKey: "messages",
+		Extensions:  []uint16{65281, 0, 11, 10, 35, 16, 22, 23, 13, 43, 45, 51},
+	}
+
+	// Scope enables PSK but no cached ticket yet: should not carry extension 41.
+	specMessages := buildClientHelloSpecFromProfile(msgProfile)
+	if hasPSKExt(specMessages) {
+		t.Fatal("expected extension 41 to be omitted when no PSK session ticket is available")
+	}
+
+	// After one session ticket exists in cache: should carry extension 41.
+	cache := preSharedKeySessionCache(msgProfile)
+	if cache == nil {
+		t.Fatal("messages scope should have a PSK cache")
+	}
+	cache.Put("ticket-1", new(utls.ClientSessionState))
+	specMessagesWithTicket := buildClientHelloSpecFromProfile(msgProfile)
+	if !hasPSKExt(specMessagesWithTicket) {
+		t.Fatal("expected extension 41 to be appended when PSK session ticket is available")
+	}
+
+	// Scope does not enable PSK: even if cached ticket exists globally, it should not be carried.
+	preSharedKeySessionCache(&Profile{ECHScopeKey: "messages_count_tokens"}).Put("ticket-2", new(utls.ClientSessionState))
+	specMCP := buildClientHelloSpecFromProfile(&Profile{
+		ECHScopeKey: "mcp_servers",
+		Extensions:  []uint16{65281, 0, 11, 10, 35, 22, 23, 13, 43, 45, 51, 41},
+	})
+	if hasPSKExt(specMessages) {
+		t.Fatal("expected extension 41 to remain omitted for messages without ticket")
+	}
+	if hasPSKExt(specMCP) {
+		t.Fatal("expected extension 41 to be omitted for mcp_servers scope")
+	}
+}
+
 func TestPreSharedKeySessionCacheByScope(t *testing.T) {
+	resetPSKSessionCacheRegistryForTest()
+	defer resetPSKSessionCacheRegistryForTest()
+
 	msgProfile := &Profile{
 		ECHScopeKey:    "messages_count_tokens",
 		ClientCacheKey: "npm:messages_count_tokens",
@@ -249,6 +301,12 @@ func TestPreSharedKeySessionCacheByScope(t *testing.T) {
 	if preSharedKeySessionCache(&Profile{ECHScopeKey: "mcp_servers"}) != nil {
 		t.Fatal("mcp_servers should not use pre_shared_key session cache")
 	}
+}
+
+func resetPSKSessionCacheRegistryForTest() {
+	globalPSKSessionCacheRegistry.mu.Lock()
+	defer globalPSKSessionCacheRegistry.mu.Unlock()
+	globalPSKSessionCacheRegistry.caches = make(map[string]utls.ClientSessionCache)
 }
 
 // TestSOCKS5ProxyDialerBasic tests SOCKS5 proxy dialer creation.
@@ -352,7 +410,7 @@ func TestAllProfiles(t *testing.T) {
 				EnableGREASE: false,
 				CipherSuites: []uint16{4866, 4867, 4865, 49199, 49195, 49200, 49196, 158, 49191, 103, 49192, 107, 163, 159, 52393, 52392, 52394, 49327, 49325, 49315, 49311, 49245, 49249, 49239, 49235, 162, 49326, 49324, 49314, 49310, 49244, 49248, 49238, 49234, 49188, 106, 49187, 64, 49162, 49172, 57, 56, 49161, 49171, 51, 50, 157, 49313, 49309, 49233, 156, 49312, 49308, 49232, 61, 60, 53, 47, 255},
 				Curves:       []uint16{29, 23, 30, 25, 24, 256, 257, 258, 259, 260},
-				PointFormats: []uint16{0, 1, 2},
+				PointFormats: []uint8{0, 1, 2},
 				Extensions:   []uint16{0, 11, 10, 35, 16, 22, 23, 13, 43, 45, 51},
 			},
 			JA4CipherHash: "a33745022dd6",

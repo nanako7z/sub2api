@@ -37,6 +37,12 @@ type Profile struct {
 	PointFormats   []uint8
 	EnableGREASE   bool
 	ECHConfigList  []byte // Optional ECHConfigList for endpoint-aware dynamic 65037 generation
+	Extensions          []uint16
+	SignatureAlgorithms []uint16
+	ALPNProtocols       []string
+	SupportedVersions   []uint16
+	KeyShareGroups      []uint16
+	PSKModes            []uint16
 	// ECHScopeKey is a runtime-only key used for endpoint-aware shape scheduling/cache segregation.
 	ECHScopeKey string
 	// ClientCacheKey is a runtime-only cache key suffix used by upstream client cache.
@@ -226,6 +232,21 @@ func (c *expiringClientSessionCache) Put(sessionKey string, cs *utls.ClientSessi
 	c.expires[sessionKey] = time.Now().Add(c.ttl)
 }
 
+func (c *expiringClientSessionCache) HasValidSession() bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, exp := range c.expires {
+		if now.After(exp) {
+			delete(c.expires, key)
+			c.base.Put(key, nil)
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 type pskSessionCacheRegistry struct {
 	mu     sync.Mutex
 	caches map[string]utls.ClientSessionCache
@@ -246,6 +267,12 @@ func (r *pskSessionCacheRegistry) getOrCreate(key string) utls.ClientSessionCach
 	return cache
 }
 
+func (r *pskSessionCacheRegistry) get(key string) utls.ClientSessionCache {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.caches[key]
+}
+
 func shouldEnablePreSharedKey(profile *Profile) bool {
 	if profile == nil {
 		return false
@@ -258,10 +285,7 @@ func shouldEnablePreSharedKey(profile *Profile) bool {
 	}
 }
 
-func preSharedKeySessionCache(profile *Profile) utls.ClientSessionCache {
-	if !shouldEnablePreSharedKey(profile) {
-		return nil
-	}
+func preSharedKeyCacheKey(profile *Profile) string {
 	cacheKey := "npm:messages"
 	if profile != nil {
 		if v := strings.TrimSpace(profile.ClientCacheKey); v != "" {
@@ -270,7 +294,29 @@ func preSharedKeySessionCache(profile *Profile) utls.ClientSessionCache {
 			cacheKey = "npm:" + v
 		}
 	}
-	return globalPSKSessionCacheRegistry.getOrCreate(cacheKey)
+	return cacheKey
+}
+
+func preSharedKeySessionCache(profile *Profile) utls.ClientSessionCache {
+	if !shouldEnablePreSharedKey(profile) {
+		return nil
+	}
+	return globalPSKSessionCacheRegistry.getOrCreate(preSharedKeyCacheKey(profile))
+}
+
+func hasAvailablePreSharedKeySession(profile *Profile) bool {
+	if !shouldEnablePreSharedKey(profile) {
+		return false
+	}
+	cache := globalPSKSessionCacheRegistry.get(preSharedKeyCacheKey(profile))
+	if cache == nil {
+		return false
+	}
+	if expiring, ok := cache.(*expiringClientSessionCache); ok {
+		return expiring.HasValidSession()
+	}
+	// Unknown cache implementation: conservatively assume available.
+	return true
 }
 
 func mustDecodeBase64(v string) []byte {
@@ -603,6 +649,33 @@ func toUTLSCurves(curves []uint16) []utls.CurveID {
 	return result
 }
 
+func toUTLSSignatureSchemes(sigs []uint16) []utls.SignatureScheme {
+	result := make([]utls.SignatureScheme, len(sigs))
+	for i, s := range sigs {
+		result[i] = utls.SignatureScheme(s)
+	}
+	return result
+}
+
+func toUTLSPSKModes(modes []uint16) []uint8 {
+	result := make([]uint8, 0, len(modes))
+	for _, m := range modes {
+		if m > 255 {
+			continue
+		}
+		result = append(result, uint8(m))
+	}
+	return result
+}
+
+func toUTLSKeyShares(groups []uint16) []utls.KeyShare {
+	result := make([]utls.KeyShare, 0, len(groups))
+	for _, g := range groups {
+		result = append(result, utls.KeyShare{Group: utls.CurveID(g)})
+	}
+	return result
+}
+
 // buildClientHelloSpecFromProfile constructs ClientHelloSpec from a Profile.
 // This is a standalone function that can be used by both Dialer and HTTPProxyDialer.
 func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
@@ -630,37 +703,103 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		pointFormats = defaultPointFormats
 	}
 
+	// Get signature algorithms
+	var signatureAlgorithms []utls.SignatureScheme
+	if profile != nil && len(profile.SignatureAlgorithms) > 0 {
+		signatureAlgorithms = toUTLSSignatureSchemes(profile.SignatureAlgorithms)
+	} else {
+		signatureAlgorithms = defaultSignatureAlgorithms
+	}
+
+	// Get supported versions
+	supportedVersions := []uint16{utls.VersionTLS13, utls.VersionTLS12}
+	if profile != nil && len(profile.SupportedVersions) > 0 {
+		supportedVersions = profile.SupportedVersions
+	}
+
+	// Get key shares
+	keyShares := []utls.KeyShare{
+		{Group: utls.CurveID(0x11ec)}, // X25519MLKEM768
+		{Group: utls.X25519},
+	}
+	if profile != nil && len(profile.KeyShareGroups) > 0 {
+		keyShares = toUTLSKeyShares(profile.KeyShareGroups)
+	}
+
+	// Get PSK modes
+	pskModes := []uint8{utls.PskModeDHE}
+	if profile != nil && len(profile.PSKModes) > 0 {
+		customModes := toUTLSPSKModes(profile.PSKModes)
+		if len(customModes) > 0 {
+			pskModes = customModes
+		}
+	}
+
 	scope := ""
 	if profile != nil {
 		scope = strings.TrimSpace(profile.ECHScopeKey)
 	}
-	includeALPN := shouldIncludeALPN(scope)
+	includeALPNByScope := shouldIncludeALPN(scope)
+	alpnProtocols := []string{"http/1.1"}
+	if profile != nil && len(profile.ALPNProtocols) > 0 {
+		alpnProtocols = profile.ALPNProtocols
+	} else if !includeALPNByScope {
+		alpnProtocols = nil
+	}
+
 	// npm-like extension order from latest capture:
 	// 65281,0,11,10,35,(16),22,23,13,43,45,51,(41 when PSK available)
-	extensions := make([]utls.TLSExtension, 0, 12)
-	extensions = append(extensions,
-		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient}, // 65281
-		&utls.SNIExtension{}, // 0
-		&utls.SupportedPointsExtension{SupportedPoints: pointFormats}, // 11
-		&utls.SupportedCurvesExtension{Curves: curves},                // 10
-		&utls.SessionTicketExtension{},                                // 35
-	)
-	if includeALPN {
-		extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}}) // 16
+	defaultExtOrder := []uint16{65281, 0, 11, 10, 35, 22, 23, 13, 43, 45, 51}
+	if includeALPNByScope {
+		defaultExtOrder = []uint16{65281, 0, 11, 10, 35, 16, 22, 23, 13, 43, 45, 51}
 	}
-	extensions = append(extensions,
-		&utls.GenericExtension{Id: 22, Data: []byte{}},                                               // 22 encrypt_then_mac
-		&utls.ExtendedMasterSecretExtension{},                                                        // 23
-		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: defaultSignatureAlgorithms}, // 13
-		&utls.SupportedVersionsExtension{Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12}},   // 43
-		&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},                          // 45
-		// Captured shape uses two shares: X25519MLKEM768 + X25519.
-		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
-			{Group: utls.CurveID(0x11ec)}, // X25519MLKEM768
-			{Group: utls.X25519},
-		}}, // 51
-	)
-	if shouldEnablePreSharedKey(profile) {
+	extOrder := defaultExtOrder
+	if profile != nil && len(profile.Extensions) > 0 {
+		extOrder = profile.Extensions
+	}
+
+	extensions := make([]utls.TLSExtension, 0, len(extOrder)+1)
+	pskShouldEnable := hasAvailablePreSharedKeySession(profile)
+	hasPSKExtension := false
+	for _, extID := range extOrder {
+		switch extID {
+		case 65281:
+			extensions = append(extensions, &utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient})
+		case 0:
+			extensions = append(extensions, &utls.SNIExtension{})
+		case 11:
+			extensions = append(extensions, &utls.SupportedPointsExtension{SupportedPoints: pointFormats})
+		case 10:
+			extensions = append(extensions, &utls.SupportedCurvesExtension{Curves: curves})
+		case 35:
+			extensions = append(extensions, &utls.SessionTicketExtension{})
+		case 16:
+			if len(alpnProtocols) > 0 {
+				extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: alpnProtocols})
+			}
+		case 22:
+			extensions = append(extensions, &utls.GenericExtension{Id: 22, Data: []byte{}})
+		case 23:
+			extensions = append(extensions, &utls.ExtendedMasterSecretExtension{})
+		case 13:
+			extensions = append(extensions, &utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: signatureAlgorithms})
+		case 43:
+			extensions = append(extensions, &utls.SupportedVersionsExtension{Versions: supportedVersions})
+		case 45:
+			extensions = append(extensions, &utls.PSKKeyExchangeModesExtension{Modes: pskModes})
+		case 51:
+			extensions = append(extensions, &utls.KeyShareExtension{KeyShares: keyShares})
+		case 41:
+			if pskShouldEnable {
+				extensions = append(extensions, &utls.UtlsPreSharedKeyExtension{})
+				hasPSKExtension = true
+			}
+		default:
+			extensions = append(extensions, &utls.GenericExtension{Id: extID, Data: []byte{}})
+		}
+	}
+	// Keep existing behavior: for eligible scopes, ensure extension 41 is carried.
+	if pskShouldEnable && !hasPSKExtension {
 		extensions = append(extensions, &utls.UtlsPreSharedKeyExtension{}) // 41
 	}
 

@@ -1147,9 +1147,14 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 }
 
 // IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装
-// 所有 Anthropic OAuth/SetupToken 账号强制开启，模拟 Claude Code 客户端的 TLS 握手特征
+// 仅 Anthropic OAuth/SetupToken 账号支持；具体是否启用由账号 extra.enable_tls_fingerprint 决定。
+// 字段缺失或类型不正确时，按 false（关闭）处理。
 func (a *Account) IsTLSFingerprintEnabled() bool {
-	return a.IsAnthropicOAuthOrSetupToken()
+	if a == nil || !a.IsAnthropicOAuthOrSetupToken() || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["enable_tls_fingerprint"].(bool)
+	return ok && enabled
 }
 
 // GetTLSFingerprintProfileID 获取账号绑定的 TLS 指纹模板 ID
