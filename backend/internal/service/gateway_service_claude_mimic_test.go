@@ -242,6 +242,145 @@ func TestBuildCountTokensRequest_OAuthMimic_PassthroughThenOverride(t *testing.T
 	}
 }
 
+func TestBuildUpstreamRequest_OAuthMimic_FingerprintUnificationDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(nil))
+	c.Request.Header.Set("user-agent", "custom-client/1.0")
+	c.Request.Header.Set("x-stainless-os", "Windows")
+	c.Request.Header.Set("x-stainless-arch", "x86")
+	c.Request.Header.Set("anthropic-beta", "downstream-extra-beta")
+
+	account := &Account{
+		ID:          1010,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"max_tokens":16}`)
+
+	settings := NewSettingService(&gatewayToggleSettingRepoStub{
+		values: map[string]string{
+			SettingKeyEnableFingerprintUnification: "false",
+		},
+	}, &config.Config{})
+
+	svc := &GatewayService{settingService: settings}
+	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-5", false, true)
+	if err != nil {
+		t.Fatalf("buildUpstreamRequest failed: %v", err)
+	}
+
+	if got := req.Header.Get("user-agent"); got != "custom-client/1.0" {
+		t.Fatalf("user-agent should keep downstream value when fingerprint unification disabled, got %q", got)
+	}
+	if got := req.Header.Get("x-stainless-os"); got != "Windows" {
+		t.Fatalf("x-stainless-os should keep downstream value when fingerprint unification disabled, got %q", got)
+	}
+	if got := req.Header.Get("x-stainless-arch"); got != "x86" {
+		t.Fatalf("x-stainless-arch should keep downstream value when fingerprint unification disabled, got %q", got)
+	}
+}
+
+func TestBuildCountTokensRequest_OAuthMimic_FingerprintUnificationDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(nil))
+	c.Request.Header.Set("user-agent", "custom-client/2.0")
+	c.Request.Header.Set("x-stainless-runtime-version", "v0.0.1")
+	c.Request.Header.Set("anthropic-beta", "ct-extra-beta")
+
+	account := &Account{
+		ID:          1011,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+
+	settings := NewSettingService(&gatewayToggleSettingRepoStub{
+		values: map[string]string{
+			SettingKeyEnableFingerprintUnification: "false",
+		},
+	}, &config.Config{})
+
+	svc := &GatewayService{settingService: settings}
+	req, err := svc.buildCountTokensRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-5", true, true)
+	if err != nil {
+		t.Fatalf("buildCountTokensRequest failed: %v", err)
+	}
+
+	if got := req.Header.Get("user-agent"); got != "custom-client/2.0" {
+		t.Fatalf("user-agent should keep downstream value when fingerprint unification disabled, got %q", got)
+	}
+	if got := req.Header.Get("x-stainless-runtime-version"); got != "v0.0.1" {
+		t.Fatalf("x-stainless-runtime-version should keep downstream value when fingerprint unification disabled, got %q", got)
+	}
+}
+
+func TestGatewayToggleDefaults(t *testing.T) {
+	svc := &GatewayService{}
+	if !svc.fingerprintUnificationEnabled(context.Background()) {
+		t.Fatalf("fingerprint unification should default to true")
+	}
+	if svc.metadataPassthroughEnabled(context.Background()) {
+		t.Fatalf("metadata passthrough should default to false")
+	}
+}
+
+func TestGatewayToggle_MetadataPassthroughSetting(t *testing.T) {
+	svcFalse := &GatewayService{
+		settingService: NewSettingService(&gatewayToggleSettingRepoStub{
+			values: map[string]string{SettingKeyEnableMetadataPassthrough: "false"},
+		}, &config.Config{}),
+	}
+	if svcFalse.metadataPassthroughEnabled(context.Background()) {
+		t.Fatalf("metadata passthrough should be false when setting=false")
+	}
+
+	svcTrue := &GatewayService{
+		settingService: NewSettingService(&gatewayToggleSettingRepoStub{
+			values: map[string]string{SettingKeyEnableMetadataPassthrough: "true"},
+		}, &config.Config{}),
+	}
+	if !svcTrue.metadataPassthroughEnabled(context.Background()) {
+		t.Fatalf("metadata passthrough should be true when setting=true")
+	}
+}
+
+type gatewayToggleSettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *gatewayToggleSettingRepoStub) Get(context.Context, string) (*Setting, error) {
+	return nil, ErrSettingNotFound
+}
+func (s *gatewayToggleSettingRepoStub) GetValue(_ context.Context, key string) (string, error) {
+	if v, ok := s.values[key]; ok {
+		return v, nil
+	}
+	return "", ErrSettingNotFound
+}
+func (s *gatewayToggleSettingRepoStub) Set(context.Context, string, string) error { return nil }
+func (s *gatewayToggleSettingRepoStub) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		if v, ok := s.values[k]; ok {
+			out[k] = v
+		}
+	}
+	return out, nil
+}
+func (s *gatewayToggleSettingRepoStub) SetMultiple(context.Context, map[string]string) error {
+	return nil
+}
+func (s *gatewayToggleSettingRepoStub) GetAll(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+func (s *gatewayToggleSettingRepoStub) Delete(context.Context, string) error { return nil }
+
 func TestResolveMCPPrefetchTTLs(t *testing.T) {
 	if got := resolveMCPPrefetchSessionTTL(nil); got != defaultMCPPrefetchSessionTTL {
 		t.Fatalf("nil config session ttl mismatch: got %v want %v", got, defaultMCPPrefetchSessionTTL)

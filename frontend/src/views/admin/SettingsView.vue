@@ -1164,10 +1164,7 @@
                   {{ t('admin.settings.scheduling.allowUngroupedKeyHint') }}
                 </p>
               </div>
-              <label class="toggle">
-                <input v-model="form.allow_ungrouped_key_scheduling" type="checkbox" />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle v-model="form.allow_ungrouped_key_scheduling" />
             </div>
           </div>
         </div>
@@ -1192,10 +1189,7 @@
                   {{ t('admin.settings.telemetryPolicy.fingerprintUnificationHint') }}
                 </p>
               </div>
-              <label class="toggle">
-                <input v-model="form.enable_fingerprint_unification" type="checkbox" />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle v-model="form.enable_fingerprint_unification" />
             </div>
 
             <div class="flex items-center justify-between">
@@ -1207,10 +1201,7 @@
                   {{ t('admin.settings.telemetryPolicy.metadataPassthroughHint') }}
                 </p>
               </div>
-              <label class="toggle">
-                <input v-model="form.enable_metadata_passthrough" type="checkbox" />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle v-model="form.enable_metadata_passthrough" />
             </div>
 
             <div class="flex items-center justify-between">
@@ -1222,10 +1213,7 @@
                   {{ t('admin.settings.telemetryPolicy.claudeBillingHeaderEnabledHint') }}
                 </p>
               </div>
-              <label class="toggle">
-                <input v-model="form.claude_billing_header_enabled" type="checkbox" />
-                <span class="toggle-slider"></span>
-              </label>
+              <Toggle v-model="form.claude_billing_header_enabled" />
             </div>
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -1267,10 +1255,7 @@
                     {{ t('admin.settings.telemetryPolicy.strictModeHint') }}
                   </p>
                 </div>
-                <label class="toggle">
-                  <input v-model="form.claude_billing_header_strict" type="checkbox" />
-                  <span class="toggle-slider"></span>
-                </label>
+                <Toggle v-model="form.claude_billing_header_strict" />
               </div>
             </div>
           </div>

@@ -431,6 +431,20 @@ func logClaudeMimicDebug(req *http.Request, body []byte, account *Account, token
 	logger.LegacyPrintf("service.gateway", "[ClaudeMimicDebug] %s", line)
 }
 
+func (s *GatewayService) fingerprintUnificationEnabled(ctx context.Context) bool {
+	if s != nil && s.settingService != nil {
+		return s.settingService.IsFingerprintUnificationEnabled(ctx)
+	}
+	return true
+}
+
+func (s *GatewayService) metadataPassthroughEnabled(ctx context.Context) bool {
+	if s != nil && s.settingService != nil {
+		return s.settingService.IsMetadataPassthroughEnabled(ctx)
+	}
+	return false
+}
+
 func isClaudeCodeCredentialScopeError(msg string) bool {
 	m := strings.ToLower(strings.TrimSpace(msg))
 	if m == "" {
@@ -4671,7 +4685,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 再 inject Claude Code prompt（带 cache_control: ephemeral）。
 		// 这样注入的 cache_control 不会被 strip 删除，确保稳定前缀可被上游缓存。
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: false}
-		if s.identityService != nil {
+		if s.identityService != nil && !s.metadataPassthroughEnabled(ctx) {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 			if err == nil && fp != nil {
 				if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
@@ -6249,8 +6263,8 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		clientHeaders = c.Request.Header
 	}
 
-	// OAuth账号：重写 metadata.user_id（替换 device_id/account_uuid/session_id）
-	if account.IsOAuth() && s.identityService != nil {
+	// OAuth账号：按开关决定是否重写 metadata.user_id（替换 device_id/account_uuid/session_id）。
+	if account.IsOAuth() && !s.metadataPassthroughEnabled(ctx) && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err != nil {
 			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
@@ -6295,8 +6309,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		incomingBeta := clientHeaders.Get("anthropic-beta")
 		passthroughOAuthMimicHeaders(req, clientHeaders)
 
-		// 强制覆盖 Claude Code 指纹头（UA/X-Stainless/X-App/Accept/Accept-Encoding 等）。
-		applyClaudeCodeMimicHeaders(req, reqStream, claude.EndpointMessages)
+		// 指纹统一开关关闭时，保留客户端原始指纹头；开启时强制覆盖为 Claude Code 指纹。
+		if s.fingerprintUnificationEnabled(ctx) {
+			applyClaudeCodeMimicHeaders(req, reqStream, claude.EndpointMessages)
+		}
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
 
@@ -9026,9 +9042,11 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		clientHeaders = c.Request.Header
 	}
 
-	// OAuth count_tokens passthrough: keep payload unchanged.
-	// For non-passthrough paths, preserve legacy identity rewrite behavior.
-	if account.IsOAuth() && !passthroughBody && s.identityService != nil {
+	// OAuth count_tokens:
+	// - passthroughBody=true: 保持 payload 不变；
+	// - metadata 透传开关开启: 保留客户端 metadata.user_id；
+	// - 其余场景沿用既有 metadata 重写逻辑。
+	if account.IsOAuth() && !passthroughBody && !s.metadataPassthroughEnabled(ctx) && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID)
 		if err == nil {
 			accountUUID := account.GetExtraString("account_uuid")
@@ -9072,7 +9090,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		incomingBeta := clientHeaders.Get("anthropic-beta")
 		passthroughOAuthMimicHeaders(req, clientHeaders)
 
-		applyClaudeCodeMimicHeaders(req, false, claude.EndpointCountTokens)
+		if s.fingerprintUnificationEnabled(ctx) {
+			applyClaudeCodeMimicHeaders(req, false, claude.EndpointCountTokens)
+		}
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
 
