@@ -108,8 +108,12 @@ type SystemSettings struct {
 	PartnerEnabled bool `json:"partner_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification bool `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough    bool `json:"enable_metadata_passthrough"`
+	EnableFingerprintUnification  bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough     bool   `json:"enable_metadata_passthrough"`
+	ClaudeBillingHeaderEnabled    bool   `json:"claude_billing_header_enabled"`
+	ClaudeBillingHeaderCCHMode    string `json:"claude_billing_header_cch_mode"`
+	ClaudeBillingHeaderStrict     bool   `json:"claude_billing_header_strict"`
+	ClaudeBillingHeaderEntrypoint string `json:"claude_billing_header_entrypoint"`
 }
 
 type DefaultSubscriptionSetting struct {

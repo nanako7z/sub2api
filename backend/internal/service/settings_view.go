@@ -89,8 +89,12 @@ type SystemSettings struct {
 	PartnerEnabled bool
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification bool // 是否统一 OAuth 账号的指纹头（默认 true）
-	EnableMetadataPassthrough    bool // 是否透传客户端原始 metadata（默认 false）
+	EnableFingerprintUnification  bool   // 是否统一 OAuth 账号的指纹头（默认 true）
+	EnableMetadataPassthrough     bool   // 是否透传客户端原始 metadata（默认 false）
+	ClaudeBillingHeaderEnabled    bool   // 是否注入 x-anthropic-billing-header（默认 true）
+	ClaudeBillingHeaderCCHMode    string // cch 策略: off|placeholder|attested（默认 off）
+	ClaudeBillingHeaderStrict     bool   // attested 不可用时是否严格失败（默认 false）
+	ClaudeBillingHeaderEntrypoint string // cc_entrypoint 值（默认 cli）
 }
 
 type DefaultSubscriptionSetting struct {

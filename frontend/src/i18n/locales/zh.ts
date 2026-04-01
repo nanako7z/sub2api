@@ -4462,6 +4462,26 @@ export default {
         allowUngroupedKey: '允许未分组 Key 调度',
         allowUngroupedKeyHint: '关闭后，未分配到任何分组的 API Key 将无法发起请求（返回 403）。建议保持关闭以确保所有 Key 都归属明确的分组。'
       },
+      telemetryPolicy: {
+        title: '遥测策略',
+        description: '控制上游请求中的客户端标识与归因字段行为',
+        fingerprintUnification: '指纹统一化',
+        fingerprintUnificationHint: '统一共享同一 OAuth 账号用户的 X-Stainless-* 请求头。关闭后透传客户端原始请求头。',
+        metadataPassthrough: 'Metadata 透传',
+        metadataPassthroughHint: '透传客户端原始 metadata.user_id，不进行重写。',
+        claudeBillingHeaderEnabled: '启用 Claude Billing Header 注入',
+        claudeBillingHeaderEnabledHint: '在 Anthropic OAuth 请求体 system[0] 注入 x-anthropic-billing-header。',
+        cchMode: 'cch 策略',
+        cchModeOff: '关闭（不注入 cch）',
+        cchModePlaceholder: '占位（cch=00000）',
+        cchModeAttested: 'Attested（实验）',
+        cchModeHint: 'attested 当前不可用时会按“严格模式”决定失败或降级。',
+        entrypoint: 'cc_entrypoint',
+        entrypointPlaceholder: 'cli',
+        entrypointHint: '写入 billing header 的 cc_entrypoint 值。',
+        strictMode: '严格模式',
+        strictModeHint: '当 attested 模式不可用时直接失败；关闭则自动降级。'
+      },
       referral: {
         title: '推荐计划设置',
         description: '配置用户推荐奖励和返佣规则',

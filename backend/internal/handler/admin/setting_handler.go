@@ -136,9 +136,13 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ReferralCommissionRate:               settings.ReferralCommissionRate,
 		ReferralMaxCommissionPerUser:         settings.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:           settings.BalanceConsumptionPriority,
-		PartnerEnabled:                      settings.PartnerEnabled,
+		PartnerEnabled:                       settings.PartnerEnabled,
 		EnableFingerprintUnification:         settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:            settings.EnableMetadataPassthrough,
+		ClaudeBillingHeaderEnabled:           settings.ClaudeBillingHeaderEnabled,
+		ClaudeBillingHeaderCCHMode:           settings.ClaudeBillingHeaderCCHMode,
+		ClaudeBillingHeaderStrict:            settings.ClaudeBillingHeaderStrict,
+		ClaudeBillingHeaderEntrypoint:        settings.ClaudeBillingHeaderEntrypoint,
 	})
 }
 
@@ -233,8 +237,12 @@ type UpdateSettingsRequest struct {
 	PartnerEnabled bool `json:"partner_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification *bool `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough    *bool `json:"enable_metadata_passthrough"`
+	EnableFingerprintUnification  *bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough     *bool   `json:"enable_metadata_passthrough"`
+	ClaudeBillingHeaderEnabled    *bool   `json:"claude_billing_header_enabled"`
+	ClaudeBillingHeaderCCHMode    *string `json:"claude_billing_header_cch_mode"`
+	ClaudeBillingHeaderStrict     *bool   `json:"claude_billing_header_strict"`
+	ClaudeBillingHeaderEntrypoint *string `json:"claude_billing_header_entrypoint"`
 }
 
 // UpdateSettings 更新系统设置
@@ -614,7 +622,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ReferralCommissionRate:           req.ReferralCommissionRate,
 		ReferralMaxCommissionPerUser:     req.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:       req.BalanceConsumptionPriority,
-		PartnerEnabled:                  req.PartnerEnabled,
+		PartnerEnabled:                   req.PartnerEnabled,
 		EnableFingerprintUnification: func() bool {
 			if req.EnableFingerprintUnification != nil {
 				return *req.EnableFingerprintUnification
@@ -626,6 +634,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.EnableMetadataPassthrough
 			}
 			return previousSettings.EnableMetadataPassthrough
+		}(),
+		ClaudeBillingHeaderEnabled: func() bool {
+			if req.ClaudeBillingHeaderEnabled != nil {
+				return *req.ClaudeBillingHeaderEnabled
+			}
+			return previousSettings.ClaudeBillingHeaderEnabled
+		}(),
+		ClaudeBillingHeaderCCHMode: func() string {
+			if req.ClaudeBillingHeaderCCHMode != nil {
+				return *req.ClaudeBillingHeaderCCHMode
+			}
+			return previousSettings.ClaudeBillingHeaderCCHMode
+		}(),
+		ClaudeBillingHeaderStrict: func() bool {
+			if req.ClaudeBillingHeaderStrict != nil {
+				return *req.ClaudeBillingHeaderStrict
+			}
+			return previousSettings.ClaudeBillingHeaderStrict
+		}(),
+		ClaudeBillingHeaderEntrypoint: func() string {
+			if req.ClaudeBillingHeaderEntrypoint != nil {
+				return *req.ClaudeBillingHeaderEntrypoint
+			}
+			return previousSettings.ClaudeBillingHeaderEntrypoint
 		}(),
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
@@ -736,9 +768,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ReferralCommissionRate:               updatedSettings.ReferralCommissionRate,
 		ReferralMaxCommissionPerUser:         updatedSettings.ReferralMaxCommissionPerUser,
 		BalanceConsumptionPriority:           updatedSettings.BalanceConsumptionPriority,
-		PartnerEnabled:                      updatedSettings.PartnerEnabled,
+		PartnerEnabled:                       updatedSettings.PartnerEnabled,
 		EnableFingerprintUnification:         updatedSettings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:            updatedSettings.EnableMetadataPassthrough,
+		ClaudeBillingHeaderEnabled:           updatedSettings.ClaudeBillingHeaderEnabled,
+		ClaudeBillingHeaderCCHMode:           updatedSettings.ClaudeBillingHeaderCCHMode,
+		ClaudeBillingHeaderStrict:            updatedSettings.ClaudeBillingHeaderStrict,
+		ClaudeBillingHeaderEntrypoint:        updatedSettings.ClaudeBillingHeaderEntrypoint,
 	})
 }
 
@@ -913,6 +949,24 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.CustomMenuItems != after.CustomMenuItems {
 		changed = append(changed, "custom_menu_items")
+	}
+	if before.EnableFingerprintUnification != after.EnableFingerprintUnification {
+		changed = append(changed, "enable_fingerprint_unification")
+	}
+	if before.EnableMetadataPassthrough != after.EnableMetadataPassthrough {
+		changed = append(changed, "enable_metadata_passthrough")
+	}
+	if before.ClaudeBillingHeaderEnabled != after.ClaudeBillingHeaderEnabled {
+		changed = append(changed, "claude_billing_header_enabled")
+	}
+	if before.ClaudeBillingHeaderCCHMode != after.ClaudeBillingHeaderCCHMode {
+		changed = append(changed, "claude_billing_header_cch_mode")
+	}
+	if before.ClaudeBillingHeaderStrict != after.ClaudeBillingHeaderStrict {
+		changed = append(changed, "claude_billing_header_strict")
+	}
+	if before.ClaudeBillingHeaderEntrypoint != after.ClaudeBillingHeaderEntrypoint {
+		changed = append(changed, "claude_billing_header_entrypoint")
 	}
 	return changed
 }

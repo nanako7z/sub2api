@@ -1171,6 +1171,110 @@
             </div>
           </div>
         </div>
+
+        <!-- Gateway Telemetry Policy -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.telemetryPolicy.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.telemetryPolicy.description') }}
+            </p>
+          </div>
+          <div class="space-y-6 p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.telemetryPolicy.fingerprintUnification') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.telemetryPolicy.fingerprintUnificationHint') }}
+                </p>
+              </div>
+              <label class="toggle">
+                <input v-model="form.enable_fingerprint_unification" type="checkbox" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.telemetryPolicy.metadataPassthrough') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.telemetryPolicy.metadataPassthroughHint') }}
+                </p>
+              </div>
+              <label class="toggle">
+                <input v-model="form.enable_metadata_passthrough" type="checkbox" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.telemetryPolicy.claudeBillingHeaderEnabled') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.telemetryPolicy.claudeBillingHeaderEnabledHint') }}
+                </p>
+              </div>
+              <label class="toggle">
+                <input v-model="form.claude_billing_header_enabled" type="checkbox" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.telemetryPolicy.cchMode') }}
+                </label>
+                <select v-model="form.claude_billing_header_cch_mode" class="input">
+                  <option value="off">{{ t('admin.settings.telemetryPolicy.cchModeOff') }}</option>
+                  <option value="placeholder">{{ t('admin.settings.telemetryPolicy.cchModePlaceholder') }}</option>
+                  <option value="attested">{{ t('admin.settings.telemetryPolicy.cchModeAttested') }}</option>
+                </select>
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.telemetryPolicy.cchModeHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.telemetryPolicy.entrypoint') }}
+                </label>
+                <input
+                  v-model="form.claude_billing_header_entrypoint"
+                  type="text"
+                  class="input"
+                  :placeholder="t('admin.settings.telemetryPolicy.entrypointPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.telemetryPolicy.entrypointHint') }}
+                </p>
+              </div>
+
+              <div class="flex items-center justify-between rounded-lg border border-gray-100 px-4 py-3 dark:border-dark-700 md:mt-7">
+                <div>
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t('admin.settings.telemetryPolicy.strictMode') }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.telemetryPolicy.strictModeHint') }}
+                  </p>
+                </div>
+                <label class="toggle">
+                  <input v-model="form.claude_billing_header_strict" type="checkbox" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
         </div><!-- /Tab: Gateway — Claude Code, Scheduling -->
 
         <!-- Tab: General -->
@@ -2221,6 +2325,10 @@ const form = reactive<SettingsForm>({
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
+  claude_billing_header_enabled: true,
+  claude_billing_header_cch_mode: 'off',
+  claude_billing_header_strict: false,
+  claude_billing_header_entrypoint: 'cli',
   // Cloudflare Turnstile
   turnstile_enabled: false,
   turnstile_site_key: '',
@@ -2567,7 +2675,11 @@ async function saveSettings() {
       balance_consumption_priority: form.balance_consumption_priority,
       partner_enabled: form.partner_enabled,
       enable_fingerprint_unification: form.enable_fingerprint_unification,
-      enable_metadata_passthrough: form.enable_metadata_passthrough
+      enable_metadata_passthrough: form.enable_metadata_passthrough,
+      claude_billing_header_enabled: form.claude_billing_header_enabled,
+      claude_billing_header_cch_mode: form.claude_billing_header_cch_mode,
+      claude_billing_header_strict: form.claude_billing_header_strict,
+      claude_billing_header_entrypoint: form.claude_billing_header_entrypoint
     }
     const updated = await adminAPI.settings.updateSettings(payload)
     Object.assign(form, updated)

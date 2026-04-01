@@ -420,6 +420,19 @@ type GatewayConfig struct {
 
 	// API-key 账号在客户端未提供 anthropic-beta 时，是否按需自动补齐（默认关闭以保持兼容）
 	InjectBetaForAPIKey bool `mapstructure:"inject_beta_for_apikey"`
+	// ClaudeBillingHeaderEnabled: 是否在 Anthropic OAuth 请求体 system[0] 注入
+	// x-anthropic-billing-header attribution block（默认开启）
+	ClaudeBillingHeaderEnabled bool `mapstructure:"claude_billing_header_enabled"`
+	// ClaudeBillingHeaderCCHMode: cch 字段策略（off|placeholder|attested）
+	// - off: 不注入 cch 字段
+	// - placeholder: 注入 cch=00000 占位
+	// - attested: 期望真实 attestation（当前未实现，会按 strict/fallback 处理）
+	ClaudeBillingHeaderCCHMode string `mapstructure:"claude_billing_header_cch_mode"`
+	// ClaudeBillingHeaderStrict: 当 cch 模式不可用（如 attested 未实现）时是否失败返回
+	// false 时降级继续转发（默认）
+	ClaudeBillingHeaderStrict bool `mapstructure:"claude_billing_header_strict"`
+	// ClaudeBillingHeaderEntrypoint: attribution block 中 cc_entrypoint 的值（默认 cli）
+	ClaudeBillingHeaderEntrypoint string `mapstructure:"claude_billing_header_entrypoint"`
 
 	// 是否允许对部分 400 错误触发 failover（默认关闭以避免改变语义）
 	FailoverOn400 bool `mapstructure:"failover_on_400"`
@@ -1384,6 +1397,10 @@ func setDefaults() {
 	viper.SetDefault("gateway.log_upstream_error_body", true)
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
+	viper.SetDefault("gateway.claude_billing_header_enabled", true)
+	viper.SetDefault("gateway.claude_billing_header_cch_mode", "off")
+	viper.SetDefault("gateway.claude_billing_header_strict", false)
+	viper.SetDefault("gateway.claude_billing_header_entrypoint", "cli")
 	viper.SetDefault("gateway.failover_on_400", false)
 	viper.SetDefault("gateway.max_account_switches", 10)
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)

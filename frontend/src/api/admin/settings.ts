@@ -102,6 +102,10 @@ export interface SystemSettings {
   // Gateway forwarding behavior
   enable_fingerprint_unification: boolean
   enable_metadata_passthrough: boolean
+  claude_billing_header_enabled: boolean
+  claude_billing_header_cch_mode: 'off' | 'placeholder' | 'attested' | string
+  claude_billing_header_strict: boolean
+  claude_billing_header_entrypoint: string
 }
 
 export interface UpdateSettingsRequest {
@@ -168,6 +172,10 @@ export interface UpdateSettingsRequest {
   partner_enabled?: boolean
   enable_fingerprint_unification?: boolean
   enable_metadata_passthrough?: boolean
+  claude_billing_header_enabled?: boolean
+  claude_billing_header_cch_mode?: 'off' | 'placeholder' | 'attested' | string
+  claude_billing_header_strict?: boolean
+  claude_billing_header_entrypoint?: string
 }
 
 /**

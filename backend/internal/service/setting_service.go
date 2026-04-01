@@ -540,6 +540,10 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	// Gateway forwarding behavior
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
+	updates[SettingKeyClaudeBillingHeaderEnabled] = strconv.FormatBool(settings.ClaudeBillingHeaderEnabled)
+	updates[SettingKeyClaudeBillingHeaderCCHMode] = normalizeClaudeBillingHeaderCCHMode(settings.ClaudeBillingHeaderCCHMode)
+	updates[SettingKeyClaudeBillingHeaderStrict] = strconv.FormatBool(settings.ClaudeBillingHeaderStrict)
+	updates[SettingKeyClaudeBillingHeaderEntrypoint] = normalizeClaudeBillingHeaderEntrypoint(settings.ClaudeBillingHeaderEntrypoint)
 
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
@@ -985,8 +989,51 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.EnableFingerprintUnification = true
 	}
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
+	if v, ok := settings[SettingKeyClaudeBillingHeaderEnabled]; ok && v != "" {
+		result.ClaudeBillingHeaderEnabled = v == "true"
+	} else {
+		result.ClaudeBillingHeaderEnabled = s.cfg == nil || s.cfg.Gateway.ClaudeBillingHeaderEnabled
+	}
+	if v, ok := settings[SettingKeyClaudeBillingHeaderCCHMode]; ok && strings.TrimSpace(v) != "" {
+		result.ClaudeBillingHeaderCCHMode = normalizeClaudeBillingHeaderCCHMode(v)
+	} else if s.cfg != nil {
+		result.ClaudeBillingHeaderCCHMode = normalizeClaudeBillingHeaderCCHMode(s.cfg.Gateway.ClaudeBillingHeaderCCHMode)
+	} else {
+		result.ClaudeBillingHeaderCCHMode = cchModeOff
+	}
+	if v, ok := settings[SettingKeyClaudeBillingHeaderStrict]; ok && v != "" {
+		result.ClaudeBillingHeaderStrict = v == "true"
+	} else if s.cfg != nil {
+		result.ClaudeBillingHeaderStrict = s.cfg.Gateway.ClaudeBillingHeaderStrict
+	}
+	if v, ok := settings[SettingKeyClaudeBillingHeaderEntrypoint]; ok && strings.TrimSpace(v) != "" {
+		result.ClaudeBillingHeaderEntrypoint = normalizeClaudeBillingHeaderEntrypoint(v)
+	} else if s.cfg != nil {
+		result.ClaudeBillingHeaderEntrypoint = normalizeClaudeBillingHeaderEntrypoint(s.cfg.Gateway.ClaudeBillingHeaderEntrypoint)
+	} else {
+		result.ClaudeBillingHeaderEntrypoint = "cli"
+	}
 
 	return result
+}
+
+func normalizeClaudeBillingHeaderCCHMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case cchModePlaceholder:
+		return cchModePlaceholder
+	case cchModeAttested:
+		return cchModeAttested
+	default:
+		return cchModeOff
+	}
+}
+
+func normalizeClaudeBillingHeaderEntrypoint(raw string) string {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "cli"
+	}
+	return v
 }
 
 func isFalseSettingValue(value string) bool {
@@ -1135,6 +1182,72 @@ func (s *SettingService) IsModelFallbackEnabled(ctx context.Context) bool {
 		return false // Default: disabled
 	}
 	return value == "true"
+}
+
+// IsFingerprintUnificationEnabled 检查是否启用 OAuth 指纹统一（默认 true）。
+func (s *SettingService) IsFingerprintUnificationEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyEnableFingerprintUnification)
+	if err != nil || strings.TrimSpace(value) == "" {
+		return true
+	}
+	return value == "true"
+}
+
+// IsMetadataPassthroughEnabled 检查是否启用 metadata 透传（默认 false）。
+func (s *SettingService) IsMetadataPassthroughEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyEnableMetadataPassthrough)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
+// IsClaudeBillingHeaderEnabled 检查是否启用 Claude billing header 注入。
+func (s *SettingService) IsClaudeBillingHeaderEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyClaudeBillingHeaderEnabled)
+	if err != nil || strings.TrimSpace(value) == "" {
+		if s.cfg != nil {
+			return s.cfg.Gateway.ClaudeBillingHeaderEnabled
+		}
+		return true
+	}
+	return value == "true"
+}
+
+// GetClaudeBillingHeaderCCHMode 获取 cch 策略（off|placeholder|attested）。
+func (s *SettingService) GetClaudeBillingHeaderCCHMode(ctx context.Context) string {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyClaudeBillingHeaderCCHMode)
+	if err != nil || strings.TrimSpace(value) == "" {
+		if s.cfg != nil {
+			return normalizeClaudeBillingHeaderCCHMode(s.cfg.Gateway.ClaudeBillingHeaderCCHMode)
+		}
+		return cchModeOff
+	}
+	return normalizeClaudeBillingHeaderCCHMode(value)
+}
+
+// IsClaudeBillingHeaderStrict 检查 cch attested 失败时是否严格失败。
+func (s *SettingService) IsClaudeBillingHeaderStrict(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyClaudeBillingHeaderStrict)
+	if err != nil || strings.TrimSpace(value) == "" {
+		if s.cfg != nil {
+			return s.cfg.Gateway.ClaudeBillingHeaderStrict
+		}
+		return false
+	}
+	return value == "true"
+}
+
+// GetClaudeBillingHeaderEntrypoint 获取 cc_entrypoint 值。
+func (s *SettingService) GetClaudeBillingHeaderEntrypoint(ctx context.Context) string {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyClaudeBillingHeaderEntrypoint)
+	if err != nil || strings.TrimSpace(value) == "" {
+		if s.cfg != nil {
+			return normalizeClaudeBillingHeaderEntrypoint(s.cfg.Gateway.ClaudeBillingHeaderEntrypoint)
+		}
+		return "cli"
+	}
+	return normalizeClaudeBillingHeaderEntrypoint(value)
 }
 
 // GetFallbackModel 获取指定平台的兜底模型

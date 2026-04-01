@@ -4091,6 +4091,7 @@ func isClaudeCodeRequest(ctx context.Context, c *gin.Context, parsed *ParsedRequ
 // systemIncludesClaudeCodePrompt 检查 system 中是否已包含 Claude Code 提示词
 // 使用前缀匹配支持多种变体（标准版、Agent SDK 版等）
 func systemIncludesClaudeCodePrompt(system any) bool {
+	system = normalizePromptSystemValue(system)
 	switch v := system.(type) {
 	case string:
 		return hasClaudeCodePrefix(v)
@@ -4114,6 +4115,47 @@ func hasClaudeCodePrefix(text string) bool {
 		}
 	}
 	return false
+}
+
+// normalizePromptSystemValue 将 system 的动态类型归一化到 string / []any / nil，
+// 兼容 json.RawMessage 输入（Responses/ChatCompletions 转换路径）。
+func normalizePromptSystemValue(system any) any {
+	switch v := system.(type) {
+	case json.RawMessage:
+		if len(v) == 0 {
+			return nil
+		}
+		var parsed any
+		if err := json.Unmarshal(v, &parsed); err != nil {
+			return nil
+		}
+		switch vv := parsed.(type) {
+		case string:
+			return vv
+		case []any:
+			return vv
+		default:
+			return nil
+		}
+	case []byte:
+		if len(v) == 0 {
+			return nil
+		}
+		var parsed any
+		if err := json.Unmarshal(v, &parsed); err != nil {
+			return nil
+		}
+		switch vv := parsed.(type) {
+		case string:
+			return vv
+		case []any:
+			return vv
+		default:
+			return nil
+		}
+	default:
+		return system
+	}
 }
 
 // injectClaudeCodePrompt 在 system 开头注入 Claude Code 提示词
@@ -4173,6 +4215,7 @@ func filterSystemBlocksByPrefix(body []byte) []byte {
 }
 
 func injectClaudeCodePrompt(body []byte, system any) []byte {
+	system = normalizePromptSystemValue(system)
 	claudeCodeBlock, err := marshalAnthropicSystemTextBlock(claudeCodeSystemPrompt, true)
 	if err != nil {
 		logger.LegacyPrintf("service.gateway", "Warning: failed to build Claude Code prompt block: %v", err)
@@ -4648,10 +4691,15 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 	}
 
-	// OAuth/SetupToken 账号：移除黑名单前缀匹配的 system 元素（如客户端注入的计费元数据）
-	// 放在 inject/normalize 之后，确保不会被覆盖
+	// OAuth/SetupToken 账号：按 Claude Code 规则注入 attribution block 到 system[0]。
+	// 放在 normalize 之后，确保 fingerprint 读取的是标准化后的 messages；
+	// 放在后续处理之前，保证最终始终只有一个 billing header block。
 	if account.IsOAuth() {
-		body = filterSystemBlocksByPrefix(body)
+		var injectErr error
+		body, injectErr = s.injectClaudeOAuthBillingHeader(ctx, body)
+		if injectErr != nil {
+			return nil, injectErr
+		}
 	}
 
 	// 自动注入 cache_control：仅当客户端完全没有设置任何断点时，

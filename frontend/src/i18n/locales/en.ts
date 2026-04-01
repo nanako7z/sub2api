@@ -4285,6 +4285,26 @@ export default {
         allowUngroupedKey: 'Allow Ungrouped Key Scheduling',
         allowUngroupedKeyHint: 'When disabled, API Keys not assigned to any group cannot make requests (403 Forbidden). Keep disabled to ensure all Keys belong to a specific group.'
       },
+      telemetryPolicy: {
+        title: 'Telemetry Policy',
+        description: 'Control client identity and attribution behavior in upstream requests',
+        fingerprintUnification: 'Fingerprint Unification',
+        fingerprintUnificationHint: 'Unify X-Stainless-* headers across users sharing the same OAuth account. Disabling passes through each client\'s original headers.',
+        metadataPassthrough: 'Metadata Passthrough',
+        metadataPassthroughHint: 'Pass through client\'s original metadata.user_id without rewriting.',
+        claudeBillingHeaderEnabled: 'Enable Claude Billing Header Injection',
+        claudeBillingHeaderEnabledHint: 'Inject x-anthropic-billing-header into system[0] of Anthropic OAuth request bodies.',
+        cchMode: 'cch Policy',
+        cchModeOff: 'Off (do not inject cch)',
+        cchModePlaceholder: 'Placeholder (cch=00000)',
+        cchModeAttested: 'Attested (experimental)',
+        cchModeHint: 'When attested mode is unavailable, strict mode decides failure or downgrade.',
+        entrypoint: 'cc_entrypoint',
+        entrypointPlaceholder: 'cli',
+        entrypointHint: 'cc_entrypoint value written to the billing header.',
+        strictMode: 'Strict Mode',
+        strictModeHint: 'Fail directly when attested mode is unavailable; disable to auto-downgrade.'
+      },
       referral: {
         title: 'Referral Program Settings',
         description: 'Configure referral rewards and commission rules',
