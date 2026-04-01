@@ -286,11 +286,28 @@ func (s *TLSFingerprintProfileService) invalidateAndNotify(ctx context.Context) 
 func (s *TLSFingerprintProfileService) builtInProfile() *model.TLSFingerprintProfile {
 	description := "Default built-in TLS fingerprint template. Read-only."
 	now := time.Now()
+	snapshot := tlsfingerprint.BuiltInDefaultProfileSnapshot()
+
+	pointFormats := make([]uint16, 0, len(snapshot.PointFormats))
+	for _, v := range snapshot.PointFormats {
+		pointFormats = append(pointFormats, uint16(v))
+	}
+
 	return &model.TLSFingerprintProfile{
-		ID:          BuiltInTLSFingerprintProfileID,
-		Name:        BuiltInTLSFingerprintProfileName,
-		Description: &description,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:                  BuiltInTLSFingerprintProfileID,
+		Name:                BuiltInTLSFingerprintProfileName,
+		Description:         &description,
+		EnableGREASE:        snapshot.EnableGREASE,
+		CipherSuites:        append([]uint16(nil), snapshot.CipherSuites...),
+		Curves:              append([]uint16(nil), snapshot.Curves...),
+		PointFormats:        pointFormats,
+		SignatureAlgorithms: append([]uint16(nil), snapshot.SignatureAlgorithms...),
+		ALPNProtocols:       append([]string(nil), snapshot.ALPNProtocols...),
+		SupportedVersions:   append([]uint16(nil), snapshot.SupportedVersions...),
+		KeyShareGroups:      append([]uint16(nil), snapshot.KeyShareGroups...),
+		PSKModes:            append([]uint16(nil), snapshot.PSKModes...),
+		Extensions:          append([]uint16(nil), snapshot.Extensions...),
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 }

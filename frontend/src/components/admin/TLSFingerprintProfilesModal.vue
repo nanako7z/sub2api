@@ -99,6 +99,13 @@
               <td class="px-3 py-2">
                 <div class="flex items-center gap-1">
                   <button
+                    @click="handlePreview(profile)"
+                    class="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                    :title="t('admin.tlsFingerprintProfiles.previewProfile')"
+                  >
+                    <Icon name="eye" size="sm" />
+                  </button>
+                  <button
                     @click="handleEdit(profile)"
                     :disabled="isBuiltInProfile(profile)"
                     class="p-1 text-gray-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-primary-400"
@@ -132,13 +139,18 @@
 
     <!-- Create/Edit Modal -->
     <BaseDialog
-      :show="showCreateModal || showEditModal"
-      :title="showEditModal ? t('admin.tlsFingerprintProfiles.editProfile') : t('admin.tlsFingerprintProfiles.createProfile')"
+      :show="showCreateModal || showEditModal || showPreviewModal"
+      :title="
+        showPreviewModal
+          ? t('admin.tlsFingerprintProfiles.previewProfile')
+          : (showEditModal ? t('admin.tlsFingerprintProfiles.editProfile') : t('admin.tlsFingerprintProfiles.createProfile'))
+      "
       width="wide"
       :z-index="60"
       @close="closeFormModal"
     >
-      <form @submit.prevent="handleSubmit" class="space-y-4">
+      <form @submit.prevent="handleSubmit">
+        <fieldset :disabled="isReadOnlyModal" class="space-y-4">
         <!-- Paste YAML -->
         <div>
           <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.pasteYaml') }}</label>
@@ -307,14 +319,15 @@
             :placeholder="'h2, http/1.1'"
           />
         </div>
+        </fieldset>
       </form>
 
       <template #footer>
         <div class="flex justify-end gap-3">
           <button @click="closeFormModal" type="button" class="btn btn-secondary">
-            {{ t('common.cancel') }}
+            {{ isReadOnlyModal ? t('common.close') : t('common.cancel') }}
           </button>
-          <button @click="handleSubmit" :disabled="submitting" class="btn btn-primary">
+          <button v-if="!isReadOnlyModal" @click="handleSubmit" :disabled="submitting" class="btn btn-primary">
             <Icon v-if="submitting" name="refresh" size="sm" class="mr-1 animate-spin" />
             {{ showEditModal ? t('common.update') : t('common.create') }}
           </button>
@@ -337,7 +350,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { computed, ref, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
@@ -366,10 +379,13 @@ const loading = ref(false)
 const submitting = ref(false)
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
+const showPreviewModal = ref(false)
 const showDeleteDialog = ref(false)
 const editingProfile = ref<TLSFingerprintProfile | null>(null)
+const previewingProfile = ref<TLSFingerprintProfile | null>(null)
 const deletingProfile = ref<TLSFingerprintProfile | null>(null)
 const yamlInput = ref('')
+const isReadOnlyModal = computed(() => showPreviewModal.value)
 
 // Raw string inputs for array fields
 const fieldInputs = reactive({
@@ -523,7 +539,9 @@ const handleYamlPaste = () => {
 const closeFormModal = () => {
   showCreateModal.value = false
   showEditModal.value = false
+  showPreviewModal.value = false
   editingProfile.value = null
+  previewingProfile.value = null
   resetForm()
 }
 
@@ -558,11 +576,7 @@ const formatPlainNumericArray = (arr: number[] | null | undefined): string => (a
 
 const isBuiltInProfile = (profile: TLSFingerprintProfile): boolean => profile.id === BUILT_IN_TLS_PROFILE_ID
 
-const handleEdit = (profile: TLSFingerprintProfile) => {
-  if (isBuiltInProfile(profile)) {
-    return
-  }
-  editingProfile.value = profile
+const fillFormFromProfile = (profile: TLSFingerprintProfile) => {
   form.name = profile.name
   form.description = profile.description
   form.enable_grease = profile.enable_grease
@@ -575,6 +589,20 @@ const handleEdit = (profile: TLSFingerprintProfile) => {
   fieldInputs.key_share_groups = formatPlainNumericArray(profile.key_share_groups)
   fieldInputs.psk_modes = formatPlainNumericArray(profile.psk_modes)
   fieldInputs.extensions = formatNumericArray(profile.extensions)
+}
+
+const handlePreview = (profile: TLSFingerprintProfile) => {
+  previewingProfile.value = profile
+  fillFormFromProfile(profile)
+  showPreviewModal.value = true
+}
+
+const handleEdit = (profile: TLSFingerprintProfile) => {
+  if (isBuiltInProfile(profile)) {
+    return
+  }
+  editingProfile.value = profile
+  fillFormFromProfile(profile)
   showEditModal.value = true
 }
 
@@ -587,6 +615,10 @@ const handleDelete = (profile: TLSFingerprintProfile) => {
 }
 
 const handleSubmit = async () => {
+  if (isReadOnlyModal.value) {
+    return
+  }
+
   if (!form.name.trim()) {
     appStore.showError(t('admin.tlsFingerprintProfiles.form.name') + ' ' + t('common.required'))
     return

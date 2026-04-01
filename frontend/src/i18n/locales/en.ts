@@ -4672,6 +4672,7 @@ export default {
       description: 'Manage optional TLS fingerprint profile templates for OAuth accounts',
       createProfile: 'Create Profile',
       editProfile: 'Edit Profile',
+      previewProfile: 'Preview Profile',
       deleteProfile: 'Delete Profile',
       noProfiles: 'No TLS profile configured',
       createFirstProfile: 'Create your first TLS profile',

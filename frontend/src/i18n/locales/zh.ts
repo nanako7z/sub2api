@@ -4849,6 +4849,7 @@ export default {
       description: '管理 OAuth 账号可选的 TLS 指纹模板',
       createProfile: '新建模板',
       editProfile: '编辑模板',
+      previewProfile: '预览模板',
       deleteProfile: '删除模板',
       noProfiles: '暂无 TLS 模板',
       createFirstProfile: '创建第一个 TLS 模板',
