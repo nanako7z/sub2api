@@ -426,9 +426,9 @@ type GatewayConfig struct {
 	// ClaudeBillingHeaderCCHMode: cch 字段策略（off|placeholder|attested）
 	// - off: 不注入 cch 字段
 	// - placeholder: 注入 cch=00000 占位
-	// - attested: 期望真实 attestation（当前未实现，会按 strict/fallback 处理）
+	// - attested: 注入 cch=00000 占位，并在发送前执行全请求体覆写（模拟原生 HTTP 栈）
 	ClaudeBillingHeaderCCHMode string `mapstructure:"claude_billing_header_cch_mode"`
-	// ClaudeBillingHeaderStrict: 当 cch 模式不可用（如 attested 未实现）时是否失败返回
+	// ClaudeBillingHeaderStrict: 当 cch 模式不可用或配置非法时是否失败返回
 	// false 时降级继续转发（默认）
 	ClaudeBillingHeaderStrict bool `mapstructure:"claude_billing_header_strict"`
 	// ClaudeBillingHeaderEntrypoint: attribution block 中 cc_entrypoint 的值（默认 cli）

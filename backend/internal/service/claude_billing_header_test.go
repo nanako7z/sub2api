@@ -17,6 +17,33 @@ func TestBuildClaudeBillingFingerprint_Deterministic(t *testing.T) {
 	}
 }
 
+func TestRewriteClaudeAttestedCCHPlaceholders_RewriteAllMatches(t *testing.T) {
+	body := []byte(`{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.87.b16; cc_entrypoint=cli; cch=00000;"}],"messages":[{"role":"user","content":"cch=00000"}]}`)
+	out, changed := rewriteClaudeAttestedCCHPlaceholders(body)
+	if !changed {
+		t.Fatalf("expected placeholder rewrite")
+	}
+	raw := string(out)
+	if strings.Contains(raw, "cch=00000") {
+		t.Fatalf("placeholder should be fully rewritten, raw=%s", raw)
+	}
+	if strings.Count(raw, "cch=") != 2 {
+		t.Fatalf("expected both occurrences to be rewritten, raw=%s", raw)
+	}
+}
+
+func TestBuildClaudeAttestationToken_Deterministic(t *testing.T) {
+	body := []byte(`{"x":"cch=00000"}`)
+	got := buildClaudeAttestationToken(body)
+	const wantLen = 5
+	if len(got) != wantLen {
+		t.Fatalf("unexpected token length: got=%d token=%q", len(got), got)
+	}
+	if got != buildClaudeAttestationToken(body) {
+		t.Fatalf("token should be deterministic")
+	}
+}
+
 func TestExtractFirstUserMessageText(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"assistant","content":"ignore"},{"role":"user","content":[{"type":"text","text":"hello text"},{"type":"image","source":"x"}]}]}`)
 	got := extractFirstUserMessageText(body)
@@ -44,7 +71,7 @@ func TestUpsertSystemBillingHeaderBlock_PrependsAndReplacesExisting(t *testing.T
 	}
 }
 
-func TestInjectClaudeOAuthBillingHeader_StrictAttestedModeFails(t *testing.T) {
+func TestInjectClaudeOAuthBillingHeader_StrictAttestedModeUsesPlaceholder(t *testing.T) {
 	svc := &GatewayService{
 		cfg: &config.Config{
 			Gateway: config.GatewayConfig{
@@ -56,9 +83,13 @@ func TestInjectClaudeOAuthBillingHeader_StrictAttestedModeFails(t *testing.T) {
 		},
 	}
 	body := []byte(`{"messages":[{"role":"user","content":"hello"}]}`)
-	_, err := svc.injectClaudeOAuthBillingHeader(context.Background(), body)
-	if err == nil {
-		t.Fatalf("strict attested mode should fail when attestation implementation is unavailable")
+	out, err := svc.injectClaudeOAuthBillingHeader(context.Background(), body)
+	if err != nil {
+		t.Fatalf("strict attested mode should work with placeholder: %v", err)
+	}
+	first := gjson.GetBytes(out, "system.0.text").String()
+	if !strings.Contains(first, " cch=00000;") {
+		t.Fatalf("attested mode should include cch placeholder, got=%q", first)
 	}
 }
 

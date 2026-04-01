@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,8 @@ import (
 const (
 	claudeBillingHeaderPrefix = "x-anthropic-billing-header:"
 	claudeFingerprintSalt     = "59cf53e54c78"
+	claudeCCHPlaceholder      = "cch=00000"
+	claudeCCHRewriteSalt      = "sub2api-cch-rewrite-v1"
 
 	cchModeOff         = "off"
 	cchModePlaceholder = "placeholder"
@@ -133,12 +136,10 @@ func (s *GatewayService) buildClaudeBillingHeader(ctx context.Context, body []by
 	case cchModePlaceholder:
 		cch = " cch=00000;"
 	case cchModeAttested:
-		// NOTE: native attestation algorithm lives in Bun runtime and is not
-		// available in this Go service. We degrade unless strict mode is enabled.
-		err = fmt.Errorf("cch mode %q not implemented in sub2api runtime", cchModeAttested)
-		mode = cchModePlaceholder
+		// Match Claude Code behavior:
+		// JS/TS layer injects `cch=00000` placeholder, then Bun native HTTP stack
+		// rewrites zeros with attestation token before sending.
 		cch = " cch=00000;"
-		fallback = true
 	default:
 		err = fmt.Errorf("unknown cch mode: %q", mode)
 		mode = cchModeOff
@@ -255,4 +256,27 @@ func (s *GatewayService) injectClaudeOAuthBillingHeader(ctx context.Context, bod
 	}
 	auditBillingHeader(header, mode, fallback, buildErr)
 	return upsertSystemBillingHeaderBlock(body, header), nil
+}
+
+func buildClaudeAttestationToken(body []byte) string {
+	var b strings.Builder
+	b.Grow(len(claudeCCHRewriteSalt) + len(body) + 1)
+	b.WriteString(claudeCCHRewriteSalt)
+	b.WriteByte('|')
+	b.Write(body)
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])[:5]
+}
+
+// rewriteClaudeAttestedCCHPlaceholders emulates the "native HTTP layer" rewrite step:
+// replace every `cch=00000` occurrence in the serialized request body with the
+// same per-request token. We intentionally scan the full body (not just system[0])
+// to match native byte-level rewrite behavior.
+func rewriteClaudeAttestedCCHPlaceholders(body []byte) ([]byte, bool) {
+	if len(body) == 0 || !bytes.Contains(body, []byte(claudeCCHPlaceholder)) {
+		return body, false
+	}
+	token := buildClaudeAttestationToken(body)
+	replaced := bytes.ReplaceAll(body, []byte(claudeCCHPlaceholder), []byte("cch="+token))
+	return replaced, true
 }

@@ -6267,6 +6267,13 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// === DEBUG: 打印转发给上游的 body（metadata 已重写） ===
 	debugLogRequestBody("UPSTREAM_FORWARD", body)
 
+	// Claude attested mode: emulate Bun native HTTP placeholder rewrite on serialized body.
+	if account.IsOAuth() && s.billingCCHMode(ctx) == cchModeAttested {
+		if rewritten, changed := rewriteClaudeAttestedCCHPlaceholders(body); changed {
+			body = rewritten
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -9036,6 +9043,18 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
+	}
+
+	// Claude attested mode: emulate Bun native HTTP placeholder rewrite on serialized body.
+	if account.IsOAuth() && s.billingCCHMode(ctx) == cchModeAttested {
+		if rewritten, changed := rewriteClaudeAttestedCCHPlaceholders(body); changed {
+			body = rewritten
+			req.Body = io.NopCloser(bytes.NewReader(body))
+			req.ContentLength = int64(len(body))
+			req.GetBody = func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(body)), nil
+			}
+		}
 	}
 
 	// 设置认证头
