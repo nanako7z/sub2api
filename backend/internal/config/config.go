@@ -463,9 +463,13 @@ type GatewayConfig struct {
 	UserGroupRateCacheTTLSeconds int `mapstructure:"user_group_rate_cache_ttl_seconds"`
 	// ModelsListCacheTTLSeconds: /v1/models 模型列表短缓存 TTL（秒）
 	ModelsListCacheTTLSeconds int `mapstructure:"models_list_cache_ttl_seconds"`
-	// MCPPrefetchSessionTTLMinutes: OAuth 链路 mcp_servers 预触发会话去重窗口（分钟）
+	// MCPPrefetchSessionTTLMinutes: 已废弃（兼容保留）。
+	// 历史上用于 OAuth 链路 mcp_servers 预触发会话去重窗口（分钟），
+	// 当前 runtime 已不再触发 mcp_servers 请求。
 	MCPPrefetchSessionTTLMinutes int `mapstructure:"mcp_prefetch_session_ttl_minutes"`
-	// MCPPrefetchCleanupIntervalMinutes: mcp 预触发缓存清理周期（分钟）
+	// MCPPrefetchCleanupIntervalMinutes: 已废弃（兼容保留）。
+	// 历史上用于 mcp 预触发缓存清理周期（分钟），
+	// 当前 runtime 已不再触发 mcp_servers 请求。
 	MCPPrefetchCleanupIntervalMinutes int `mapstructure:"mcp_prefetch_cleanup_interval_minutes"`
 
 	// UserMessageQueue: 用户消息串行队列配置
@@ -1489,6 +1493,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.usage_record.auto_scale_cooldown_seconds", 10)
 	viper.SetDefault("gateway.user_group_rate_cache_ttl_seconds", 30)
 	viper.SetDefault("gateway.models_list_cache_ttl_seconds", 15)
+	// Deprecated/no-op compatibility keys: kept to avoid breaking existing configs.
 	viper.SetDefault("gateway.mcp_prefetch_session_ttl_minutes", 10)
 	viper.SetDefault("gateway.mcp_prefetch_cleanup_interval_minutes", 5)
 	// TLS指纹伪装配置（默认关闭，需要账号级别单独启用）
@@ -2237,6 +2242,8 @@ func (c *Config) Validate() error {
 	if c.Gateway.ModelsListCacheTTLSeconds < 10 || c.Gateway.ModelsListCacheTTLSeconds > 30 {
 		return fmt.Errorf("gateway.models_list_cache_ttl_seconds must be between 10-30")
 	}
+	// Deprecated/no-op compatibility keys: validation is preserved so legacy
+	// configuration quality checks remain stable.
 	if c.Gateway.MCPPrefetchSessionTTLMinutes <= 0 {
 		return fmt.Errorf("gateway.mcp_prefetch_session_ttl_minutes must be positive")
 	}

@@ -65,15 +65,33 @@ func TestHeaderProfileForEndpoint(t *testing.T) {
 			if p.ForceOfficialHost != tt.wantForceOfficial {
 				t.Fatalf("force official host mismatch: got %t want %t", p.ForceOfficialHost, tt.wantForceOfficial)
 			}
-				if tt.wantAcceptContains != "" && !contains(p.Accept, tt.wantAcceptContains) {
-					t.Fatalf("accept mismatch: got %q expected to contain %q", p.Accept, tt.wantAcceptContains)
-				}
-				if tt.wantUAContains != "" && !contains(p.UserAgent, tt.wantUAContains) {
-					t.Fatalf("user-agent mismatch: got %q expected to contain %q", p.UserAgent, tt.wantUAContains)
-				}
-			})
-		}
+			if tt.wantAcceptContains != "" && !contains(p.Accept, tt.wantAcceptContains) {
+				t.Fatalf("accept mismatch: got %q expected to contain %q", p.Accept, tt.wantAcceptContains)
+			}
+			if tt.wantUAContains != "" && !contains(p.UserAgent, tt.wantUAContains) {
+				t.Fatalf("user-agent mismatch: got %q expected to contain %q", p.UserAgent, tt.wantUAContains)
+			}
+		})
 	}
+}
+
+func TestVersionedUserAgentsUseVersionConstant(t *testing.T) {
+	if got := DefaultHeaders["User-Agent"]; got != ClaudeCLIUserAgent() {
+		t.Fatalf("default user-agent mismatch: got %q want %q", got, ClaudeCLIUserAgent())
+	}
+	if got := HeaderProfileForEndpoint(EndpointMessages).UserAgent; got != ClaudeCLIUserAgent() {
+		t.Fatalf("messages user-agent mismatch: got %q want %q", got, ClaudeCLIUserAgent())
+	}
+	if got := HeaderProfileForEndpoint(EndpointCountTokens).UserAgent; got != ClaudeCLIUserAgent() {
+		t.Fatalf("count_tokens user-agent mismatch: got %q want %q", got, ClaudeCLIUserAgent())
+	}
+	if got := HeaderProfileForEndpoint(EndpointOAuthUsage).UserAgent; got != ClaudeCodeUserAgent() {
+		t.Fatalf("oauth_usage user-agent mismatch: got %q want %q", got, ClaudeCodeUserAgent())
+	}
+	if got := HeaderProfileForEndpoint(EndpointMCPServers).UserAgent; contains(got, ClaudeCLIVersion) {
+		t.Fatalf("mcp_servers should keep non-versioned user-agent behavior, got %q", got)
+	}
+}
 
 func TestHeaderProfileForEndpoint_DefaultFallsBackToMessages(t *testing.T) {
 	p := HeaderProfileForEndpoint("unknown_endpoint")

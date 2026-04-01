@@ -22,7 +22,7 @@ type ClaudeOAuthClient interface {
 	GetOrganizationUUID(ctx context.Context, sessionKey, proxyURL string) (string, error)
 	GetAuthorizationCode(ctx context.Context, sessionKey, orgUUID, scope, codeChallenge, state, proxyURL string) (string, error)
 	ExchangeCodeForToken(ctx context.Context, code, codeVerifier, state, proxyURL string, isSetupToken bool) (*oauth.TokenResponse, error)
-	RefreshToken(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error)
+	RefreshToken(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error)
 }
 
 // OAuthService handles OAuth authentication flows
@@ -270,7 +270,11 @@ func (s *OAuthService) exchangeCodeForToken(ctx context.Context, code, codeVerif
 
 // RefreshToken refreshes an OAuth token
 func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, proxyURL string) (*TokenInfo, error) {
-	tokenResp, err := s.oauthClient.RefreshToken(ctx, refreshToken, proxyURL)
+	return s.refreshTokenWithScope(ctx, refreshToken, oauth.ScopeAPI, proxyURL)
+}
+
+func (s *OAuthService) refreshTokenWithScope(ctx context.Context, refreshToken, scope, proxyURL string) (*TokenInfo, error) {
+	tokenResp, err := s.oauthClient.RefreshToken(ctx, refreshToken, scope, proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +300,12 @@ func (s *OAuthService) RefreshAccountToken(ctx context.Context, account *Account
 	if err != nil {
 		return nil, err
 	}
-	return s.RefreshToken(ctx, refreshToken, outboundCtx.ProxyURL)
+	scope := oauth.ScopeAPI
+	if account.Type == AccountTypeSetupToken {
+		scope = oauth.ScopeInference
+	}
+
+	return s.refreshTokenWithScope(ctx, refreshToken, scope, outboundCtx.ProxyURL)
 }
 
 // Stop stops the session store cleanup goroutine

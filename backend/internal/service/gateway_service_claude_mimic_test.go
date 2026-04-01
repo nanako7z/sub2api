@@ -1,9 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
 )
 
@@ -66,7 +69,7 @@ func TestApplyClaudeCodeMimicHeaders_MCPServersNoStainless(t *testing.T) {
 
 	applyClaudeCodeMimicHeaders(req, false, claude.EndpointMCPServers)
 
-	if req.Header.Get("user-agent") != "axios/1.13.6" {
+	if req.Header.Get("user-agent") != claude.HeaderProfileForEndpoint(claude.EndpointMCPServers).UserAgent {
 		t.Fatalf("unexpected mcp user-agent: %q", req.Header.Get("user-agent"))
 	}
 	if req.Header.Get("x-stainless-lang") != "" || req.Header.Get("x-app") != "" {
@@ -125,7 +128,7 @@ func TestPassthroughClientRequestID_NoGenerateForMCP(t *testing.T) {
 func TestBuildMCPServersRequest_UsesOfficialHostAndAuthHeader(t *testing.T) {
 	s := &GatewayService{}
 
-	req, err := s.buildMCPServersRequest(context.Background(), &Account{}, "oauth-token", "oauth")
+	req, err := s.buildMCPServersRequest(context.Background(), &Account{}, "oauth-token", "oauth", nil)
 	if err != nil {
 		t.Fatalf("build oauth request: %v", err)
 	}
@@ -139,7 +142,7 @@ func TestBuildMCPServersRequest_UsesOfficialHostAndAuthHeader(t *testing.T) {
 		t.Fatalf("oauth request should not set x-api-key")
 	}
 
-	req, err = s.buildMCPServersRequest(context.Background(), &Account{}, "api-key-token", "api_key")
+	req, err = s.buildMCPServersRequest(context.Background(), &Account{}, "api-key-token", "api_key", nil)
 	if err != nil {
 		t.Fatalf("build api_key request: %v", err)
 	}
@@ -148,6 +151,94 @@ func TestBuildMCPServersRequest_UsesOfficialHostAndAuthHeader(t *testing.T) {
 	}
 	if req.Header.Get("authorization") != "" {
 		t.Fatalf("api_key request should not set authorization")
+	}
+}
+
+func TestBuildUpstreamRequest_OAuthMimic_PassthroughThenOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(nil))
+	c.Request.Header.Set("x-test-trace", "trace-123")
+	c.Request.Header.Set("x-api-key", "must-not-forward")
+	c.Request.Header.Set("user-agent", "custom-client/1.0")
+	c.Request.Header.Set("x-stainless-os", "Windows")
+	c.Request.Header.Set("x-stainless-arch", "x86")
+	c.Request.Header.Set("anthropic-beta", "downstream-extra-beta")
+
+	account := &Account{
+		ID:          1001,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"max_tokens":16}`)
+
+	svc := &GatewayService{}
+	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-5", false, true)
+	if err != nil {
+		t.Fatalf("buildUpstreamRequest failed: %v", err)
+	}
+
+	if got := req.Header.Get("x-test-trace"); got != "trace-123" {
+		t.Fatalf("passthrough header mismatch: got %q want %q", got, "trace-123")
+	}
+	if got := req.Header.Get("x-api-key"); got != "" {
+		t.Fatalf("conflicting auth header should be stripped, got %q", got)
+	}
+	if got := req.Header.Get("user-agent"); got != claude.HeaderProfileForEndpoint(claude.EndpointMessages).UserAgent {
+		t.Fatalf("user-agent must be overridden by mimic profile, got %q", got)
+	}
+	if got := req.Header.Get("x-stainless-os"); got != claude.DefaultHeaders["X-Stainless-OS"] {
+		t.Fatalf("x-stainless-os must be overridden, got %q want %q", got, claude.DefaultHeaders["X-Stainless-OS"])
+	}
+	if got := req.Header.Get("x-stainless-arch"); got != claude.DefaultHeaders["X-Stainless-Arch"] {
+		t.Fatalf("x-stainless-arch must be overridden, got %q want %q", got, claude.DefaultHeaders["X-Stainless-Arch"])
+	}
+	if beta := req.Header.Get("anthropic-beta"); !strings.Contains(beta, "downstream-extra-beta") || !strings.Contains(beta, claude.BetaOAuth) {
+		t.Fatalf("anthropic-beta should merge required + downstream tokens, got %q", beta)
+	}
+}
+
+func TestBuildCountTokensRequest_OAuthMimic_PassthroughThenOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(nil))
+	c.Request.Header.Set("x-test-meta", "meta-1")
+	c.Request.Header.Set("authorization", "must-not-forward")
+	c.Request.Header.Set("user-agent", "custom-client/2.0")
+	c.Request.Header.Set("x-stainless-runtime-version", "v0.0.1")
+	c.Request.Header.Set("anthropic-beta", "ct-extra-beta")
+
+	account := &Account{
+		ID:          1002,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+
+	svc := &GatewayService{}
+	req, err := svc.buildCountTokensRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-5", true, true)
+	if err != nil {
+		t.Fatalf("buildCountTokensRequest failed: %v", err)
+	}
+
+	if got := req.Header.Get("x-test-meta"); got != "meta-1" {
+		t.Fatalf("passthrough header mismatch: got %q want %q", got, "meta-1")
+	}
+	if got := req.Header.Get("authorization"); got != "Bearer oauth-token" {
+		t.Fatalf("authorization should use upstream oauth token, got %q", got)
+	}
+	if got := req.Header.Get("user-agent"); got != claude.HeaderProfileForEndpoint(claude.EndpointCountTokens).UserAgent {
+		t.Fatalf("user-agent must be overridden by mimic profile, got %q", got)
+	}
+	if got := req.Header.Get("x-stainless-runtime-version"); got != claude.DefaultHeaders["X-Stainless-Runtime-Version"] {
+		t.Fatalf("x-stainless-runtime-version must be overridden, got %q want %q", got, claude.DefaultHeaders["X-Stainless-Runtime-Version"])
+	}
+	if beta := req.Header.Get("anthropic-beta"); !strings.Contains(beta, "ct-extra-beta") || !strings.Contains(beta, claude.BetaOAuth) {
+		t.Fatalf("anthropic-beta should merge required + downstream tokens, got %q", beta)
 	}
 }
 
@@ -171,27 +262,55 @@ func TestResolveMCPPrefetchTTLs(t *testing.T) {
 	}
 }
 
-func TestMaybeTriggerMCPServers_MessageAsyncTriggersOncePerSession(t *testing.T) {
+func TestMaybeTriggerMCPServers_ScopeGatedOneShotByTokenGeneration(t *testing.T) {
 	upstream := &anthropicHTTPUpstreamRecorder{
 		resp: &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
 			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
 		},
 	}
 	svc := &GatewayService{
 		httpUpstream:    upstream,
 		mcpTriggerCache: gocache.New(10*time.Minute, time.Minute),
 	}
-	account := &Account{
+	accountWithoutScope := &Account{
 		ID:          9001,
 		Platform:    PlatformAnthropic,
 		Type:        AccountTypeOAuth,
 		Concurrency: 1,
+		Credentials: map[string]any{
+			"scope": "user:profile user:inference",
+		},
+	}
+	account := &Account{
+		ID:          9002,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"scope": "user:profile user:inference user:mcp_servers",
+		},
 	}
 	outboundCtx := &AccountOutboundContext{TokenGeneration: 1, SessionID: "session-a"}
 
-	// Startup prefetch should be deduped by session cache.
+	// Missing user:mcp_servers scope: should not trigger.
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, accountWithoutScope, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch); err != nil {
+		t.Fatalf("missing-scope trigger failed: %v", err)
+	}
+	if upstream.callCount != 0 {
+		t.Fatalf("missing scope should not call upstream, got callCount=%d", upstream.callCount)
+	}
+
+	// Non-startup reason should not trigger.
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerMessageAsync); err != nil {
+		t.Fatalf("message_async trigger failed: %v", err)
+	}
+	if upstream.callCount != 0 {
+		t.Fatalf("non-startup reason should not call upstream, got callCount=%d", upstream.callCount)
+	}
+
+	// Startup prefetch: one-shot for this token generation.
 	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch); err != nil {
 		t.Fatalf("startup prefetch #1 failed: %v", err)
 	}
@@ -199,26 +318,58 @@ func TestMaybeTriggerMCPServers_MessageAsyncTriggersOncePerSession(t *testing.T)
 		t.Fatalf("startup prefetch #2 failed: %v", err)
 	}
 	if upstream.callCount != 1 {
-		t.Fatalf("startup prefetch should be deduped, got callCount=%d want=1", upstream.callCount)
+		t.Fatalf("same token generation should dedupe, got callCount=%d want=1", upstream.callCount)
 	}
 
-	// Message async should be deduped within one activated session.
-	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerMessageAsync); err != nil {
-		t.Fatalf("message async #1 failed: %v", err)
-	}
-	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerMessageAsync); err != nil {
-		t.Fatalf("message async #2 failed: %v", err)
-	}
-	if upstream.callCount != 1 {
-		t.Fatalf("message async should be deduped in same session, got callCount=%d want=1", upstream.callCount)
-	}
-
-	// A new session activation should trigger once again.
-	nextSession := &AccountOutboundContext{TokenGeneration: 2, SessionID: "session-b"}
-	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", nextSession, MCPTriggerMessageAsync); err != nil {
-		t.Fatalf("message async new session failed: %v", err)
+	// Token generation changed: allow one more trigger.
+	outboundCtx.TokenGeneration = 2
+	if err := svc.maybeTriggerMCPServers(context.Background(), nil, account, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch); err != nil {
+		t.Fatalf("startup prefetch for new generation failed: %v", err)
 	}
 	if upstream.callCount != 2 {
-		t.Fatalf("new session should trigger once, got callCount=%d want=2", upstream.callCount)
+		t.Fatalf("new token generation should trigger again, got callCount=%d want=2", upstream.callCount)
+	}
+}
+
+func TestTriggerMCPServersAsync_EligibleOneShot(t *testing.T) {
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		},
+	}
+	svc := &GatewayService{
+		httpUpstream:    upstream,
+		mcpTriggerCache: gocache.New(10*time.Minute, time.Minute),
+	}
+	account := &Account{
+		ID:          9002,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"scope": "user:profile user:inference user:mcp_servers",
+		},
+	}
+	outboundCtx := &AccountOutboundContext{TokenGeneration: 7, SessionID: "session-async"}
+
+	svc.triggerMCPServersAsync(account, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch)
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if upstream.callCount >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if upstream.callCount != 1 {
+		t.Fatalf("eligible async prefetch should call upstream once, got callCount=%d", upstream.callCount)
+	}
+
+	svc.triggerMCPServersAsync(account, "tok", "oauth", outboundCtx, MCPTriggerStartupPrefetch)
+	time.Sleep(40 * time.Millisecond)
+	if upstream.callCount != 1 {
+		t.Fatalf("same token generation should stay one-shot in async path, got callCount=%d", upstream.callCount)
 	}
 }

@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -39,5 +40,14 @@ func TestSessionStore_Stop_Concurrent(t *testing.T) {
 		// ok
 	case <-time.After(time.Second):
 		t.Fatal("stopCh 未关闭")
+	}
+}
+
+func TestScopes_IncludeMCPServers(t *testing.T) {
+	if !strings.Contains(ScopeOAuth, "user:mcp_servers") {
+		t.Fatalf("ScopeOAuth must include mcp scope: %q", ScopeOAuth)
+	}
+	if !strings.Contains(ScopeAPI, "user:mcp_servers") {
+		t.Fatalf("ScopeAPI must include mcp scope: %q", ScopeAPI)
 	}
 }

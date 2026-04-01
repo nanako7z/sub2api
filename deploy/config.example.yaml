@@ -400,7 +400,8 @@ gateway:
     #   profile_2:
     #     name: "Custom Profile 2"
     #     mode: "fixed"
-  # OAuth 链路 mcp_servers 预触发节奏
+  # 已废弃（兼容保留）：runtime 不再触发 mcp_servers 请求
+  # 仅保留此键以兼容历史配置文件
   mcp_prefetch_session_ttl_minutes: 10
   mcp_prefetch_cleanup_interval_minutes: 5
 

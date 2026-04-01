@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -64,7 +65,7 @@ func (s *ClaudeUsageServiceSuite) TestFetchUsage_Success() {
 	require.Equal(s.T(), "Bearer at", captured.authorization, "Authorization header mismatch")
 	require.Equal(s.T(), "oauth-2025-04-20", captured.anthropicBeta, "anthropic-beta header mismatch")
 	require.Equal(s.T(), "close", captured.connection, "Connection header mismatch")
-	require.Equal(s.T(), "claude-code/2.1.84", captured.userAgent, "User-Agent header mismatch")
+	require.Equal(s.T(), claude.ClaudeCodeUserAgent(), captured.userAgent, "User-Agent header mismatch")
 }
 
 func (s *ClaudeUsageServiceSuite) TestFetchUsage_NonOK() {

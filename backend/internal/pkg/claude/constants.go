@@ -2,7 +2,15 @@
 package claude
 
 // Claude Code 客户端相关常量
-const ClaudeCLIVersion = "2.1.84"
+const ClaudeCLIVersion = "2.1.87"
+
+func ClaudeCLIUserAgent() string {
+	return "claude-cli/" + ClaudeCLIVersion + " (external, cli)"
+}
+
+func ClaudeCodeUserAgent() string {
+	return "claude-code/" + ClaudeCLIVersion
+}
 
 // Beta header 常量
 const (
@@ -55,7 +63,7 @@ var DefaultHeaders = map[string]string{
 	// Keep these in sync with recent Claude CLI traffic to reduce the chance
 	// that Claude Code-scoped OAuth credentials are rejected as "non-CLI" usage.
 	// Default runtime environment profile. CLI version is controlled by ClaudeCLIVersion.
-	"User-Agent":                                "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
+	"User-Agent":                                ClaudeCLIUserAgent(),
 	"X-Stainless-Lang":                          "js",
 	"X-Stainless-Package-Version":               "0.74.0",
 	"X-Stainless-OS":                            "MacOS",
@@ -97,7 +105,7 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 	case EndpointCountTokens:
 		return EndpointHeaderProfile{
 			EndpointID:         endpointID,
-			UserAgent:          "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
+			UserAgent:          ClaudeCLIUserAgent(),
 			BetaHeader:         CountTokensBetaHeader,
 			Accept:             "application/json",
 			AcceptEncoding:     "br, gzip, deflate",
@@ -123,7 +131,7 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 	case EndpointOAuthUsage:
 		return EndpointHeaderProfile{
 			EndpointID:         endpointID,
-			UserAgent:          "claude-code/" + ClaudeCLIVersion,
+			UserAgent:          ClaudeCodeUserAgent(),
 			BetaHeader:         BetaOAuth,
 			Accept:             "application/json, text/plain, */*",
 			AcceptEncoding:     "gzip, compress, deflate, br",
@@ -137,7 +145,7 @@ func HeaderProfileForEndpoint(endpointID string) EndpointHeaderProfile {
 	default:
 		return EndpointHeaderProfile{
 			EndpointID:         EndpointMessages,
-			UserAgent:          "claude-cli/" + ClaudeCLIVersion + " (external, cli)",
+			UserAgent:          ClaudeCLIUserAgent(),
 			BetaHeader:         DefaultBetaHeader,
 			Accept:             "application/json",
 			AcceptEncoding:     "br, gzip, deflate",

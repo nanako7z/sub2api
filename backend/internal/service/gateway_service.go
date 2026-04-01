@@ -55,7 +55,6 @@ const (
 	defaultModelsListCacheTTL    = 15 * time.Second
 	defaultMCPPrefetchSessionTTL = 10 * time.Minute
 	defaultMCPPrefetchCleanupTTL = 5 * time.Minute
-	mcpSessionDedupeKeyTTL       = 5 * time.Minute
 	postUsageBillingTimeout      = 15 * time.Second
 	debugGatewayBodyEnv          = "SUB2API_DEBUG_GATEWAY_BODY"
 )
@@ -493,6 +492,44 @@ var allowedHeaders = map[string]bool{
 	"accept-encoding":                           true, // 透传客户端压缩偏好；Go transport 自动解压 gzip，br/zstd 由客户端自行处理
 	"x-claude-code-session-id":                  true,
 	"x-client-request-id":                       true,
+}
+
+// OAuth mimic passthrough: retain downstream headers unless they are hop-by-hop
+// transport headers or would conflict with upstream authentication/host framing.
+var oauthMimicBlockedHeaders = map[string]struct{}{
+	"authorization":       {},
+	"x-api-key":           {},
+	"x-goog-api-key":      {},
+	"cookie":              {},
+	"host":                {},
+	"content-length":      {},
+	"connection":          {},
+	"proxy-connection":    {},
+	"keep-alive":          {},
+	"proxy-authenticate":  {},
+	"proxy-authorization": {},
+	"te":                  {},
+	"trailer":             {},
+	"transfer-encoding":   {},
+	"upgrade":             {},
+}
+
+func passthroughOAuthMimicHeaders(req *http.Request, clientHeaders http.Header) {
+	if req == nil || clientHeaders == nil {
+		return
+	}
+	for key, values := range clientHeaders {
+		lowerKey := strings.ToLower(strings.TrimSpace(key))
+		if lowerKey == "" {
+			continue
+		}
+		if _, blocked := oauthMimicBlockedHeaders[lowerKey]; blocked {
+			continue
+		}
+		for _, v := range values {
+			req.Header.Add(key, v)
+		}
+	}
 }
 
 // GatewayCache 定义网关服务的缓存操作接口。
@@ -4669,10 +4706,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	logger.LegacyPrintf("service.gateway", "[Forward] outbound_class=minimal_oauth account=%d(%s) platform=%s type=%s tls=%v proxy=%s token_generation=%d runtime_profile=%s tls_profile=%s session=%s",
 		account.ID, account.Name, account.Platform, account.Type, account.IsTLSFingerprintEnabled(), proxyURL, outboundCtx.TokenGeneration, outboundCtx.RuntimeProfileID, outboundCtx.TLSProfileID, outboundCtx.SessionID)
 
-	// Claude OAuth: on every messages request, asynchronously trigger one mcp_servers fetch
-	// to better mimic real client-side cadence while keeping the main request path non-blocking.
-	if account.Platform == PlatformAnthropic && account.Type == AccountTypeOAuth {
-		s.triggerMCPServersAsync(account, token, tokenType, outboundCtx, MCPTriggerMessageAsync)
+	// Claude OAuth: trigger MCP servers prefetch asynchronously at session startup stage.
+	// Actual trigger is scope-gated (requires user:mcp_servers) and one-shot per token generation.
+	if account.Platform == PlatformAnthropic && account.IsOAuth() {
+		s.triggerMCPServersAsync(account, token, tokenType, outboundCtx, MCPTriggerStartupPrefetch)
 	}
 	// Pre-filter: strip empty text blocks (including nested in tool_result) to prevent upstream 400.
 	body = StripEmptyTextBlocks(body)
@@ -4723,9 +4760,6 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if account.IsOAuth() && !mcpRecoveryTried && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
 			_ = resp.Body.Close()
 			mcpRecoveryTried = true
-			if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerAuthFailureRecover); err != nil {
-				logger.LegacyPrintf("service.gateway", "[mcp_recovery] account=%d status=%d failed=%v", account.ID, resp.StatusCode, err)
-			}
 			continue
 		}
 
@@ -6202,11 +6236,11 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	effectiveDropSet := mergeDropSets(policyFilterSet)
 
 	if mimicClaudeCode {
-		// ── OAuth 账号：从零构建请求头，不透传任何客户端 header ──
-		// 读取客户端 beta（在跳过透传前从原始请求获取，用于合并额外 token）
+		// OAuth 账号：先透传客户端请求头，再强制覆盖指纹相关头，其他头保留透传。
 		incomingBeta := clientHeaders.Get("anthropic-beta")
+		passthroughOAuthMimicHeaders(req, clientHeaders)
 
-		// 设置完整 Claude Code 请求头（UA/X-Stainless/X-App/Accept/Accept-Encoding 等）
+		// 强制覆盖 Claude Code 指纹头（UA/X-Stainless/X-App/Accept/Accept-Encoding 等）。
 		applyClaudeCodeMimicHeaders(req, reqStream, claude.EndpointMessages)
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("anthropic-version", "2023-06-01")
@@ -8626,9 +8660,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	if account.IsOAuth() {
-		if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerStartupPrefetch); err != nil {
-			logger.LegacyPrintf("service.gateway", "[mcp_prefetch] account=%d reason=%s failed=%v", account.ID, MCPTriggerStartupPrefetch, err)
-		}
+		s.triggerMCPServersAsync(account, token, tokenType, outboundCtx, MCPTriggerStartupPrefetch)
 	}
 
 	// 发送请求
@@ -8641,9 +8673,6 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 
 	if account.IsOAuth() && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
 		_ = resp.Body.Close()
-		if err := s.maybeTriggerMCPServers(ctx, c, account, token, tokenType, outboundCtx, MCPTriggerAuthFailureRecover); err != nil {
-			logger.LegacyPrintf("service.gateway", "[mcp_recovery] account=%d status=%d failed=%v", account.ID, resp.StatusCode, err)
-		}
 		retryReq, buildErr := s.buildCountTokensRequest(ctx, c, account, body, token, tokenType, reqModel, shouldMimicHeaders, account.IsOAuth())
 		if buildErr != nil {
 			s.countTokensError(c, http.StatusInternalServerError, "api_error", "Failed to build retry request")
@@ -8972,8 +9001,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	ctEffectiveDropSet := mergeDropSets(s.getBetaPolicyFilterSet(ctx, c, account))
 
 	if mimicClaudeCode {
-		// ── OAuth 账号：从零构建请求头，不透传任何客户端 header ──
+		// OAuth 账号：先透传客户端请求头，再强制覆盖指纹相关头。
 		incomingBeta := clientHeaders.Get("anthropic-beta")
+		passthroughOAuthMimicHeaders(req, clientHeaders)
 
 		applyClaudeCodeMimicHeaders(req, false, claude.EndpointCountTokens)
 		req.Header.Set("content-type", "application/json")
@@ -9044,16 +9074,28 @@ func (s *GatewayService) countTokensError(c *gin.Context, status int, errType, m
 	})
 }
 
-func (s *GatewayService) mcpSessionCacheKey(accountID int64, sessionID string) string {
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return fmt.Sprintf("mcp:session:%d", accountID)
-	}
-	return fmt.Sprintf("mcp:session:%d:%s", accountID, sessionID)
+func (s *GatewayService) mcpPrefetchOnceKey(accountID, tokenGeneration int64) string {
+	return fmt.Sprintf("mcp:prefetch_once:%d:%d", accountID, tokenGeneration)
 }
 
-func (s *GatewayService) mcpTokenGenerationKey(accountID int64) string {
-	return fmt.Sprintf("mcp:token_generation:%d", accountID)
+func hasOAuthScope(scopeHeader, scope string) bool {
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return false
+	}
+	for _, v := range strings.Fields(scopeHeader) {
+		if v == scope {
+			return true
+		}
+	}
+	return false
+}
+
+func accountHasOAuthScope(account *Account, scope string) bool {
+	if account == nil || !account.IsOAuth() {
+		return false
+	}
+	return hasOAuthScope(account.GetCredential("scope"), scope)
 }
 
 func (s *GatewayService) maybeTriggerMCPServers(
@@ -9065,45 +9107,47 @@ func (s *GatewayService) maybeTriggerMCPServers(
 	outboundCtx *AccountOutboundContext,
 	reason MCPTriggerReason,
 ) error {
-	if s == nil || account == nil || outboundCtx == nil {
-		return fmt.Errorf("invalid mcp trigger context")
-	}
-	if s.mcpTriggerCache == nil {
+	_ = c
+
+	if s == nil || account == nil || outboundCtx == nil || s.httpUpstream == nil || s.mcpTriggerCache == nil {
 		return nil
 	}
-	sessionCacheKey := s.mcpSessionCacheKey(account.ID, outboundCtx.SessionID)
-
-	effectiveReason := reason
-	if v, ok := s.mcpTriggerCache.Get(s.mcpTokenGenerationKey(account.ID)); ok {
-		if lastTokenGen, ok := v.(int64); ok && lastTokenGen != outboundCtx.TokenGeneration {
-			effectiveReason = MCPTriggerSessionReset
-		}
+	if tokenType != "oauth" || !account.IsOAuth() {
+		return nil
 	}
-
-	if _, ok := s.mcpTriggerCache.Get(sessionCacheKey); ok {
-		// Sliding TTL: keep this dedupe key alive only when session keeps refreshing it.
-		// If not refreshed for 5 minutes, the key naturally expires.
-		s.mcpTriggerCache.Set(sessionCacheKey, true, mcpSessionDedupeKeyTTL)
+	if reason != MCPTriggerStartupPrefetch && reason != MCPTriggerSessionReset {
+		return nil
+	}
+	if !accountHasOAuthScope(account, "user:mcp_servers") {
 		return nil
 	}
 
-	req, err := s.buildMCPServersRequest(ctx, account, token, tokenType)
+	onceKey := s.mcpPrefetchOnceKey(account.ID, outboundCtx.TokenGeneration)
+	if _, ok := s.mcpTriggerCache.Get(onceKey); ok {
+		return nil
+	}
+	// Align with Claude Code memoized MCP fetch behavior: one-shot per token generation,
+	// including failed attempts (the next generation can trigger again).
+	s.mcpTriggerCache.Set(onceKey, true, gocache.NoExpiration)
+
+	req, err := s.buildMCPServersRequest(ctx, account, token, tokenType, nil)
 	if err != nil {
 		return err
 	}
-	resp, err := s.httpUpstream.DoWithTLS(req, outboundCtx.ProxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+
+	var resp *http.Response
+	if s.tlsFPProfileService != nil {
+		resp, err = s.httpUpstream.DoWithTLS(req, outboundCtx.ProxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	} else {
+		resp, err = s.httpUpstream.DoWithTLS(req, outboundCtx.ProxyURL, account.ID, account.Concurrency, nil)
+	}
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	s.mcpTriggerCache.SetDefault(s.mcpTokenGenerationKey(account.ID), outboundCtx.TokenGeneration)
-	if resp.StatusCode < 400 {
-		s.mcpTriggerCache.Set(sessionCacheKey, true, mcpSessionDedupeKeyTTL)
-	}
-
-	logger.LegacyPrintf("service.gateway", "[mcp_trigger] account=%d reason=%s status=%d token_generation=%d proxy_effective=%t endpoint_profile_id=%s",
-		account.ID, effectiveReason, resp.StatusCode, outboundCtx.TokenGeneration, outboundCtx.ProxyURL != "", claude.EndpointMCPServers)
+	logger.LegacyPrintf("service.gateway", "[mcp_prefetch] account=%d reason=%s status=%d token_generation=%d scope_gated=true",
+		account.ID, reason, resp.StatusCode, outboundCtx.TokenGeneration)
 	return nil
 }
 
@@ -9131,6 +9175,7 @@ func (s *GatewayService) buildMCPServersRequest(
 	account *Account,
 	token string,
 	tokenType string,
+	clientHeaders http.Header,
 ) (*http.Request, error) {
 	profile := claude.HeaderProfileForEndpoint(claude.EndpointMCPServers)
 	// IMPORTANT: align with real Claude Code capture behavior.
@@ -9145,9 +9190,16 @@ func (s *GatewayService) buildMCPServersRequest(
 		return nil, err
 	}
 
+	incomingBeta := ""
+	if clientHeaders != nil {
+		incomingBeta = clientHeaders.Get("anthropic-beta")
+		passthroughOAuthMimicHeaders(req, clientHeaders)
+	}
+
 	applyClaudeCodeMimicHeaders(req, false, profile.EndpointID)
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", mergeAnthropicBeta(strings.Split(profile.BetaHeader, ","), incomingBeta))
 	if tokenType == "oauth" {
 		req.Header.Set("authorization", "Bearer "+token)
 	} else {
@@ -9166,7 +9218,11 @@ func (s *GatewayService) ForwardMCPServers(ctx context.Context, c *gin.Context, 
 	if err != nil {
 		return err
 	}
-	req, err := s.buildMCPServersRequest(ctx, account, token, tokenType)
+	clientHeaders := http.Header{}
+	if c != nil && c.Request != nil {
+		clientHeaders = c.Request.Header
+	}
+	req, err := s.buildMCPServersRequest(ctx, account, token, tokenType, clientHeaders)
 	if err != nil {
 		return err
 	}

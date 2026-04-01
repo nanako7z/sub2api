@@ -17,7 +17,7 @@ type mockClaudeOAuthClient struct {
 	getOrgUUIDFunc   func(ctx context.Context, sessionKey, proxyURL string) (string, error)
 	getAuthCodeFunc  func(ctx context.Context, sessionKey, orgUUID, scope, codeChallenge, state, proxyURL string) (string, error)
 	exchangeCodeFunc func(ctx context.Context, code, codeVerifier, state, proxyURL string, isSetupToken bool) (*oauth.TokenResponse, error)
-	refreshTokenFunc func(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error)
+	refreshTokenFunc func(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error)
 }
 
 func (m *mockClaudeOAuthClient) GetOrganizationUUID(ctx context.Context, sessionKey, proxyURL string) (string, error) {
@@ -41,9 +41,9 @@ func (m *mockClaudeOAuthClient) ExchangeCodeForToken(ctx context.Context, code, 
 	panic("ExchangeCodeForToken not implemented")
 }
 
-func (m *mockClaudeOAuthClient) RefreshToken(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error) {
+func (m *mockClaudeOAuthClient) RefreshToken(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error) {
 	if m.refreshTokenFunc != nil {
-		return m.refreshTokenFunc(ctx, refreshToken, proxyURL)
+		return m.refreshTokenFunc(ctx, refreshToken, scope, proxyURL)
 	}
 	panic("RefreshToken not implemented")
 }
@@ -373,9 +373,12 @@ func TestOAuthService_RefreshToken(t *testing.T) {
 	t.Parallel()
 
 	client := &mockClaudeOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error) {
+		refreshTokenFunc: func(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error) {
 			if refreshToken != "my-refresh-token" {
 				t.Errorf("refreshToken 不匹配: got=%q", refreshToken)
+			}
+			if scope != oauth.ScopeAPI {
+				t.Errorf("scope 不匹配: got=%q want=%q", scope, oauth.ScopeAPI)
 			}
 			if proxyURL != "" {
 				t.Errorf("proxyURL 应为空: got=%q", proxyURL)
@@ -415,7 +418,7 @@ func TestOAuthService_RefreshToken_Error(t *testing.T) {
 	t.Parallel()
 
 	client := &mockClaudeOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error) {
+		refreshTokenFunc: func(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error) {
 			return nil, fmt.Errorf("invalid_grant: token expired")
 		},
 	}
@@ -478,9 +481,12 @@ func TestOAuthService_RefreshAccountToken_Success(t *testing.T) {
 	t.Parallel()
 
 	client := &mockClaudeOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error) {
+		refreshTokenFunc: func(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error) {
 			if refreshToken != "account-refresh-token" {
 				t.Errorf("refreshToken 不匹配: got=%q", refreshToken)
+			}
+			if scope != oauth.ScopeAPI {
+				t.Errorf("scope 不匹配: got=%q want=%q", scope, oauth.ScopeAPI)
 			}
 			return &oauth.TokenResponse{
 				AccessToken:  "refreshed-access",
@@ -513,6 +519,51 @@ func TestOAuthService_RefreshAccountToken_Success(t *testing.T) {
 	}
 }
 
+func TestOAuthService_RefreshAccountToken_SetupTokenUsesInferenceScope(t *testing.T) {
+	t.Parallel()
+
+	client := &mockClaudeOAuthClient{
+		refreshTokenFunc: func(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error) {
+			if refreshToken != "setup-refresh-token" {
+				t.Errorf("refreshToken 不匹配: got=%q", refreshToken)
+			}
+			if scope != oauth.ScopeInference {
+				t.Errorf("setup-token scope 不匹配: got=%q want=%q", scope, oauth.ScopeInference)
+			}
+			return &oauth.TokenResponse{
+				AccessToken:  "setup-refreshed-access",
+				TokenType:    "Bearer",
+				ExpiresIn:    3600,
+				RefreshToken: "setup-refreshed-token",
+				Scope:        oauth.ScopeInference,
+			}, nil
+		},
+	}
+
+	svc := NewOAuthService(&mockProxyRepoForOAuth{}, client)
+	defer svc.Stop()
+
+	account := &Account{
+		ID:       31,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeSetupToken,
+		Credentials: map[string]any{
+			"refresh_token": "setup-refresh-token",
+		},
+	}
+
+	tokenInfo, err := svc.RefreshAccountToken(context.Background(), account)
+	if err != nil {
+		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
+	}
+	if tokenInfo.AccessToken != "setup-refreshed-access" {
+		t.Fatalf("AccessToken 不匹配: got=%q", tokenInfo.AccessToken)
+	}
+	if tokenInfo.Scope != oauth.ScopeInference {
+		t.Fatalf("scope 不匹配: got=%q want=%q", tokenInfo.Scope, oauth.ScopeInference)
+	}
+}
+
 func TestOAuthService_RefreshAccountToken_WithProxy(t *testing.T) {
 	t.Parallel()
 
@@ -529,9 +580,12 @@ func TestOAuthService_RefreshAccountToken_WithProxy(t *testing.T) {
 	}
 
 	client := &mockClaudeOAuthClient{
-		refreshTokenFunc: func(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error) {
+		refreshTokenFunc: func(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error) {
 			if proxyURL != "socks5://user:pass@socks.example.com:1080" {
 				t.Errorf("proxyURL 不匹配: got=%q", proxyURL)
+			}
+			if scope != oauth.ScopeAPI {
+				t.Errorf("scope 不匹配: got=%q want=%q", scope, oauth.ScopeAPI)
 			}
 			return &oauth.TokenResponse{
 				AccessToken: "refreshed",

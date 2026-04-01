@@ -146,14 +146,6 @@ func TestJA3Fingerprint(t *testing.T) {
 	}
 }
 
-// TestProfileExpectation defines expected fingerprint values for a profile.
-type TestProfileExpectation struct {
-	Profile       *Profile
-	ExpectedJA3   string // Expected JA3 hash (empty = don't check)
-	ExpectedJA4   string // Expected full JA4 (empty = don't check)
-	JA4CipherHash string // Expected JA4 cipher hash - the stable middle part (empty = don't check)
-}
-
 // TestAllProfiles tests multiple TLS fingerprint profiles against tls.peet.ws.
 // Run with: go test -v -tags=integration -run TestAllProfiles ./internal/pkg/tlsfingerprint/...
 func TestAllProfiles(t *testing.T) {

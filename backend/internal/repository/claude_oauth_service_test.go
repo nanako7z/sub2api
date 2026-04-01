@@ -298,13 +298,15 @@ func (s *ClaudeOAuthServiceSuite) TestExchangeCodeForToken() {
 func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 	tests := []struct {
 		name     string
+		scope    string
 		handler  http.HandlerFunc
 		wantErr  bool
 		wantResp *oauth.TokenResponse
 		validate func(captured requestCapture)
 	}{
 		{
-			name: "sends_json_format",
+			name:  "sends_json_format",
+			scope: oauth.ScopeAPI,
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(oauth.TokenResponse{
@@ -328,10 +330,33 @@ func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 				require.Equal(s.T(), "refresh_token", captured.bodyJSON["grant_type"])
 				require.Equal(s.T(), "rt", captured.bodyJSON["refresh_token"])
 				require.Equal(s.T(), oauth.ClientID, captured.bodyJSON["client_id"])
+				require.Equal(s.T(), oauth.ScopeAPI, captured.bodyJSON["scope"])
 			},
 		},
 		{
-			name: "returns_new_refresh_token",
+			name:  "sends_inference_scope_for_setup_token",
+			scope: oauth.ScopeInference,
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(oauth.TokenResponse{
+					AccessToken:  "setup_access_token",
+					TokenType:    "bearer",
+					ExpiresIn:    28800,
+					RefreshToken: "setup_refresh_token",
+					Scope:        oauth.ScopeInference,
+				})
+			},
+			wantResp: &oauth.TokenResponse{
+				AccessToken:  "setup_access_token",
+				RefreshToken: "setup_refresh_token",
+			},
+			validate: func(captured requestCapture) {
+				require.Equal(s.T(), oauth.ScopeInference, captured.bodyJSON["scope"])
+			},
+		},
+		{
+			name:  "returns_new_refresh_token",
+			scope: oauth.ScopeAPI,
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(oauth.TokenResponse{
@@ -347,7 +372,8 @@ func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 			},
 		},
 		{
-			name: "non_200_returns_error",
+			name:  "non_200_returns_error",
+			scope: oauth.ScopeAPI,
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
@@ -374,7 +400,7 @@ func (s *ClaudeOAuthServiceSuite) TestRefreshToken() {
 			s.client.tokenURL = "http://in-process/token"
 			s.client.clientFactory = func(string) (*req.Client, error) { return newTestReqClient(rt), nil }
 
-			resp, err := s.client.RefreshToken(context.Background(), "rt", "")
+			resp, err := s.client.RefreshToken(context.Background(), "rt", tt.scope, "")
 
 			if tt.wantErr {
 				require.Error(s.T(), err)

@@ -232,16 +232,22 @@ func (s *claudeOAuthService) ExchangeCodeForToken(ctx context.Context, code, cod
 	return &tokenResp, nil
 }
 
-func (s *claudeOAuthService) RefreshToken(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error) {
+func (s *claudeOAuthService) RefreshToken(ctx context.Context, refreshToken, scope, proxyURL string) (*oauth.TokenResponse, error) {
 	client, err := s.clientFactory(proxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP client: %w", err)
+	}
+
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		scope = oauth.ScopeAPI
 	}
 
 	reqBody := map[string]any{
 		"grant_type":    "refresh_token",
 		"refresh_token": refreshToken,
 		"client_id":     oauth.ClientID,
+		"scope":         scope,
 	}
 
 	var tokenResp oauth.TokenResponse

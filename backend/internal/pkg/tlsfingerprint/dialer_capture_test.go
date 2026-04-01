@@ -67,7 +67,7 @@ func TestDialerAgainstCaptureServer(t *testing.T) {
 				EnableGREASE:        false,
 				CipherSuites:        []uint16{4866, 4867, 4865, 49199, 49195, 49200, 49196, 158, 49191, 103, 49192, 107, 163, 159, 52393, 52392, 52394, 49327, 49325, 49315, 49311, 49245, 49249, 49239, 49235, 162, 49326, 49324, 49314, 49310, 49244, 49248, 49238, 49234, 49188, 106, 49187, 64, 49162, 49172, 57, 56, 49161, 49171, 51, 50, 157, 49313, 49309, 49233, 156, 49312, 49308, 49232, 61, 60, 53, 47, 255},
 				Curves:              []uint16{29, 23, 30, 25, 24, 256, 257, 258, 259, 260},
-				PointFormats:        []uint16{0, 1, 2},
+				PointFormats:        []uint8{0, 1, 2},
 				SignatureAlgorithms: []uint16{0x0403, 0x0503, 0x0603, 0x0807, 0x0808, 0x0809, 0x080a, 0x080b, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0303, 0x0301, 0x0302, 0x0402, 0x0502, 0x0602},
 				ALPNProtocols:       []string{"http/1.1"},
 				SupportedVersions:   []uint16{0x0304, 0x0303},
@@ -83,7 +83,7 @@ func TestDialerAgainstCaptureServer(t *testing.T) {
 				EnableGREASE:        false,
 				CipherSuites:        []uint16{4865, 4866, 4867, 49195, 49199, 49196, 49200, 52393, 52392, 49161, 49171, 49162, 49172, 156, 157, 47, 53},
 				Curves:              []uint16{29, 23, 24},
-				PointFormats:        []uint16{0},
+				PointFormats:        []uint8{0},
 				SignatureAlgorithms: []uint16{0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601, 0x0201},
 				ALPNProtocols:       []string{"http/1.1"},
 				SupportedVersions:   []uint16{0x0304, 0x0303},
@@ -147,7 +147,7 @@ func TestDialerAgainstCaptureServer(t *testing.T) {
 			// Verify each field
 			assertIntSliceEqual(t, "cipher_suites", uint16sToInts(effectiveCipherSuites), captured.CipherSuites)
 			assertIntSliceEqual(t, "curves", uint16sToInts(effectiveCurves), captured.Curves)
-			assertIntSliceEqual(t, "point_formats", uint16sToInts(effectivePointFormats), captured.PointFormats)
+			assertIntSliceEqual(t, "point_formats", uint8sToInts(effectivePointFormats), captured.PointFormats)
 			assertIntSliceEqual(t, "signature_algorithms", uint16sToInts(effectiveSigAlgs), captured.SignatureAlgorithms)
 			assertStringSliceEqual(t, "alpn_protocols", effectiveALPN, captured.ALPNProtocols)
 			assertIntSliceEqual(t, "supported_versions", uint16sToInts(effectiveVersions), captured.SupportedVersions)
@@ -161,11 +161,7 @@ func TestDialerAgainstCaptureServer(t *testing.T) {
 			}
 
 			// Verify extension order
-			// Use profile.Extensions if set, otherwise the default order (Node.js 24.x)
-			expectedExtOrder := uint16sToInts(defaultExtensionOrder)
-			if len(tc.profile.Extensions) > 0 {
-				expectedExtOrder = uint16sToInts(tc.profile.Extensions)
-			}
+			expectedExtOrder := extensionIDsFromSpec(buildClientHelloSpecFromProfile(tc.profile))
 			// Strip GREASE values from both expected and captured for comparison
 			var filteredExpected, filteredActual []int
 			for _, e := range expectedExtOrder {
@@ -240,6 +236,60 @@ func uint16sToInts(vals []uint16) []int {
 	return result
 }
 
+func uint8sToInts(vals []uint8) []int {
+	result := make([]int, len(vals))
+	for i, v := range vals {
+		result[i] = int(v)
+	}
+	return result
+}
+
+func isGREASEValue(v uint16) bool {
+	return (v&0x0f0f) == 0x0a0a && (v>>8) == (v&0x00ff)
+}
+
+func extensionIDsFromSpec(spec *utls.ClientHelloSpec) []int {
+	if spec == nil {
+		return nil
+	}
+	out := make([]int, 0, len(spec.Extensions))
+	for _, ext := range spec.Extensions {
+		switch e := ext.(type) {
+		case *utls.RenegotiationInfoExtension:
+			out = append(out, 65281)
+		case *utls.SNIExtension:
+			out = append(out, 0)
+		case *utls.SupportedPointsExtension:
+			out = append(out, 11)
+		case *utls.SupportedCurvesExtension:
+			out = append(out, 10)
+		case *utls.SessionTicketExtension:
+			out = append(out, 35)
+		case *utls.ALPNExtension:
+			out = append(out, 16)
+		case *utls.ExtendedMasterSecretExtension:
+			out = append(out, 23)
+		case *utls.SignatureAlgorithmsExtension:
+			out = append(out, 13)
+		case *utls.SupportedVersionsExtension:
+			out = append(out, 43)
+		case *utls.PSKKeyExchangeModesExtension:
+			out = append(out, 45)
+		case *utls.KeyShareExtension:
+			out = append(out, 51)
+		case *utls.UtlsPreSharedKeyExtension:
+			out = append(out, 41)
+		case *utls.UtlsPaddingExtension:
+			out = append(out, 21)
+		case *utls.GenericExtension:
+			out = append(out, int(e.Id))
+		default:
+			out = append(out, -1)
+		}
+	}
+	return out
+}
+
 func assertIntSliceEqual(t *testing.T, name string, expected, actual []int) {
 	t.Helper()
 	if len(expected) != len(actual) {
@@ -289,7 +339,7 @@ func TestBuildClientHelloSpecNewFields(t *testing.T) {
 		EnableGREASE:        false,
 		CipherSuites:        []uint16{0x1301, 0x1302},
 		Curves:              []uint16{29, 23},
-		PointFormats:        []uint16{0},
+		PointFormats:        []uint8{0},
 		SignatureAlgorithms: []uint16{0x0403, 0x0804},
 		ALPNProtocols:       []string{"h2", "http/1.1"},
 		SupportedVersions:   []uint16{0x0304},
@@ -358,8 +408,8 @@ func TestBuildClientHelloSpecNewFields(t *testing.T) {
 				t.Errorf("default versions: got %v, want 2 entries", e.Versions)
 			}
 		case *utls.KeyShareExtension:
-			if len(e.KeyShares) != 1 {
-				t.Errorf("default key shares: got %d, want 1", len(e.KeyShares))
+			if len(e.KeyShares) != 2 {
+				t.Errorf("default key shares: got %d, want 2", len(e.KeyShares))
 			}
 		}
 	}
