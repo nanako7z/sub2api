@@ -570,30 +570,34 @@ const formatHex = (n: number): string => '0x' + n.toString(16).padStart(4, '0')
 
 // Format numeric arrays for display in textarea (null-safe)
 const formatNumericArray = (arr: number[] | null | undefined): string => (arr ?? []).map(formatHex).join(', ')
+const formatDecimalArray = (arr: number[] | null | undefined): string => (arr ?? []).join(', ')
 
 // For point_formats and psk_modes (uint8), show as plain numbers (null-safe)
 const formatPlainNumericArray = (arr: number[] | null | undefined): string => (arr ?? []).join(', ')
 
 const isBuiltInProfile = (profile: TLSFingerprintProfile): boolean => profile.id === BUILT_IN_TLS_PROFILE_ID
 
-const fillFormFromProfile = (profile: TLSFingerprintProfile) => {
+const fillFormFromProfile = (profile: TLSFingerprintProfile, options?: { preferDecimal?: boolean }) => {
+  const useDecimal = options?.preferDecimal === true
+  const formatMainNumeric = useDecimal ? formatDecimalArray : formatNumericArray
+
   form.name = profile.name
   form.description = profile.description
   form.enable_grease = profile.enable_grease
-  fieldInputs.cipher_suites = formatNumericArray(profile.cipher_suites)
+  fieldInputs.cipher_suites = formatMainNumeric(profile.cipher_suites)
   fieldInputs.curves = formatPlainNumericArray(profile.curves)
   fieldInputs.point_formats = formatPlainNumericArray(profile.point_formats)
-  fieldInputs.signature_algorithms = formatNumericArray(profile.signature_algorithms)
+  fieldInputs.signature_algorithms = formatMainNumeric(profile.signature_algorithms)
   fieldInputs.alpn_protocols = (profile.alpn_protocols ?? []).join(', ')
-  fieldInputs.supported_versions = formatNumericArray(profile.supported_versions)
+  fieldInputs.supported_versions = formatMainNumeric(profile.supported_versions)
   fieldInputs.key_share_groups = formatPlainNumericArray(profile.key_share_groups)
   fieldInputs.psk_modes = formatPlainNumericArray(profile.psk_modes)
-  fieldInputs.extensions = formatNumericArray(profile.extensions)
+  fieldInputs.extensions = formatMainNumeric(profile.extensions)
 }
 
 const handlePreview = (profile: TLSFingerprintProfile) => {
   previewingProfile.value = profile
-  fillFormFromProfile(profile)
+  fillFormFromProfile(profile, { preferDecimal: isBuiltInProfile(profile) })
   showPreviewModal.value = true
 }
 
