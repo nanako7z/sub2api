@@ -58,7 +58,15 @@
           <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
             <tr v-for="profile in profiles" :key="profile.id" class="hover:bg-gray-50 dark:hover:bg-dark-700">
               <td class="px-3 py-2">
-                <div class="font-medium text-gray-900 dark:text-white text-sm">{{ profile.name }}</div>
+                <div class="flex items-center gap-2">
+                  <div class="font-medium text-gray-900 dark:text-white text-sm">{{ profile.name }}</div>
+                  <span
+                    v-if="isBuiltInProfile(profile)"
+                    class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                  >
+                    {{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}
+                  </span>
+                </div>
               </td>
               <td class="px-3 py-2">
                 <div v-if="profile.description" class="text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
@@ -92,14 +100,16 @@
                 <div class="flex items-center gap-1">
                   <button
                     @click="handleEdit(profile)"
-                    class="p-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
+                    :disabled="isBuiltInProfile(profile)"
+                    class="p-1 text-gray-500 hover:text-primary-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-primary-400"
                     :title="t('common.edit')"
                   >
                     <Icon name="edit" size="sm" />
                   </button>
                   <button
                     @click="handleDelete(profile)"
-                    class="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                    :disabled="isBuiltInProfile(profile)"
+                    class="p-1 text-gray-500 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-red-400"
                     :title="t('common.delete')"
                   >
                     <Icon name="trash" size="sm" />
@@ -349,6 +359,7 @@ void emit // suppress unused warning - emit is used via $emit in template
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const BUILT_IN_TLS_PROFILE_ID = 0
 
 const profiles = ref<TLSFingerprintProfile[]>([])
 const loading = ref(false)
@@ -545,7 +556,12 @@ const formatNumericArray = (arr: number[] | null | undefined): string => (arr ??
 // For point_formats and psk_modes (uint8), show as plain numbers (null-safe)
 const formatPlainNumericArray = (arr: number[] | null | undefined): string => (arr ?? []).join(', ')
 
+const isBuiltInProfile = (profile: TLSFingerprintProfile): boolean => profile.id === BUILT_IN_TLS_PROFILE_ID
+
 const handleEdit = (profile: TLSFingerprintProfile) => {
+  if (isBuiltInProfile(profile)) {
+    return
+  }
   editingProfile.value = profile
   form.name = profile.name
   form.description = profile.description
@@ -563,6 +579,9 @@ const handleEdit = (profile: TLSFingerprintProfile) => {
 }
 
 const handleDelete = (profile: TLSFingerprintProfile) => {
+  if (isBuiltInProfile(profile)) {
+    return
+  }
   deletingProfile.value = profile
   showDeleteDialog.value = true
 }

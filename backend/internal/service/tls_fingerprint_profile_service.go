@@ -7,8 +7,14 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+)
+
+const (
+	BuiltInTLSFingerprintProfileID   int64 = 0
+	BuiltInTLSFingerprintProfileName       = "Built-in Default (Node.js 24.x)"
 )
 
 // TLSFingerprintProfileRepository 定义 TLS 指纹模板的数据访问接口
@@ -73,11 +79,22 @@ func NewTLSFingerprintProfileService(
 
 // List 获取所有模板
 func (s *TLSFingerprintProfileService) List(ctx context.Context) ([]*model.TLSFingerprintProfile, error) {
-	return s.repo.List(ctx)
+	profiles, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*model.TLSFingerprintProfile, 0, len(profiles)+1)
+	result = append(result, s.builtInProfile())
+	result = append(result, profiles...)
+	return result, nil
 }
 
 // GetByID 根据 ID 获取模板
 func (s *TLSFingerprintProfileService) GetByID(ctx context.Context, id int64) (*model.TLSFingerprintProfile, error) {
+	if id == BuiltInTLSFingerprintProfileID {
+		return s.builtInProfile(), nil
+	}
 	return s.repo.GetByID(ctx, id)
 }
 
@@ -101,6 +118,10 @@ func (s *TLSFingerprintProfileService) Create(ctx context.Context, profile *mode
 
 // Update 更新模板
 func (s *TLSFingerprintProfileService) Update(ctx context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	if profile != nil && profile.ID == BuiltInTLSFingerprintProfileID {
+		return nil, infraerrors.BadRequest("TLS_FP_PROFILE_BUILTIN_READONLY", "built-in TLS fingerprint profile is read-only")
+	}
+
 	if err := profile.Validate(); err != nil {
 		return nil, err
 	}
@@ -119,6 +140,10 @@ func (s *TLSFingerprintProfileService) Update(ctx context.Context, profile *mode
 
 // Delete 删除模板
 func (s *TLSFingerprintProfileService) Delete(ctx context.Context, id int64) error {
+	if id == BuiltInTLSFingerprintProfileID {
+		return infraerrors.BadRequest("TLS_FP_PROFILE_BUILTIN_READONLY", "built-in TLS fingerprint profile is read-only")
+	}
+
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
@@ -191,7 +216,7 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfile(account *Account) *tlsf
 		}
 	}
 	// TLS 启用但无绑定 profile → 空 Profile → dialer 使用内置默认值
-	return &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
+	return &tlsfingerprint.Profile{Name: BuiltInTLSFingerprintProfileName}
 }
 
 // --- 缓存管理 ---
@@ -255,5 +280,17 @@ func (s *TLSFingerprintProfileService) invalidateAndNotify(ctx context.Context) 
 		if err := s.cache.NotifyUpdate(ctx); err != nil {
 			logger.LegacyPrintf("service.tls_fp_profile", "[TLSFPProfileService] Failed to notify cache update: %v", err)
 		}
+	}
+}
+
+func (s *TLSFingerprintProfileService) builtInProfile() *model.TLSFingerprintProfile {
+	description := "Default built-in TLS fingerprint template. Read-only."
+	now := time.Now()
+	return &model.TLSFingerprintProfile{
+		ID:          BuiltInTLSFingerprintProfileID,
+		Name:        BuiltInTLSFingerprintProfileName,
+		Description: &description,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 }
