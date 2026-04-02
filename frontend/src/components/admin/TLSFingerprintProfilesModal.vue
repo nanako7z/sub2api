@@ -232,7 +232,7 @@
               v-model="fieldInputs.cipher_suites"
               rows="2"
               class="input font-mono text-xs"
-              :placeholder="'0x1301, 0x1302, 0xc02c'"
+              :placeholder="'4865, 4866, 49196'"
             />
             <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.form.cipherSuitesHint') }}</p>
           </div>
@@ -254,7 +254,7 @@
               v-model="fieldInputs.signature_algorithms"
               rows="2"
               class="input font-mono text-xs"
-              :placeholder="'0x0403, 0x0804, 0x0401'"
+              :placeholder="'1027, 2052, 1025'"
             />
           </div>
 
@@ -264,7 +264,7 @@
               v-model="fieldInputs.supported_versions"
               rows="2"
               class="input font-mono text-xs"
-              :placeholder="'0x0304, 0x0303'"
+              :placeholder="'772, 771'"
             />
           </div>
 
@@ -284,7 +284,7 @@
               v-model="fieldInputs.extensions"
               rows="2"
               class="input font-mono text-xs"
-              :placeholder="'0x0000, 0x0005, 0x000a'"
+              :placeholder="'0, 5, 10'"
             />
           </div>
 
@@ -565,11 +565,7 @@ const parseStringArray = (input: string): string[] => {
     .filter(s => s.length > 0)
 }
 
-// Format a number as hex with 0x prefix and 4-digit padding
-const formatHex = (n: number): string => '0x' + n.toString(16).padStart(4, '0')
-
 // Format numeric arrays for display in textarea (null-safe)
-const formatNumericArray = (arr: number[] | null | undefined): string => (arr ?? []).map(formatHex).join(', ')
 const formatDecimalArray = (arr: number[] | null | undefined): string => (arr ?? []).join(', ')
 
 // For point_formats and psk_modes (uint8), show as plain numbers (null-safe)
@@ -577,27 +573,24 @@ const formatPlainNumericArray = (arr: number[] | null | undefined): string => (a
 
 const isBuiltInProfile = (profile: TLSFingerprintProfile): boolean => profile.id === BUILT_IN_TLS_PROFILE_ID
 
-const fillFormFromProfile = (profile: TLSFingerprintProfile, options?: { preferDecimal?: boolean }) => {
-  const useDecimal = options?.preferDecimal === true
-  const formatMainNumeric = useDecimal ? formatDecimalArray : formatNumericArray
-
+const fillFormFromProfile = (profile: TLSFingerprintProfile) => {
   form.name = profile.name
   form.description = profile.description
   form.enable_grease = profile.enable_grease
-  fieldInputs.cipher_suites = formatMainNumeric(profile.cipher_suites)
+  fieldInputs.cipher_suites = formatDecimalArray(profile.cipher_suites)
   fieldInputs.curves = formatPlainNumericArray(profile.curves)
   fieldInputs.point_formats = formatPlainNumericArray(profile.point_formats)
-  fieldInputs.signature_algorithms = formatMainNumeric(profile.signature_algorithms)
+  fieldInputs.signature_algorithms = formatDecimalArray(profile.signature_algorithms)
   fieldInputs.alpn_protocols = (profile.alpn_protocols ?? []).join(', ')
-  fieldInputs.supported_versions = formatMainNumeric(profile.supported_versions)
+  fieldInputs.supported_versions = formatDecimalArray(profile.supported_versions)
   fieldInputs.key_share_groups = formatPlainNumericArray(profile.key_share_groups)
   fieldInputs.psk_modes = formatPlainNumericArray(profile.psk_modes)
-  fieldInputs.extensions = formatMainNumeric(profile.extensions)
+  fieldInputs.extensions = formatDecimalArray(profile.extensions)
 }
 
 const handlePreview = (profile: TLSFingerprintProfile) => {
   previewingProfile.value = profile
-  fillFormFromProfile(profile, { preferDecimal: isBuiltInProfile(profile) })
+  fillFormFromProfile(profile)
   showPreviewModal.value = true
 }
 
