@@ -242,6 +242,88 @@ func TestBuildCountTokensRequest_OAuthMimic_PassthroughThenOverride(t *testing.T
 	}
 }
 
+func TestBuildUpstreamRequest_OAuthMimic_SessionID_FromMetadataOverridesHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(nil))
+	c.Request.Header.Set("X-Claude-Code-Session-Id", "from-client-header")
+
+	account := &Account{
+		ID:          1101,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	sessionID := "11111111-2222-4333-8444-555555555555"
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"metadata":{"user_id":"user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_account__session_` + sessionID + `"}}`)
+
+	svc := &GatewayService{}
+	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-5", false, true)
+	if err != nil {
+		t.Fatalf("buildUpstreamRequest failed: %v", err)
+	}
+
+	if got := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id"); got != sessionID {
+		t.Fatalf("X-Claude-Code-Session-Id mismatch: got %q want %q", got, sessionID)
+	}
+}
+
+func TestBuildCountTokensRequest_OAuthMimic_SessionID_FromMetadataInjected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(nil))
+
+	account := &Account{
+		ID:          1102,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	sessionID := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"metadata":{"user_id":"user_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_account__session_` + sessionID + `"}}`)
+
+	svc := &GatewayService{}
+	req, err := svc.buildCountTokensRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-5", true, true)
+	if err != nil {
+		t.Fatalf("buildCountTokensRequest failed: %v", err)
+	}
+
+	if got := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id"); got != sessionID {
+		t.Fatalf("X-Claude-Code-Session-Id mismatch: got %q want %q", got, sessionID)
+	}
+}
+
+func TestBuildCountTokensRequest_OAuthMimic_SessionID_InvalidMetadata_GenerateFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(nil))
+
+	account := &Account{
+		ID:          1103,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"metadata":{"user_id":"invalid-user-id"}}`)
+
+	svc := &GatewayService{}
+	req, err := svc.buildCountTokensRequest(context.Background(), c, account, body, "oauth-token", "oauth", "claude-sonnet-4-5", true, true)
+	if err != nil {
+		t.Fatalf("buildCountTokensRequest failed: %v", err)
+	}
+
+	got := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id")
+	if strings.TrimSpace(got) == "" {
+		t.Fatalf("X-Claude-Code-Session-Id should be generated when metadata.user_id is invalid")
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(got) {
+		t.Fatalf("X-Claude-Code-Session-Id should be UUIDv4, got %q", got)
+	}
+}
+
 func TestBuildUpstreamRequest_OAuthMimic_FingerprintUnificationDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

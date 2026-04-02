@@ -6351,13 +6351,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// x-client-request-id: 优先透传客户端值；缺失时按 Claude Code 规则生成随机 UUID v4。
 	passthroughClientRequestID(req, clientHeaders, claude.EndpointMessages)
 
-	// 同步 X-Claude-Code-Session-Id 头：取 body 中已处理的 metadata.user_id 的 session_id 覆盖
-	if sessionHeader := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id"); sessionHeader != "" {
-		if uid := gjson.GetBytes(body, "metadata.user_id").String(); uid != "" {
-			if parsed := ParseMetadataUserID(uid); parsed != nil {
-				setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
-			}
-		}
+	// OAuth mimic: X-Claude-Code-Session-Id should match rewritten metadata.user_id.session_id.
+	if mimicClaudeCode && account != nil && account.IsOAuth() {
+		ensureClaudeCodeSessionHeader(req, body)
 	}
 
 	// Always capture a compact fingerprint line for later error diagnostics.
@@ -6769,6 +6765,44 @@ func passthroughClientRequestID(req *http.Request, clientHeaders http.Header, en
 		req.Header.Set("x-client-request-id", generateClaudeClientRequestID())
 	default:
 	}
+}
+
+// syncClaudeCodeSessionHeaderFromBody forces X-Claude-Code-Session-Id to match
+// metadata.user_id.session_id when metadata is parseable.
+// Returns true when header is set from metadata.
+func syncClaudeCodeSessionHeaderFromBody(req *http.Request, body []byte) bool {
+	if req == nil || len(body) == 0 {
+		return false
+	}
+	uid := strings.TrimSpace(gjson.GetBytes(body, "metadata.user_id").String())
+	if uid == "" {
+		return false
+	}
+	parsed := ParseMetadataUserID(uid)
+	if parsed == nil {
+		return false
+	}
+	sessionID := strings.TrimSpace(parsed.SessionID)
+	if sessionID == "" {
+		return false
+	}
+	setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", sessionID)
+	return true
+}
+
+// ensureClaudeCodeSessionHeader keeps Claude Code OAuth behavior: messages/count_tokens
+// should always carry X-Claude-Code-Session-Id.
+func ensureClaudeCodeSessionHeader(req *http.Request, body []byte) {
+	if req == nil {
+		return
+	}
+	if syncClaudeCodeSessionHeaderFromBody(req, body) {
+		return
+	}
+	if existing := strings.TrimSpace(getHeaderRaw(req.Header, "X-Claude-Code-Session-Id")); existing != "" {
+		return
+	}
+	setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", uuid.NewString())
 }
 
 // generateClaudeClientRequestID returns an RFC4122 UUID v4 string, aligned
@@ -9131,13 +9165,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// x-client-request-id: 优先透传客户端值；缺失时按 Claude Code 规则生成随机 UUID v4。
 	passthroughClientRequestID(req, clientHeaders, claude.EndpointCountTokens)
 
-	// 同步 X-Claude-Code-Session-Id 头：取 body 中已处理的 metadata.user_id 的 session_id 覆盖
-	if sessionHeader := getHeaderRaw(req.Header, "X-Claude-Code-Session-Id"); sessionHeader != "" {
-		if uid := gjson.GetBytes(body, "metadata.user_id").String(); uid != "" {
-			if parsed := ParseMetadataUserID(uid); parsed != nil {
-				setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
-			}
-		}
+	// OAuth mimic: X-Claude-Code-Session-Id should match rewritten metadata.user_id.session_id.
+	if mimicClaudeCode && account != nil && account.IsOAuth() {
+		ensureClaudeCodeSessionHeader(req, body)
 	}
 
 	if c != nil && tokenType == "oauth" {

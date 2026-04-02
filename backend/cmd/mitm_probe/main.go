@@ -93,6 +93,7 @@ func main() {
 		repeat          = flag.Int("repeat", 2, "repeat rounds")
 		tlsFP           = flag.Bool("tls-fp", true, "enable sub2api TLS fingerprint path")
 		clientRequestID = flag.String("client-request-id", "", "optional x-client-request-id passthrough value")
+		sessionID       = flag.String("session-id", "", "optional X-Claude-Code-Session-Id passthrough value")
 	)
 	flag.Parse()
 	if *repeat <= 0 {
@@ -110,6 +111,10 @@ func main() {
 
 	messageBody := []byte(`{"model":"claude-sonnet-4-6","max_tokens":16,"messages":[{"role":"user","content":"mitm probe messages"}]}`)
 	countBody := []byte(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"mitm probe count tokens"}]}`)
+	runSessionID := strings.TrimSpace(*sessionID)
+	if runSessionID == "" {
+		runSessionID = uuid.NewString()
+	}
 
 	for i := 0; i < *repeat; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -126,6 +131,7 @@ func main() {
 			msgReq.Header.Set("authorization", "Bearer invalid-oauth-token")
 			msgReq.Header.Set("anthropic-beta", claude.DefaultBetaHeader)
 			msgReq.Header.Set("x-client-request-id", resolveClientRequestID(*clientRequestID))
+			msgReq.Header.Set("X-Claude-Code-Session-Id", runSessionID)
 			sendReq(ctx, upstream, account, *proxyURL, msgReq, tlsProfile)
 		}
 
@@ -136,6 +142,7 @@ func main() {
 			ctReq.Header.Set("anthropic-version", "2023-06-01")
 			ctReq.Header.Set("authorization", "Bearer invalid-oauth-token")
 			ctReq.Header.Set("x-client-request-id", resolveClientRequestID(*clientRequestID))
+			ctReq.Header.Set("X-Claude-Code-Session-Id", runSessionID)
 			sendReq(ctx, upstream, account, *proxyURL, ctReq, tlsProfile)
 		}
 

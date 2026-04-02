@@ -211,6 +211,8 @@ func anthropicMessagesWireHeaderKey(lowerKey string) string {
 		return "Accept"
 	case "user-agent":
 		return "User-Agent"
+	case "x-claude-code-session-id":
+		return "X-Claude-Code-Session-Id"
 	case "x-stainless-retry-count":
 		return "X-Stainless-Retry-Count"
 	case "x-stainless-timeout":
@@ -227,6 +229,10 @@ func anthropicMessagesWireHeaderKey(lowerKey string) string {
 		return "X-Stainless-Runtime"
 	case "x-stainless-runtime-version":
 		return "X-Stainless-Runtime-Version"
+	case "x-stainless-helper-method":
+		return "x-stainless-helper-method"
+	case "x-stainless-helper":
+		return "x-stainless-helper"
 	default:
 		return textproto.CanonicalMIMEHeaderKey(lowerKey)
 	}
@@ -299,6 +305,7 @@ func preferredHeaderOrder(req *http.Request) []string {
 				"authorization",
 				"x-app",
 				"user-agent",
+				"x-claude-code-session-id",
 				"content-type",
 				"anthropic-beta",
 				"x-client-request-id",
@@ -306,6 +313,8 @@ func preferredHeaderOrder(req *http.Request) []string {
 				"sec-fetch-mode",
 				"accept-encoding",
 				"content-length",
+				"x-stainless-helper-method",
+				"x-stainless-helper",
 			}
 		case req.Method == http.MethodPost && strings.HasPrefix(path, "/v1/messages"):
 			return []string{
@@ -325,6 +334,7 @@ func preferredHeaderOrder(req *http.Request) []string {
 				"authorization",
 				"x-app",
 				"user-agent",
+				"x-claude-code-session-id",
 				"content-type",
 				"anthropic-beta",
 				"x-client-request-id",
@@ -332,6 +342,8 @@ func preferredHeaderOrder(req *http.Request) []string {
 				"sec-fetch-mode",
 				"accept-encoding",
 				"content-length",
+				"x-stainless-helper-method",
+				"x-stainless-helper",
 			}
 		case req.Method == http.MethodGet && strings.HasPrefix(path, "/v1/mcp_servers"):
 			return []string{
